@@ -1,0 +1,24 @@
+{
+  "name": "dsh-memory-core",
+  "version": "0.1.0",
+  "description": "抖音/QQ 长期记忆：记忆/原话/检索/图谱；三路等权 RRF；提供 dyMemory 服务（契约 v1.1）",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "onnxruntime-node": "^1.31.1"
+  }
+}
