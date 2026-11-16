@@ -45,6 +45,15 @@ test('周结 apply：只把重复条标 superseded，保留 keeper，不删正�
   assert.ok(superseded[0].superseded_by > 0)
   assert.ok(superseded[0].text.length > 0, '正文保留')
   assert.equal(rows.filter((x) => x.status === 'active').length, 2)
+  // 2026-11-16 补：superseded 必须同时 bump revision、写快照、设 valid_to，
+  // 否则 dy_memory_asof 看不到「这条以前是真的」这段历史（原先只改 status）。
+  const full = db.prepare('SELECT revision, updated_at, valid_to, temporal_kind FROM memories WHERE id=?').get(superseded[0].id)
+  assert.equal(Number(full.revision), 2, 'superseded 必须 revision+1')
+  assert.ok(Number(full.updated_at) > 0, 'superseded 必须更新 updated_at')
+  assert.ok(Number(full.valid_to) > 0, 'superseded 必须设 valid_to')
+  assert.equal(full.temporal_kind, 'historical')
+  const snaps = db.prepare('SELECT count(*) c FROM memory_revisions WHERE memory_id=?').get(superseded[0].id).c
+  assert.equal(Number(snaps), 1, 'superseded 必须留一条修订快照')
 })
 
 test.after(() => { try { rmSync(DIR, { recursive: true, force: true }) } catch {} })
