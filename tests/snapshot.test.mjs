@@ -7,7 +7,8 @@ const {snapshotNow,restoreIfNeeded,listSnapshots,KEEP}=await import('../lib/main
 const out={ok:true,test:'snapshot'}
 const {db}=openDb(DIR); await insertMemory(db,{kind:'fact',text:'一条记忆',layer:'manual'}); db.close()
 // 生成 8 份 → 保留 6
-for(let i=0;i<8;i++) snapshotNow(DIR,{now:new Date(Date.UTC(2026,10,6,0,i))})
+// 2026-11-17：这条测的是**轮转**语义，与「内容没变就跳过」无关 → 显式关掉跳过，保持原意
+for(let i=0;i<8;i++) snapshotNow(DIR,{now:new Date(Date.UTC(2026,10,6,0,i)),skipIfUnchanged:false})
 const snaps=listSnapshots(DIR)
 assert.equal(snaps.length,KEEP,'保留 6 份')
 assert.ok(existsSync(snaps[0].path))
