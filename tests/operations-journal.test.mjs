@@ -85,7 +85,9 @@ const fake = makeCtx({ parts: ['{"kind":"fact","text":"主人喜欢看海","conf
   assert.equal(bad.state.calls, 1)
   const op = getOperation(db, 'memory-extract', 'msg:err')
   assert.equal(op.status, OP_FAILED_UNKNOWN, '不可判定 → failed_unknown')
-  assert.deepEqual(op.result, { billing: 'unknown', retried: false })
+  assert.equal(op.result.billing, 'unknown')
+  assert.equal(op.result.retried, false)
+  assert.equal(op.result.reason, 'llm-error')
   const r2 = await extractByLlm({ ctx: bad.ctx, text: '这条会传输失败，但可能已经扣费了', config: {}, log, db, requestId: 'msg:err' })
   assert.equal(r2.ok, false)
   assert.equal(r2.reason, OPERATION_CODES.IN_DOUBT)
@@ -105,7 +107,8 @@ const fake = makeCtx({ parts: ['{"kind":"fact","text":"主人喜欢看海","conf
   assert.deepEqual(swept.ids, ['memory-consolidate:stale-1'])
   const op = getOperation(db, 'memory-consolidate', 'stale-1')
   assert.equal(op.status, OP_FAILED_UNKNOWN)
-  assert.deepEqual(op.result, { billing: 'unknown', retried: false })
+  assert.equal(op.result.billing, 'unknown')
+  assert.equal(op.result.retried, false)
   // 再执行同一个 id：被拦下，不重放
   let ran = 0
   const r = await withOperation(db, {
