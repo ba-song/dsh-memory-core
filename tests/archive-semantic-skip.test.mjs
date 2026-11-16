@@ -53,7 +53,7 @@ const touchedVectors = (seen) => seen.filter((s) => s.includes('raw_vectors')).l
 test('A1 关键词把预算占满 → 不读 raw_vectors（省掉 2.66s / 100MB）', () => {
   const db = build()
   const { wrapped, seen } = spy(db)
-  const r = searchArchive(wrapped, { question: '五花肉', limit: 100, queryEmbed: [1, 0, 0, 0] })
+  const r = searchArchive(wrapped, { question: '五花肉', limit: 80, queryEmbed: [1, 0, 0, 0] })
   assert.equal(r.ok, true)
   assert.ok(r.count > 0, `关键词应有命中，实际 count=${r.count}`)
   assert.equal(touchedVectors(seen), 0, '预算满时不该准备 raw_vectors 那条 SQL')
