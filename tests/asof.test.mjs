@@ -94,4 +94,34 @@ const unknownId = await insertMemory(db, { kind: 'preference', text: '主人吃�
   out.fields = 'ok'
 }
 
+// ── 7. 工具层 `dy_memory_asof` 端到端（注册 + date 解析 + uncertain 透传）──
+{
+  const registered = {}
+  const ctx = {
+    get(n) {
+      if (n === 'tools') return { register: (d) => { registered[d.name] = d } }
+      if (n === 'systemPrompt') return { context: () => () => {} }
+      if (n === 'agents') return { list: () => [] }
+      return undefined
+    },
+    on() {},
+    logger: { info() {}, warn() {} },
+  }
+  const mod = await import('../lib/index.js')
+  mod.apply(ctx, { ownerQQ: '1000000001' })
+  assert.ok(registered.dy_memory_asof, 'dy_memory_asof 必须注册')
+  const ownerDir = '/root/qq-agent/QQ会话/私聊_1000000001'
+  const exec = { agent: { session: { header: { cwd: ownerDir, id: 'asof-s1' } } } }
+  const res = JSON.parse((await registered.dy_memory_asof.execute({ query: '吃辣', date: '2026-03-01' }, exec)).detail)
+  assert.equal(res.ok, true)
+  assert.equal(res.count, 1)
+  assert.equal(res.items[0].id, oldId)
+  assert.equal(res.uncertain.length, 1)
+  assert.equal(res.uncertain[0].text, '主人吃辣会胃疼')
+  const bad = JSON.parse((await registered.dy_memory_asof.execute({ query: '吃辣', date: '不是日期' }, exec)).detail)
+  assert.equal(bad.ok, false)
+  assert.equal(bad.code, 'BAD_ARG')
+  out.tool = 'ok'
+}
+
 console.log(JSON.stringify(out))
