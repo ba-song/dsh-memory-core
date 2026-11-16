@@ -20,12 +20,16 @@ r=svc.resolveConflict({id:q1,action:'keep',side:'old'},{header:home}); assert.eq
 p=await mk('keep new 场景'); const a2=p.id,q2=p.qid
 r=svc.resolveConflict({id:q2,action:'keep',side:'new'},{header:home}); assert.equal(r.ok,true)
 assert.equal(db.prepare('select count(*) c from memories where id=?').get(a2).c,0,'old 被删')
-// drop new
+// drop new（2026-11-16 P0-3：drop 改为状态迁移，不再物理删；new 侧本来不存在 → 原行不动）
 p=await mk('drop new'); r=svc.resolveConflict({id:p.qid,action:'drop',side:'new'},{header:home}); assert.equal(r.ok,true)
-assert.equal(db.prepare('select count(*) c from memories where id=?').get(p.id+1000).c,0)
-// drop old
+assert.equal(db.prepare('select count(*) c from memories where id=?').get(p.id).c,1,'drop 不物理删')
+assert.equal(db.prepare('select status from memories where id=?').get(p.id).status,'active')
+// drop old → 旧侧标 corrected：行数不减、revision+1、留一条修订快照
 p=await mk('drop old'); r=svc.resolveConflict({id:p.qid,action:'drop',side:'old'},{header:home}); assert.equal(r.ok,true)
-assert.equal(db.prepare('select count(*) c from memories where id=?').get(p.id).c,0)
+assert.equal(db.prepare('select count(*) c from memories where id=?').get(p.id).c,1,'drop 后行数不减')
+assert.equal(db.prepare('select status from memories where id=?').get(p.id).status,'corrected')
+assert.equal(db.prepare('select revision from memories where id=?').get(p.id).revision,2)
+assert.equal(db.prepare('select count(*) c from memory_revisions where memory_id=?').get(p.id).c,1,'revisions+1')
 // 审计
 const aud=db.prepare("select v from meta where k like 'conflict_audit_%'").all()
 assert.ok(aud.length>=4); assert.ok(aud.every((a)=>JSON.parse(a.v).at>0&&JSON.parse(a.v).actor==='owner'))
