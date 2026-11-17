@@ -60,8 +60,8 @@ test('hits 注入过滤只排除持久偏好；普通 preference 与 recall 保�
     { id: 20, kind: 'fact', text: '事实命中A', meta: '{}', scores: { keyword: 1 } },
     { id: 21, kind: 'preference', text: '普通偏好命中A', meta: '{}', scores: { keyword: 1 } },
   ]
-  const filtered = filterPersistentPreferenceHits(hits)
-  assert.deepEqual(filtered.map((x) => x.id), [20, 21])
+  const filtered = filterPersistentPreferenceHits([...hits, { id: 22, kind: 'preference', text: '元数据损坏偏好A', meta: '{', scores: { keyword: 1 } }])
+  assert.deepEqual(filtered.map((x) => x.id), [20, 21, 22], '元数据缺失或解析失败时应保守保留')
   const block = buildHitsBlock(filtered, { minScore: 0.1 })
   assert.ok(!block.includes(longText))
   assert.ok(block.includes('事实命中A'))
@@ -135,4 +135,42 @@ test('legacy preference remains recallable but is absent from persistent and rem
   const remembered = pickRemembered(db)
   assert.ok(!remembered.block.includes('旧偏好检索目标B'))
   assert.ok(remembered.skipped.some((item) => item.reason === 'preference-managed-separately'))
+})
+
+test('auto_list exposes status and pending retry diagnostics without removing legacy fields', async () => {
+  const dir = `/tmp/m1-round3-auto-list-${process.pid}`
+  process.env.DY_MEMORY_DIR = dir
+  rmSync(dir, { recursive: true, force: true })
+  const { db } = openDb(dir)
+  const id = await insertMemory(db, {
+    kind: 'preference', text: '主人要保留自动列表测试条目A',
+    status: 'pending', layer: 'auto', importance: 0.4, confidence: 0.8,
+    sourceMsgId: 'round3:auto-list',
+    meta: { persist: true, persistence: 'long_term', retryCount: 2, lastError: 'temporary test failure' },
+  })
+  const registered = {}
+  const ctx = {
+    get(name) {
+      if (name === 'tools') return { register: (def) => { registered[def.name] = def } }
+      if (name === 'systemPrompt') return { context: () => () => {} }
+      if (name === 'agents') return { list: () => [] }
+      return undefined
+    },
+    on() {},
+    provide() { return () => {} },
+    logger: quietLog,
+  }
+  const { apply } = await import('../lib/index.js')
+  apply(ctx, { ownerQQ: '1000000001', trustedDirs: ['/tmp/m1-round3-owner'] })
+  const tool = registered.dy_memory_auto_list
+  assert.ok(tool, 'auto_list 工具仍应注册')
+  const response = await tool.execute({ limit: 20 }, { agent: { session: { header: { cwd: '/tmp/m1-round3-owner', id: 'round3-owner' } } } })
+  const payload = JSON.parse(response.detail)
+  const item = payload.items.find((row) => row.id === id)
+  assert.ok(item)
+  assert.equal(item.status, 'pending')
+  assert.equal(item.retryCount, 2)
+  assert.equal(item.lastError, 'temporary test failure')
+  assert.ok(Object.hasOwn(item, 'importance'), '原有字段必须保留')
+  assert.ok(Object.hasOwn(item, 'source_msg_id'), '原有字段必须保留')
 })
