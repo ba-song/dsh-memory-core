@@ -72,14 +72,14 @@ const unknownId = await insertMemory(db, { kind: 'preference', text: '主人吃�
   out.asOf = 'ok'
 }
 
-// ── 5. 不传 asOf → 老行为（两版都回，没有 uncertain 属性）─────────
+// ── 5. 不传 asOf → 当前视图只返回当前有效版本 ───────────────
 {
   const plain = await recall(db, '吃辣')
   const got = new Set(texts(plain))
-  assert.equal(got.has('主人喜欢吃辣'), true)
-  assert.equal(got.has('主人不喜欢吃辣了'), true)
+  assert.equal(got.has('主人喜欢吃辣'), false, '已过期版本不进入当前视图')
+  assert.equal(got.has('主人不喜欢吃辣了'), true, '当前有效版本应返回')
   assert.equal(plain.uncertain, undefined)
-  out.legacy = 'ok'
+  out.currentView = 'ok'
 }
 
 // ── 6. 行内携带时间字段（工具层直接回给模型）─────────────────────
