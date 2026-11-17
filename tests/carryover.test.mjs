@@ -32,12 +32,14 @@ const mod = await import('../lib/index.js'); mod.apply(ctx, { ownerQQ: '10000000
 const caps = []
 const agent = (sid) => ({ session: { header: { cwd: HOME, id: sid } }, ctx: { systemPrompt: { context: (c) => { caps.push(c); return () => {} } } } })
 handlers['agent/created']({ agent: agent('s-1') })
-assert.equal(caps.length, 1)
-const text = caps[0].text()
-assert.ok(text.includes('【上次聊到】'), '常驻块里应有上次聊到')
+assert.equal(caps.length, 2, 'owner 应挂长期偏好块和常驻记忆块')
+const stable = caps.find((c) => c.name === 'dy-memory-stable')
+assert.ok(stable, '应挂常驻记忆块')
+const text = stable.text()
+assert.ok(text.includes('【上次聊到】', '常驻块里应有上次聊到')
 assert.equal((text.match(/【上次聊到】/g) || []).length, 1, '只出现一次')
 handlers['agent/created']({ agent: agent('s-1') })
-assert.equal(caps.length, 1, '同一会话不重复挂载')
+assert.equal(caps.length, 2, '同一会话不重复挂载')
 // 无旧会话的 cwd → 不注入
 const EMPTY = '/tmp/no-old-session-' + process.pid
 caps.length = 0
