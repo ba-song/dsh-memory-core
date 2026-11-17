@@ -69,7 +69,7 @@ test('hits 注入过滤只排除持久偏好；普通 preference 与 recall 保�
   const quotes = buildQuotesBlock(db, { cwd: '/tmp/no-raw-archive', hits: filtered, query: '' })
   assert.ok(!quotes.block.includes(longText))
   const provenance = buildProvenanceBlock(db, { cwd: '/tmp/no-raw-archive', hits: filtered })
-  assert.equal(provenance.stats.hits, 2, '出处块接收的 hits 应已过滤')
+  assert.equal(provenance.stats.hits, 3, '出处块接收的 hits 应已过滤；损坏 meta 按保守策略保留')
   const recalled = await recall(db, longText, { vectors: null, gate: { keyword: 0.1, semantic: 0.55 }, trackAccess: false })
   assert.ok(recalled.some((row) => row.id === longId), '主动 recall 仍可命中长期偏好')
   const remembered = pickRemembered(db)
