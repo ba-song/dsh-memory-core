@@ -46,7 +46,7 @@ const messageId = 'email-test-message-1'
 // 1) 主人会话写入
 {
   const r = await svc.saveEmail({
-    from: 'yangen2001@qq.com', to: '1000000001@qq.com',
+    from: 'owner@example.com', to: '1000000001@qq.com',
     subject: '测试主题', text: '第一行\n第二行', at, messageId,
   }, { header })
   assert.equal(r.ok, true, JSON.stringify(r))
@@ -68,7 +68,7 @@ const messageId = 'email-test-message-1'
   assert.ok(raw, '原话档案应有 email 行')
   assert.equal(raw.cwd, '/sdcard/DSHA/渠道/email')
   assert.equal(raw.role, 'user')
-  assert.equal(raw.speaker, 'yangen2001@qq.com')
+  assert.equal(raw.speaker, 'owner@example.com')
   assert.ok(String(raw.raw_text).includes('测试主题'))
   const fts = db.prepare('SELECT count(*) c FROM raw_fts WHERE rowid=?').get(raw.id)
   assert.equal(fts.c, 1, 'raw_fts 应可检索')
@@ -81,7 +81,7 @@ const messageId = 'email-test-message-1'
 // 2) messageId 去重
 {
   const before = db.prepare('SELECT count(*) c FROM memories').get().c
-  const r = await svc.saveEmail({ from: 'yangen2001@qq.com', subject: '重复', text: '重复正文', at, messageId }, { header })
+  const r = await svc.saveEmail({ from: 'owner@example.com', subject: '重复', text: '重复正文', at, messageId }, { header })
   assert.equal(r.ok, true)
   assert.equal(r.duplicate, true)
   assert.equal(r.archived, false)

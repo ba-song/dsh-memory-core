@@ -22,10 +22,10 @@ const out = { ok: true, test: 'people-bindings' }
 // 1) 初始化 owner 三地址
 {
   ensurePersonSchema(db)
-  const r = seedOwnerPeople(db, { ownerQQ: OWNER_QQ, emails: ['yangen2001@qq.com'] })
+  const r = seedOwnerPeople(db, { ownerQQ: OWNER_QQ, emails: ['owner@example.com'] })
   assert.equal(r.ok, true)
   assert.equal(r.bindings.length, 3, 'QQ + 两个邮箱')
-  for (const [channel, contactId] of [['qq', OWNER_QQ], ['email', 'yangen2001@qq.com'], ['email', `${OWNER_QQ}@qq.com`]]) {
+  for (const [channel, contactId] of [['qq', OWNER_QQ], ['email', 'owner@example.com'], ['email', `${OWNER_QQ}@qq.com`]]) {
     const p = resolvePerson(db, { channel, contactId })
     assert.equal(p?.personId, 'person:owner', `${channel}:${contactId} 应映射 person:owner`)
     assert.equal(p?.contactId, contactId)
@@ -96,7 +96,7 @@ const header = { cwd: ownerDir, id: 'sess-people' }
   const list = JSON.parse((await tool.execute({}, { agent: { session: { header } } })).detail)
   assert.equal(list.ok, true)
   assert.ok(list.items.some((x) => x.channel === 'qq' && x.personId === 'person:owner'), 'QQ owner personId')
-  assert.ok(list.items.some((x) => x.channel === 'email' && x.external_id === 'yangen2001@qq.com' && x.personId === 'person:owner'), '邮箱 owner personId')
+  assert.ok(list.items.some((x) => x.channel === 'email' && x.external_id === 'owner@example.com' && x.personId === 'person:owner'), '邮箱 owner personId')
   assert.ok(list.items.some((x) => x.external_id === 'svc@example.com' && x.personId === 'person:svc'), '服务绑定 personId')
   out.service = 'ok'
 }

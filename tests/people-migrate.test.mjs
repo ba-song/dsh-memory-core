@@ -22,7 +22,7 @@ db.close()
 
 const SCRIPT = new URL('../scripts/migrate-people.mjs', import.meta.url).pathname
 const run = (extra = []) => {
-  const r = spawnSync(process.execPath, [SCRIPT, '--db', dbPath, '--owner-qq', OWNER_QQ, '--owner-emails', 'yangen2001@qq.com', '--json', ...extra], { encoding: 'utf8' })
+  const r = spawnSync(process.execPath, [SCRIPT, '--db', dbPath, '--owner-qq', OWNER_QQ, '--owner-emails', 'owner@example.com', '--json', ...extra], { encoding: 'utf8' })
   let json = null
   try { json = JSON.parse(r.stdout) } catch {}
   return { status: r.status, json, stdout: r.stdout, stderr: r.stderr }

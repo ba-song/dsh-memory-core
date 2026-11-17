@@ -169,3 +169,30 @@ sh /sdcard/DSHA/插件开发/自建插件/sync-from-ubuntu.sh
 ```
 
 当前基线：`tests/*.test.mjs` 75 个文件全绿（embedding 测试需要本机 `onnxruntime-node` 与模型；缺库时该用例会红，属环境依赖）。
+
+---
+
+## 9. 宿主环境与测试依赖
+
+本插件是 DSH 插件，**有两类依赖不在 `package.json` 里声明**，由宿主环境提供：
+
+| 依赖 | 用途 | 来源 |
+|---|---|---|
+| `@deepseek-ai/schemastery` | `lib/index.js` 顶层 `import`，解析插件 schema/配置 | DSH 宿主自带 |
+| `yaml` | 仅 `tests/config-source.test.mjs` 解析 profile 配置用 | DSH 宿主环境自带（测试专用） |
+
+**独立克隆后直接 `npm test` 可能失败**：`npm ci` 只会安装 `onnxruntime-node` 及其依赖；Node 解析不到 `@deepseek-ai/schemastery` 时会抛 `ERR_MODULE_NOT_FOUND`，表现为大量测试文件级失败——这是缺少宿主依赖的环境问题，不是代码错误。
+
+在 Ubuntu DSH 环境里准备并运行测试：
+
+```bash
+cd <插件目录>
+npm ci                                                   # 安装 onnxruntime-node 及依赖
+ln -s /root/.dsh/node_modules/@deepseek-ai node_modules/@deepseek-ai
+ln -s /root/.dsh/node_modules/yaml node_modules/yaml      # 仅测试需要
+DY_MEMORY_DIR=/tmp/dsm-test npm test                      # 必须用临时目录，勿指向生产库
+```
+
+- 期望结果：`tests 136 / pass 136 / fail 0`（node v24，Linux；2026-11-17 实测）。
+- embedding 用例需要本机提供 bge-small-zh 的 ONNX 模型与 tokenizer（模型目录由调用处传入，如 `loadEmbed(modelDir)`）。
+- `onnxruntime-node` 在部分 npm 版本会被 `allow-scripts` 拦下 postinstall，但包内自带预编译二进制，通常仍可正常 `import`。
