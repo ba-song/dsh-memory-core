@@ -50,7 +50,8 @@ assert.equal(d3.messages.length, 2, '新会话应重新注入')
 const mountedCalls = []
 const agent3 = { session: { header: { cwd: ownerDir, id: 's3' } }, ctx: { systemPrompt: { context: (cfg) => { mountedCalls.push(cfg); return () => {} } } } }
 handlers['agent/created']({ agent: agent3 })
-assert.equal(mountedCalls.length, 1, '新会话应重新挂常驻块')
-assert.equal(mountedCalls[0].name, 'dy-memory-stable')
+assert.equal(mountedCalls.length, 2, '新会话应重新挂长期偏好块和常驻块')
+assert.ok(mountedCalls.some((c) => c.name === 'dy-memory-stable'))
+assert.ok(mountedCalls.some((c) => c.name === 'dy-preference'))
 
 console.log(JSON.stringify({ ok: true, test: 'prestep', first: inj.content[0].text.length, same: d2.messages.length, newsid: d3.messages.length, remount: mountedCalls.length }))
