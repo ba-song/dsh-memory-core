@@ -99,6 +99,10 @@ test('pending retry: merge failure remains pending with diagnostics; recovery ac
   meta = JSON.parse(db.prepare('SELECT meta FROM memories WHERE id=?').get(overId).meta)
   assert.equal(meta.needsReview, true)
   assert.equal(meta.retryCount, 3)
+
+  const laterId = await insertMemory(db, { kind: 'preference', text: '主人要恢复后续测试偏好条目C', status: 'pending', layer: 'auto', meta: { persist: true, persistence: 'long_term' } })
+  await retryPendingPreferences({ db, log: quietLog })
+  assert.equal(db.prepare('SELECT status FROM memories WHERE id=?').get(laterId).status, 'active', 'needsReview 条目不应阻塞后续 pending 重试')
 })
 
 test('mixed temporary and durable wording stays temporary', () => {
