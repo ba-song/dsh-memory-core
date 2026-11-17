@@ -92,9 +92,9 @@ out.recall = 'ok'
 
 // 5) 便签/事实卡按 scope 过滤
 {
-  await insertMemory(db, { kind: 'preference', text: '主人喜欢喝冰美式' })
-  await insertMemory(db, { kind: 'preference', text: '汐喜欢看海', scopeType: 'public' })
-  await insertMemory(db, { kind: 'preference', text: '123 喜欢猫', scopeType: 'contact', scopeId: 'douyin:123' })
+  await insertMemory(db, { kind: 'relation', text: '主人喜欢喝冰美式' })
+  await insertMemory(db, { kind: 'relation', text: '汐喜欢看海', scopeType: 'public' })
+  await insertMemory(db, { kind: 'relation', text: '123 喜欢猫', scopeType: 'contact', scopeId: 'douyin:123' })
   const notesExt = pickRemembered(db, { scope: ext }).block
   assert.ok(notesExt.includes('汐喜欢看海')); assert.ok(notesExt.includes('123 喜欢猫'))
   assert.ok(!notesExt.includes('主人喜欢喝冰美式'), 'external 便签不含 owner')

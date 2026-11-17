@@ -50,7 +50,7 @@ out.pickPin = 'ok'
 
 // ── ② buildStable 传 db →「记得的事」 ────────────────────────────
 const { db } = openDb(DATA_DIR)
-await insertMemory(db, { kind: 'preference', text: '喜欢看海', importance: 0.8, layer: 'manual' })
+await insertMemory(db, { kind: 'relation', text: '喜欢看海', importance: 0.8, layer: 'manual' })
 const noDb = buildStable(join(DATA_DIR, 'empty-cwd'), {})
 assert.equal(noDb, '', '没有卡/便签、也没传 db → 空块（行为不变）')
 const withDb = buildStable(join(DATA_DIR, 'empty-cwd'), { db })
