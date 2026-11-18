@@ -81,8 +81,8 @@ const id = await insertMemory(db, { kind: 'fact', text: '主人怕辣', confiden
 // ── 4. conflict drop → 状态迁移，不物理删 ────────────────────────
 {
   const victim = await insertMemory(db, { kind: 'fact', text: '喜欢辣的旧说法', importance: 0.5 })
+  const other = await insertMemory(db, { kind: 'fact', text: '另一种说法', importance: 0.5 })
   const before = Number(db.prepare('SELECT count(*) c FROM memories').get().c)
-const other = await insertMemory(db, { kind: 'fact', text: '另一种说法', importance: 0.5 })
   const qid = Number(db.prepare("INSERT INTO conflict_queue(memory_a,memory_b,reason,created_at,status) VALUES(?,?,?,?,?)")
     .run(victim, other, 'opposition', Date.now(), 'pending').lastInsertRowid)
   const r = resolveConflictRow(db, { id: qid, action: 'drop', side: 'old' })
