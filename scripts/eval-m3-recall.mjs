@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { recall } from '../lib/recall/recall.js'
 import { loadVectors } from '../lib/store/memories.js'
 import { loadEmbed } from '../lib/embed/onnx.mjs'
-import { keywordOverlapRatio } from '../lib/inject/hits.js'
+import { keywordOverlapRatio, filterInjectionHits, buildHitsBlock, relevanceOf } from '../lib/inject/hits.js'
 
 const args = process.argv.slice(2)
 const valueAfter = (flag) => {
@@ -22,10 +22,11 @@ try { vectors = loadVectors(db) } catch {}
 try { await loadEmbed('/opt/qqai/models/bge-small-zh') } catch {}
 const rows = []
 let labelled = 0, hitsAt3 = 0, precisionNumerator = 0, precisionDenominator = 0
+let generalizedInjectionCount = 0, placeholderInjectionCount = 0
 try {
   for (const item of queries) {
     const found = await recall(db, item.query, {
-      vectors, gate: { semantic: 0.55, keyword: 0.35 }, limit: 3,
+      vectors, gate: { semantic: 0.55, keyword: 0.35 }, limit: 5,
       trackAccess: false,
     })
     const top = found.slice(0, 3).map((hit) => ({
@@ -33,6 +34,12 @@ try {
       scores: hit.scores ?? {},
       overlap: keywordOverlapRatio(item.query, hit.text),
     }))
+    const injectedHits = filterInjectionHits(found, item.query, { minSemantic: 0.55, minKeywordOverlap: 0.35 })
+      .filter((hit) => relevanceOf(hit) >= 0.55)
+    const injectionBlock = buildHitsBlock(injectedHits, { maxItems: 3, maxChars: 200, minScore: 0.55 })
+    const injectedCount = injectionBlock ? (injectionBlock.match(/^- \[/gm) ?? []).length : 0
+    if (String(item.id).startsWith('g')) generalizedInjectionCount += injectedCount
+    if (item.placeholder === true) placeholderInjectionCount += injectedCount
     const expected = Array.isArray(item.expectedContains) ? item.expectedContains : []
     const matching = expected.length
       ? top.filter((hit) => expected.some((needle) => hit.text.includes(needle))).length
@@ -46,6 +53,7 @@ try {
     rows.push({
       id: item.id, query: item.query, placeholder: item.placeholder === true,
       labelled: expected.length > 0, hitAt3: expected.length ? matching > 0 : null,
+      injectedCount,
       precisionAt3: expected.length ? matching / 3 : null,
       top1Score: top[0] ? Math.max(Number(top[0].scores.semantic ?? 0), Number(top[0].scores.keyword ?? 0), Number(top[0].scores.graph ?? 0)) : 0,
       top1Overlap: top[0]?.overlap ?? 0, top,
@@ -56,6 +64,7 @@ try {
     queryCount: queries.length, labelledCount: labelled,
     hitAt3: labelled ? hitsAt3 / labelled : null,
     precisionAt3: precisionDenominator ? precisionNumerator / precisionDenominator : null,
+    generalizedInjectionCount, placeholderInjectionCount,
     rows,
   }
   process.stdout.write(jsonOnly ? JSON.stringify(report) + '\n' : JSON.stringify(report, null, 2) + '\n')
