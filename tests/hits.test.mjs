@@ -3,7 +3,7 @@ import { buildHitsBlock, shouldInject, createHitState, overlaps, relevanceOf } f
 
 const hits = [
   { kind: 'fact', text: '主人喜欢看海', scores: { keyword: 1, semantic: 0.6 } },
-  { kind: 'preference', text: '爱吃海鲜', scores: { keyword: 0.5, semantic: 0.4 } },
+  { kind: 'preference', text: '爱吃海鲜', scores: { keyword: 0.6, semantic: 0.4 } },
   { kind: 'episode', text: '聊到猫', scores: { keyword: 0.2, semantic: 0.2 } },
 ]
 
