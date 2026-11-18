@@ -76,7 +76,7 @@ try {
     const quotesHit = expected.length > 0 && matches(quotesBlock)
     const hitsOnly = expected.length > 0 && matches(hitsBlock)
     const coverage = expected.length > 0 && (
-      stableHit || quotesHit || top.some((hit) => matches(hit.text))
+      stableHit || quotesHit || found.slice(0, 3).some((hit) => matches(hit.text))
     )
     if (expected.length) {
       labelled++
