@@ -6,7 +6,7 @@
  *  2) 同一条被两个写者用同一个旧 revision 写 → 第二个 E_REVISION_CONFLICT（跨连接真并发）
  *  3) 未知列名 → E_BAD_PATCH（不拼出畸形 SQL）
  *  4) conflict drop → 状态迁移（行数不减、status=corrected、revision+1、revisions+1）
- *  5) purge:true → 物理删（显式「彻底忘记」才允许）
+ *  5) 「彻底忘记」不再由 drop 提供（走 dy_memory_forget），本文件不覆盖
  */
 import assert from 'node:assert'
 import { rmSync } from 'node:fs'
@@ -82,11 +82,11 @@ const id = await insertMemory(db, { kind: 'fact', text: '主人怕辣', confiden
 {
   const victim = await insertMemory(db, { kind: 'fact', text: '喜欢辣的旧说法', importance: 0.5 })
   const before = Number(db.prepare('SELECT count(*) c FROM memories').get().c)
+const other = await insertMemory(db, { kind: 'fact', text: '另一种说法', importance: 0.5 })
   const qid = Number(db.prepare("INSERT INTO conflict_queue(memory_a,memory_b,reason,created_at,status) VALUES(?,?,?,?,?)")
-    .run(victim, victim + 1000, 'opposition', Date.now(), 'pending').lastInsertRowid)
+    .run(victim, other, 'opposition', Date.now(), 'pending').lastInsertRowid)
   const r = resolveConflictRow(db, { id: qid, action: 'drop', side: 'old' })
   assert.equal(r.ok, true)
-  assert.equal(r.purged, false)
   assert.equal(Number(db.prepare('SELECT count(*) c FROM memories').get().c), before, 'drop 后行数不减')
   const row = rowOf(victim)
   assert.equal(row.status, 'corrected')
@@ -95,20 +95,6 @@ const id = await insertMemory(db, { kind: 'fact', text: '主人怕辣', confiden
   assert.equal(JSON.parse(row.meta).invalidatedBy, `conflict:${qid}`)
   assert.equal(db.prepare('SELECT status FROM conflict_queue WHERE id=?').get(qid).status, 'resolved')
   out.dropTransition = 'ok'
-}
-
-// ── 5. 显式彻底忘记（purge）才物理删 ────────────────────────────
-{
-  const victim = await insertMemory(db, { kind: 'fact', text: '要彻底忘掉的事', importance: 0.4 })
-  const before = Number(db.prepare('SELECT count(*) c FROM memories').get().c)
-  const qid = Number(db.prepare("INSERT INTO conflict_queue(memory_a,memory_b,reason,created_at,status) VALUES(?,?,?,?,?)")
-    .run(victim, victim + 2000, 'opposition', Date.now(), 'pending').lastInsertRowid)
-  const r = resolveConflictRow(db, { id: qid, action: 'drop', side: 'old', purge: true })
-  assert.equal(r.ok, true)
-  assert.equal(r.purged, true)
-  assert.equal(Number(db.prepare('SELECT count(*) c FROM memories').get().c), before - 1)
-  assert.equal(rowOf(victim), undefined)
-  out.purge = 'ok'
 }
 
 console.log(JSON.stringify(out))
