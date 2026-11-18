@@ -11,6 +11,8 @@ try {
   const now = Date.now()
   await insertMemory(db, { kind: 'episode', text: '主人和汐讨论过一起去看海的约定与准备。', createdAt: now - 1000 })
   await insertMemory(db, { kind: 'episode', text: '这条 pending 经历不应出现在索引。', createdAt: now, status: 'pending' })
+  await insertMemory(db, { kind: 'episode', text: '群聊经历不应进入 owner 索引。', createdAt: now, scopeType: 'group', scopeId: 'qq:123456' })
+  await insertMemory(db, { kind: 'todo', text: '已经过期的待办不应进入索引。', createdAt: now - 1000, validTo: now - 1 })
   await insertMemory(db, { kind: 'todo', text: '继续完成记忆插件 M3-1 评测。', createdAt: now - 500 })
   db.exec(`CREATE TABLE decisions (
     id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', choice TEXT NOT NULL DEFAULT '',
@@ -28,6 +30,8 @@ try {
   assert.ok(block.includes('约定：一起看海'))
   assert.ok(block.includes('M3-1 评测'))
   assert.ok(!block.includes('pending 经历'))
+  assert.ok(!block.includes('群聊经历'))
+  assert.ok(!block.includes('已经过期'))
   assert.ok(block.length <= 300)
 
   const injected = new Set()
