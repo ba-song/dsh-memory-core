@@ -48,7 +48,7 @@ try {
 const rows = []
 let labelled = 0, hitsAt3 = 0, precisionNumerator = 0, precisionDenominator = 0
 let generalizedInjectionCount = 0, placeholderInjectionCount = 0
-let stableCoveredCount = 0, coverageCount = 0, hitsOnlyCount = 0
+let stableCoveredCount = 0, coverageCount = 0, hitsOnlyCount = 0, hitsBlockOnlyCount = 0
 try {
   for (const item of queries) {
     const found = await recall(db, item.query, {
@@ -74,7 +74,8 @@ try {
       : null
     const stableHit = expected.length > 0 && matches(stableText)
     const quotesHit = expected.length > 0 && matches(quotesBlock)
-    const hitsOnly = expected.length > 0 && matches(hitsBlock)
+    const hitsBlockOnly = expected.length > 0 && matches(hitsBlock)
+    const hitsOnly = expected.length > 0 && found.slice(0, 3).some((hit) => matches(hit.text))
     const coverage = expected.length > 0 && (
       stableHit || quotesHit || found.slice(0, 3).some((hit) => matches(hit.text))
     )
@@ -86,6 +87,7 @@ try {
       if (stableHit) stableCoveredCount++
       if (coverage) coverageCount++
       if (hitsOnly) hitsOnlyCount++
+      if (hitsBlockOnly) hitsBlockOnlyCount++
     }
     rows.push({
       id: item.id, query: item.query, placeholder: item.placeholder === true,
@@ -95,7 +97,7 @@ try {
       top1Score: top[0] ? Math.max(Number(top[0].scores.semantic ?? 0), Number(top[0].scores.keyword ?? 0), Number(top[0].scores.graph ?? 0)) : 0,
       top1Overlap: top[0]?.overlap ?? 0, top,
       stableHit, hitsBlock, hitsInjected: injectedCount,
-      quotesBlock, quotesHit, coverage, hitsOnly,
+      quotesBlock, quotesHit, coverage, hitsOnly, hitsBlockOnly,
     })
   }
   const report = {
@@ -107,6 +109,7 @@ try {
     stableCoveredCount,
     coverageAt3: labelled ? coverageCount / labelled : null,
     hitsOnlyAt3: labelled ? hitsOnlyCount / labelled : null,
+    hitsBlockOnlyAt3: labelled ? hitsBlockOnlyCount / labelled : null,
     stableError,
     rows,
   }
