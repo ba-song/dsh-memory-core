@@ -23,6 +23,36 @@ function makeDb(tag) {
 const ownerScope = scopeForSession({ cwd: '/tmp/owner', sessionId: 'round3', isOwner: true })
 const quietLog = { warn() {}, info() {} }
 
+test('preference recent query reaches newest evidence beyond the former 40-id window', async () => {
+  const { db } = makeDb('recent-over-40')
+  const now = Date.now()
+  let newestId = 0
+  for (let i = 1; i <= 45; i++) {
+    const id = await insertMemory(db, {
+      kind: 'preference',
+      text: `第${i}条候选长期偏好`,
+      importance: i === 45 ? 0.2 : 0.5,
+      confidence: 0.9,
+      createdAt: now - 10000 + i,
+      status: 'active',
+      meta: {
+        persist: true,
+        persistence: 'long_term',
+        lastEvidenceAt: i === 45 ? now + 60000 : now - 50000 + i,
+      },
+    })
+    if (i === 45) newestId = Number(id)
+  }
+
+  const block = buildPreferenceBlock(db, { scope: ownerScope, now })
+  assert.ok(block.includes('第45条候选长期偏好'), '最新证据记录即使 id 超过旧 LIMIT 40 也必须进入近期槽')
+  assert.ok(newestId > 0)
+  assert.equal(newestId, Number(db.prepare('SELECT MAX(id) AS id FROM memories').get().id), '最新证据样本必须也是最大 id')
+  assert.ok((block.match(/^- /gm) || []).length <= 3, '注入条目不得超过三个名额')
+  assert.ok(block.length <= 180, '注入块不得超过 180 字预算')
+  assert.equal(buildPreferenceBlock(db, { scope: ownerScope, now }), block, '重复调用结果必须一致')
+})
+
 test('preference slots: one recent plus two stable importance slots; budget and deterministic order', async () => {
   const { db } = makeDb('slots')
   const now = Date.now()
