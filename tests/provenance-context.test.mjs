@@ -26,7 +26,7 @@ const { bigrams } = await import('../lib/store/fts.js')
 const { buildProvenanceBlock } = await import('../lib/inject/context-blocks.js')
 const { buildQuotesBlock } = await import('../lib/inject/quotes.js')
 const { provenanceConfig, PROVENANCE_DEFAULTS } = await import('../lib/config.js')
-const { dayOf } = await import('../lib/adapter/timefmt.js')
+const { dayOf, stampOf } = await import('../lib/adapter/timefmt.js')
 
 const { db } = openDb(DIR)
 const cwd = '/sdcard/DSHA/生活/数据/home'
@@ -119,10 +119,7 @@ const crossDayHit = {
   scope_type: 'owner',
 }
 const crossDayProv = buildProvenanceBlock(db, { cwd, hits: [crossDayHit] })
-const priorDate = new Date(crossDayAt - 120000)
-const priorLabel = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit',
-}).format(priorDate).slice(5)
+const priorLabel = stampOf(crossDayAt - 120000).slice(0, 5)
 assert.ok(
   crossDayProv.block.split('\\n').some((l) => l.startsWith(`- ${priorLabel} `) && l.includes('跨天窗口第2句')),
   '跨天的旧日期出处行必须显示 MM-DD',
