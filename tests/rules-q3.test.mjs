@@ -8,7 +8,7 @@ import { buildRulesBlock } from '../lib/inject/rules.js'
 import { insertMemory } from '../lib/store/memories.js'
 import { recall } from '../lib/recall/recall.js'
 
-test('Q3 keeps the synthetic pronoun-only stress query separate from rule injection', () => {
+test('Q3 keeps the synthetic pronoun-only stress query separate from rule injection', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'dy-rules-q3-'))
   const { db } = openDb(dir)
   try {
