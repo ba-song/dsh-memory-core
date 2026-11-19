@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { openDb } from '../lib/store/db.js'
 import { buildStable } from '../lib/inject/stable.js'
 import { isCorrection } from '../lib/inject/correction.js'
+import { partsOf } from '../lib/adapter/timefmt.js'
 
 const DIR = mkdtempSync(join(tmpdir(), 'dy-shortterm-'))
 const { db } = openDb(DIR)
@@ -18,6 +19,8 @@ test('短期记忆：只注入未过期的，按重要度排序', () => {
   ins.run('event', '过期的事', '旧', 0.95, now - 2 * 86400000, now - 1000, now)
   const block = buildStable(DIR, { db, ownerDir: DIR, factsPath: '', budget: { facts: 420, pin: 100, shortterm: 400, shorttermItems: 5 }, scope: { level: 'owner' }, isOwner: true })
   assert.ok(block.includes('【记忆·最近三天（短期）】'))
+  const p = partsOf(now)
+  assert.ok(block.includes(`（${p.month}-${p.day} 记）`), '短期记忆应显示记录日期')
   assert.ok(block.includes('周五陪主人看海'))
   assert.ok(block.includes('把 10 月底的日记补完'))
   assert.ok(!block.includes('过期的事'))
