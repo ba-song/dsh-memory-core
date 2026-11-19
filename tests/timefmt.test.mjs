@@ -3,7 +3,7 @@ import { mkdirSync, rmSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 const DIR='/tmp/dy-tz-'+process.pid; process.env.DY_MEMORY_DIR=DIR; rmSync(DIR,{recursive:true,force:true}); mkdirSync(DIR,{recursive:true})
-const { dayOf, clockOf } = await import('../lib/adapter/timefmt.js')
+const { dayOf, clockOf, stampOf } = await import('../lib/adapter/timefmt.js')
 const { openDb } = await import('../lib/store/db.js')
 const { RawArchive } = await import('../lib/ingest/archive.js')
 const out={ok:true,test:'timefmt'}
@@ -11,6 +11,10 @@ const out={ok:true,test:'timefmt'}
 const at = Date.UTC(2026,10,5,16,16,24)
 assert.equal(clockOf(at), '00:16:24')
 assert.equal(dayOf(at), '2026-11-06')
+assert.equal(stampOf(at, { now: at }), '00:16')
+assert.equal(stampOf(at, { now: at, seconds: true }), '00:16:24')
+assert.equal(stampOf(Date.UTC(2026,10,5,15,0), { now: at }), '11-05 23:00')
+assert.equal(stampOf(Date.UTC(2025,11,31,12,0), { now: at }), '2025-12-31 20:00')
 const { db } = openDb(DIR)
 const a = new RawArchive({ db, dir: join(DIR,'raw'), cwdPrefixes:['/root/qq-agent/QQ会话'], log:{info(){},warn(){}} })
 db.exec("ALTER TABLE raw_meta ADD COLUMN speaker_id TEXT DEFAULT ''")
