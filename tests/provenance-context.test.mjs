@@ -149,7 +149,7 @@ assert.equal((prov2.block.match(/^  想：/gm) ?? []).length, 5, '指代行也�
 const hitB = { id: 902, kind: 'episode', text: '窗口前一句是什么', source_msg_id: 'p4:sessA1234:63', source_ts: T - 500000, scope_type: 'owner' }
 const provMerge = buildProvenanceBlock(db, { cwd, hits: [hitA, hitB], persona, ragRows: [] })
 const mergeLines = provMerge.block.split('\n').filter((l) => l.startsWith('- '))
-const mergeTexts = mergeLines.map((l) => l.replace(/^- \d{2}:\d{2}:\d{2} \[[^\]]+\] /, ''))
+const mergeTexts = mergeLines.map((l) => l.replace(/^- (?:\d{2}-\d{2} )?\d{2}:\d{2} \[[^\]]+\] /, ''))
 assert.equal(new Set(mergeTexts).size, mergeTexts.length, '窗口合并后不能有重复对白')
 assert.equal(provMerge.count, 7, 'A 窗口 5 条 + B 窗口 [1,2,13,28,30] 合并后 7 条')
 assert.deepEqual(mergeTexts, ['窗口外前文一', '窗口外前文二', '窗口前一句', '窗口前两句', '锚点原文：周末去海边', '好呀，几点出发', '窗口后一句'])
