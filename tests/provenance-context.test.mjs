@@ -92,7 +92,7 @@ assert.ok(prov.block.startsWith('【出处上下文】') && prov.block.endsWith(
 const lines = prov.block.split('\n').filter((l) => l.startsWith('- '))
 assert.equal(lines.length, 5, '应取满 5 条对白')
 assert.deepEqual(
-  lines.map((l) => l.replace(/^- \d{2}:\d{2}:\d{2} \[[^\]]+\] /, '')),
+  lines.map((l) => l.replace(/^- (?:\d{2}-\d{2} )?\d{2}:\d{2} \[[^\]]+\] /, '')),
   ['窗口前一句', '窗口前两句', '锚点原文：周末去海边', '好呀，几点出发', '窗口后一句'],
   '窗口应按行号升序且正好是锚点前后各 2 条对白',
 )
@@ -101,6 +101,32 @@ assert.ok(!lines.some((l) => l.includes('窗口外')), '窗口外的对白不进
 assert.equal(prov.count, 5)
 assert.equal(prov.stats.anchors, 1)
 assert.equal(prov.stats.skipped.length, 0)
+
+// 跨天出处：旧日期行必须显式带 MM-DD，不能误显示成当天时刻
+const FILE_D = `${DAY}/s-sessD123.md`
+const crossDayAt = new Date(`${DAY}T00:01:00+08:00`).getTime()
+for (let i = 1; i <= 5; i++) {
+  ins({
+    file: FILE_D, line: i, seq: 500 + i,
+    role: i % 2 ? 'user' : 'self',
+    text: `跨天窗口第${i}句`,
+    at: crossDayAt + (i - 3) * 120000,
+  })
+}
+const crossDayHit = {
+  id: 910, kind: 'episode', text: '跨天窗口第3句',
+  source_msg_id: 'p4:sessD1234:503', source_ts: crossDayAt,
+  scope_type: 'owner',
+}
+const crossDayProv = buildProvenanceBlock(db, { cwd, hits: [crossDayHit] })
+const priorDate = new Date(crossDayAt - 120000)
+const priorLabel = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit',
+}).format(priorDate).slice(5)
+assert.ok(
+  crossDayProv.block.split('\\n').some((l) => l.startsWith(`- ${priorLabel} `) && l.includes('跨天窗口第2句')),
+  '跨天的旧日期出处行必须显示 MM-DD',
+)
 
 // 3) 每条都有想：4 条有真实思考、1 条明确「想：无」；情绪 persona 优先、阈值以下省略
 const wantLines = prov.block.split('\n').filter((l) => l.startsWith('  想：'))
