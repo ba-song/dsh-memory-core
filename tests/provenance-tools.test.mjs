@@ -127,12 +127,13 @@ assert.ok(/调用 3 次/.test(mergeToolLine))
 // ── D. 预算：超 maxChars 先整块丢工具，保五条消息/想 ───────────
 const provFull = buildProvenanceBlock(db, { cwd, hits: [hitA], maxChars: 100000 })
 assert.ok(provFull.block.includes('具：bash(ok)'), '预算充足时保留工具')
-const provTight = buildProvenanceBlock(db, { cwd, hits: [hitA], maxChars: 250 })
+const tightCap = 180
+const provTight = buildProvenanceBlock(db, { cwd, hits: [hitA], maxChars: tightCap })
 assert.equal(provTight.count, 5, '超预算时五条消息不切')
 assert.equal((provTight.block.match(/^  想：/gm) ?? []).length, 5)
 assert.ok(!provTight.block.includes('具：'), '超预算时工具行整块丢弃')
 assert.ok(!provTight.block.includes('【工具概要】'), '超预算时工具概要整块丢弃')
-assert.ok(provTight.block.length <= 250, `超预算后长度受控（实际 ${provTight.block.length}）`)
+assert.ok(provTight.block.length <= tightCap, `超预算后长度受控（上限 ${tightCap}，实际 ${provTight.block.length}）`)
 assert.equal(provTight.stats.tools.dropped, 'max-chars')
 assert.equal(provTight.stats.tools.shownRows, 0)
 
