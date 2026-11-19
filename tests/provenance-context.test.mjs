@@ -121,7 +121,7 @@ const crossDayHit = {
 const crossDayProv = buildProvenanceBlock(db, { cwd, hits: [crossDayHit] })
 const priorLabel = stampOf(crossDayAt - 120000).slice(0, 5)
 assert.ok(
-  crossDayProv.block.split('\\n').some((l) => l.startsWith(`- ${priorLabel} `) && l.includes('跨天窗口第2句')),
+  crossDayProv.block.split('\n').some((l) => l.startsWith(`- ${priorLabel} `) && l.includes('跨天窗口第2句')),
   '跨天的旧日期出处行必须显示 MM-DD',
 )
 
