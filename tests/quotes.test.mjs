@@ -4,6 +4,7 @@ import { openDb } from '../lib/store/db.js'
 import { RawArchive } from '../lib/ingest/archive.js'
 import { buildQuotesBlock } from '../lib/inject/quotes.js'
 import { bigrams } from '../lib/store/fts.js'
+import { stampOf } from '../lib/adapter/timefmt.js'
 
 const dir = '/tmp/dy-q-' + process.pid
 rmSync(dir, { recursive: true, force: true })
@@ -32,6 +33,8 @@ assert.ok(r.block.startsWith('【相关原话】'))
 assert.ok(r.block.includes('看海这件事估计还要等好久'), '应带出处原文')
 assert.ok(!r.block.includes('她真的想去看海'), '思考已移到【相关思考】，不再进原话块')
 assert.ok(r.block.includes('去年看海'), '应带查询命中的旧原话')
+assert.ok(r.block.includes(`- ${stampOf(now - 86400000, { now })} [汐] 去年看海`), '跨天原话应显示日期')
+assert.ok(r.block.includes(`- ${stampOf(now - 300000, { now })} [汐] 刚说完那件事`), '当天原话仍显示时分')
 assert.ok(r.block.includes('刚说完那件事'), '应带最近 30 分钟')
 assert.ok(!r.block.split('\n').some((l) => l.endsWith('[汐] 看海')), '不应回声当前消息')
 assert.ok(r.block.length <= 300, '≤300 字')
