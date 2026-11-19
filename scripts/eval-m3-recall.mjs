@@ -76,9 +76,8 @@ try {
     const quotesHit = expected.length > 0 && matches(quotesBlock)
     const hitsBlockOnly = expected.length > 0 && matches(hitsBlock)
     const hitsOnly = expected.length > 0 && found.slice(0, 3).some((hit) => matches(hit.text))
-    const coverage = expected.length > 0 && (
-      stableHit || quotesHit || found.slice(0, 3).some((hit) => matches(hit.text))
-    )
+    // Coverage measures what the agent can actually see, not retrieval-only candidates.
+    const coverage = expected.length > 0 && (stableHit || quotesHit || hitsBlockOnly)
     if (expected.length) {
       labelled++
       if (matching > 0) hitsAt3++
