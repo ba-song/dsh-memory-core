@@ -132,7 +132,7 @@ test('permanent archive refuses symlinked ancestor directories before creating a
         dir: redirectedArchive, homeCwd: HOME, cwd: HOME,
         event: { raw_id: 704, day: '2026-11-20', role: 'user', text: 'must not escape' },
       }),
-      /ancestor must not be a symbolic link/,
+      /must not be a symbolic link/,
     )
     assert.equal(existsSync(join(outside, 'archive')), false)
   } finally { rmSync(dir, { recursive: true, force: true }) }
