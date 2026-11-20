@@ -1,5 +1,5 @@
 import test from 'node:test'
-import { symlinkSync } from 'node:fs'
+import { linkSync, symlinkSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -101,11 +101,14 @@ test('evaluator refuses the production database path, including a symlink alias'
   const dir = mkdtempSync(join(tmpdir(), 'dsh-eval-path-'))
   const production = join(dir, 'memory.db')
   const alias = join(dir, 'snapshot-alias.db')
+  const hardlink = join(dir, 'snapshot-hardlink.db')
   try {
     writeFileSync(production, 'production-db')
     assert.throws(() => assertOfflineSnapshotPath(production, production), /拒绝使用生产数据库路径/)
     symlinkSync(production, alias)
     assert.throws(() => assertOfflineSnapshotPath(alias, production), /拒绝使用生产数据库路径/)
+    linkSync(production, hardlink)
+    assert.throws(() => assertOfflineSnapshotPath(hardlink, production), /拒绝使用生产数据库路径/)
     assert.notEqual(assertOfflineSnapshotPath(join(dir, 'snapshot.db'), production).snapshotPath, production)
   } finally {
     rmSync(dir, { recursive: true, force: true })
