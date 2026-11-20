@@ -1,5 +1,6 @@
 import test from 'node:test'
 import { spawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import assert from 'node:assert/strict'
 import {
   chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync,
@@ -553,4 +554,32 @@ test('export repairs missing journal rows from read-only DB and does not depend 
     try { db.close() } catch {}
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('12 concurrent child processes append distinct events with bounded lock retry', async () => {
+  const dir = mk('concurrent-append')
+  const archiveDir = join(dir, 'permanent')
+  const moduleUrl = new URL('../lib/permanent/home-archive.js', import.meta.url).href
+  const count = 12
+  try {
+    const runs = Array.from({ length: count }, (_, index) => new Promise((resolve, reject) => {
+      const rawId = 3000 + index
+      const source = `import { appendPermanentEvent } from ${JSON.stringify(moduleUrl)};
+        const result = appendPermanentEvent({
+          dir: ${JSON.stringify(archiveDir)},
+          homeCwd: ${JSON.stringify(HOME)},
+          cwd: ${JSON.stringify(HOME)},
+          event: { raw_id: ${rawId}, day: '2026-11-20', seq: ${index + 1}, role: 'user', at: 1795156800000 + ${index}, text: 'parallel-${rawId}' }
+        });
+        if (!result.appended && !result.duplicate) process.exitCode = 2;`
+      const child = spawn(process.execPath, ['--input-type=module', '-e', source], { stdio: 'ignore' })
+      child.once('error', reject)
+      child.once('exit', (code) => resolve(code))
+    }))
+    const codes = await Promise.all(runs)
+    assert.deepEqual(codes, Array(count).fill(0))
+    const journal = readPermanentJournal(archiveDir)
+    assert.equal(journal.events.size, count)
+    assert.equal(journal.errors.length, 0)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })
