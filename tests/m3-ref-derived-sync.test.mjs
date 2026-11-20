@@ -49,6 +49,19 @@ test('deleteMemory removes revision and owned relation orphans',async()=>{
  assert.ok(scalar('SELECT id FROM memories WHERE id=?',other))
 })
 
+
+test('syncDerived without an embedder deletes the old vector and explicitly marks it stale',async()=>{
+ const id=await insertMemory(db,{kind:'fact',text:'主人喜欢抖音'})
+ linkMemory(db,id,'主人喜欢抖音')
+ db.prepare('INSERT INTO vectors(memory_id,dim,vec) VALUES(?,?,?)').run(id,2,Buffer.from(new Float32Array([1,0]).buffer))
+ const result=await updateMemory(db,id,{text:'主人喜欢 GitHub'},1,{syncDerived:true})
+ assert.equal(result.ok,true)
+ assert.equal(result.derived.vectorStatus,'stale')
+ assert.equal(Number(scalar('SELECT count(*) c FROM vectors WHERE memory_id=?',id).c),0)
+ const meta=JSON.parse(scalar('SELECT meta FROM memories WHERE id=?',id).meta)
+ assert.equal(meta.derivedIndexes.vectorStatus,'stale')
+})
+
 test('syncDerived refuses to discard existing relations without a validated builder',async()=>{
  const id=await insertMemory(db,{kind:'fact',text:'主人喜欢抖音'})
  linkMemory(db,id,'主人喜欢抖音')

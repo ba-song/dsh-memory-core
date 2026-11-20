@@ -29,6 +29,7 @@ test('M3-2B preview is read-only and apply snapshots all derived state',async()=
  assert.equal(Number(get('SELECT count(*) c FROM episode_rewrite_snapshots').c),1)
  assert.equal(get('SELECT text FROM memories WHERE id=?',id).text,'主人在 GitHub 维护项目')
  assert.equal(get('SELECT quote FROM memories WHERE id=?',id).quote,'')
+ assert.equal(JSON.parse(get('SELECT meta FROM memories WHERE id=?',id).meta).provenanceReviewRequired,true)
  assert.equal(get('SELECT dim FROM vectors WHERE memory_id=?',id).dim,3)
  assert.equal(Number(get('SELECT count(*) c FROM relations WHERE memory_id=?',id).c),0)
  const snap=get('SELECT * FROM episode_rewrite_snapshots WHERE id=?',applied.snapshotId)
