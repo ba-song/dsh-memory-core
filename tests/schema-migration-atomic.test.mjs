@@ -212,3 +212,22 @@ test('schema migration rejects an incomplete snapshot table and rolls back other
     after.close()
   } finally { rmSync(fixture.dir, { recursive: true, force: true }) }
 })
+
+
+test('schema migration rolls back FTS5 virtual-table DDL when a later migration step fails', () => {
+  const fixture = makeSchema4Fixture()
+  try {
+    const inject = new DatabaseSync(fixture.file)
+    inject.exec('DROP TABLE fts_trigram')
+    inject.exec('CREATE TABLE episode_rewrite_snapshots(id INTEGER PRIMARY KEY)')
+    inject.close()
+
+    assert.throws(() => openDb(fixture.dir), /no such column: memory_id/)
+    const after = new DatabaseSync(fixture.file, { readOnly: true })
+    assert.equal(after.prepare("SELECT v FROM meta WHERE k='schema_version'").get().v, '4')
+    assert.equal(tableExists(after, 'fts_trigram'), false)
+    assert.equal(after.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name LIKE 'fts_trigram%'").get().n, 0)
+    assert.equal(after.prepare('PRAGMA integrity_check').get().integrity_check, 'ok')
+    after.close()
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }) }
+})
