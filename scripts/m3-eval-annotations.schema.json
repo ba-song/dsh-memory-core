@@ -153,10 +153,12 @@
                   "additionalProperties": false,
                   "properties": {
                     "sourceMsgId": {
-                      "type": "string"
+                      "type": "string",
+                      "minLength": 1
                     },
                     "sourceTs": {
-                      "type": "integer"
+                      "type": "integer",
+                      "minimum": 1
                     },
                     "rawId": {
                       "type": "integer",

@@ -68,3 +68,11 @@ test('checked-in annotation template matches the evaluator query set', () => {
     valid: true, queryAnnotations: queries.length, labelledQueries: 0, positiveLabels: 0,
   })
 })
+
+test('forbidden-only safety labels do not count as relevance-labelled queries', () => {
+  const dataset = structuredClone(base)
+  dataset.queries[0].forbiddenMemoryIds = [77]
+  assert.deepEqual(validateAnnotationDataset(dataset, sourceQueries), {
+    valid: true, queryAnnotations: 1, labelledQueries: 0, positiveLabels: 0,
+  })
+})
