@@ -38,11 +38,13 @@ function makeSchema4Fixture() {
   db.exec('CREATE INDEX idx_raw_day ON raw_meta(day, role)')
   db.exec("CREATE VIRTUAL TABLE raw_fts USING fts5(text, tokenize='unicode61')")
   db.exec('CREATE TABLE raw_vectors(raw_id INTEGER PRIMARY KEY, dim INTEGER NOT NULL, vec BLOB NOT NULL, model TEXT, updated_at INTEGER NOT NULL)')
-  const raw = db.prepare('INSERT INTO raw_meta(id,day,seq,role,raw_text,tombstone,at,extra,cwd) VALUES(?,?,?,?,?,?,?,?,?)')
-  raw.run(1, '2026-01-01', 1, 'user', 'synthetic user fixture', 0, 1767225600000, '{}', '/sdcard/DSHA/生活/数据/home')
-  raw.run(2, '2026-01-01', 1, 'self', 'synthetic self fixture', 0, 1767225601000, '{}', '/sdcard/DSHA/生活/数据/home')
-  raw.run(3, '2026-01-01', 1, 'tool', 'synthetic tool fixture', 0, 1767225602000, '{}', '/sdcard/DSHA/生活/数据/home')
-  raw.run(4, '2026-01-01', 2, 'user', 'synthetic tombstone fixture', 1, 1767225603000, '{}', '/sdcard/DSHA/生活/数据/home')
+  const raw = db.prepare(`INSERT INTO raw_meta
+    (id,day,file,line_no,seq,role,speaker,channel,raw_text,tombstone,chars,at,extra,cwd,person_id)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+  raw.run(1, '2026-01-01', 'synthetic.jsonl', 1, 1, 'user', 'synthetic-user', 'qq', 'synthetic user fixture', 0, 22, 1767225600000, '{}', '/sdcard/DSHA/生活/数据/home', 'person-user')
+  raw.run(2, '2026-01-01', 'synthetic.jsonl', 2, 1, 'self', 'synthetic-self', 'qq', 'synthetic self fixture', 0, 23, 1767225601000, '{}', '/sdcard/DSHA/生活/数据/home', 'person-self')
+  raw.run(3, '2026-01-01', 'synthetic.jsonl', 3, 1, 'tool', 'synthetic-tool', 'qq', 'synthetic tool fixture', 0, 23, 1767225602000, '{}', '/sdcard/DSHA/生活/数据/home', 'person-tool')
+  raw.run(4, '2026-01-01', 'synthetic.jsonl', 4, 2, 'user', 'synthetic-user', 'qq', 'synthetic tombstone fixture', 1, 27, 1767225603000, '{}', '/sdcard/DSHA/生活/数据/home', 'person-user')
   db.prepare('INSERT INTO raw_fts(rowid,text) VALUES(?,?)').run(1, 'synthetic raw fts')
   db.prepare('INSERT INTO raw_vectors(raw_id,dim,vec,model,updated_at) VALUES(?,?,?,?,?)')
     .run(1, 2, Buffer.from(new Float32Array([1, 0]).buffer), 'synthetic-model', 1767225600000)
@@ -145,4 +147,68 @@ test('schema v4 migration failure rolls back DDL and never marks version 5', () 
   } finally {
     rmSync(fixture.dir, { recursive: true, force: true })
   }
+})
+
+
+test('schema migration rolls back when a pre-existing migration index has wrong columns', () => {
+  const fixture = makeSchema4Fixture()
+  try {
+    const inject = new DatabaseSync(fixture.file)
+    inject.exec('CREATE INDEX idx_mem_scope_key ON memories(id)')
+    inject.close()
+    assert.throws(() => openDb(fixture.dir), /index idx_mem_scope_key expected/)
+    const after = new DatabaseSync(fixture.file, { readOnly: true })
+    assert.equal(after.prepare("SELECT v FROM meta WHERE k='schema_version'").get().v, '4')
+    assert.equal(tableExists(after, 'episode_rewrite_snapshots'), false)
+    assert.equal(indexExists(after, 'idx_mem_valid'), false)
+    assert.equal(after.prepare('PRAGMA integrity_check').get().integrity_check, 'ok')
+    after.close()
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }) }
+})
+
+test('schema migration rejects a database version newer than this code and rolls back DDL', () => {
+  const fixture = makeSchema4Fixture()
+  try {
+    const inject = new DatabaseSync(fixture.file)
+    inject.prepare("UPDATE meta SET v='6' WHERE k='schema_version'").run()
+    inject.close()
+    assert.throws(() => openDb(fixture.dir), /E_SCHEMA_NEWER_THAN_CODE/)
+    const after = new DatabaseSync(fixture.file, { readOnly: true })
+    assert.equal(after.prepare("SELECT v FROM meta WHERE k='schema_version'").get().v, '6')
+    assert.equal(tableExists(after, 'episode_rewrite_snapshots'), false)
+    assert.equal(after.prepare('PRAGMA integrity_check').get().integrity_check, 'ok')
+    after.close()
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }) }
+})
+
+test('schema migration rejects an invalid version marker and rolls back DDL', () => {
+  const fixture = makeSchema4Fixture()
+  try {
+    const inject = new DatabaseSync(fixture.file)
+    inject.prepare("UPDATE meta SET v='not-a-version' WHERE k='schema_version'").run()
+    inject.close()
+    assert.throws(() => openDb(fixture.dir), /E_SCHEMA_VERSION_INVALID/)
+    const after = new DatabaseSync(fixture.file, { readOnly: true })
+    assert.equal(after.prepare("SELECT v FROM meta WHERE k='schema_version'").get().v, 'not-a-version')
+    assert.equal(tableExists(after, 'episode_rewrite_snapshots'), false)
+    assert.equal(after.prepare('PRAGMA integrity_check').get().integrity_check, 'ok')
+    after.close()
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }) }
+})
+
+test('schema migration rejects an incomplete snapshot table and rolls back other DDL', () => {
+  const fixture = makeSchema4Fixture()
+  try {
+    const inject = new DatabaseSync(fixture.file)
+    inject.exec('CREATE TABLE episode_rewrite_snapshots(id INTEGER PRIMARY KEY)')
+    inject.close()
+    assert.throws(() => openDb(fixture.dir), /episode_rewrite_snapshots missing/)
+    const after = new DatabaseSync(fixture.file, { readOnly: true })
+    assert.equal(after.prepare("SELECT v FROM meta WHERE k='schema_version'").get().v, '4')
+    assert.equal(after.prepare("SELECT count(*) AS n FROM pragma_table_info('episode_rewrite_snapshots')").get().n, 1)
+    assert.equal(indexExists(after, 'idx_mem_scope_key'), false)
+    assert.equal(indexExists(after, 'idx_mem_valid'), false)
+    assert.equal(after.prepare('PRAGMA integrity_check').get().integrity_check, 'ok')
+    after.close()
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }) }
 })
