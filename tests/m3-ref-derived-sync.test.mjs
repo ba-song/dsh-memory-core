@@ -47,7 +47,6 @@ test('deleteMemory removes revision and owned relation orphans',async()=>{
  assert.equal(scalar('SELECT count(*) c FROM memory_revisions WHERE memory_id=?',id).c,0)
  assert.equal(scalar('SELECT count(*) c FROM relations WHERE memory_id=?',id).c,0)
  assert.ok(scalar('SELECT id FROM memories WHERE id=?',other))
- db.close(); rmSync(dir,{recursive:true,force:true})
 })
 
 test('syncDerived refuses to discard existing relations without a validated builder',async()=>{
