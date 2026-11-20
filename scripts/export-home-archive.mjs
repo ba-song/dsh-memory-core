@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { DatabaseSync } from 'node:sqlite'
 import {
-  chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync,
+  chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync,
   renameSync, writeFileSync,
 } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -59,10 +59,28 @@ function emotionMapOf(db) {
   return out
 }
 
-function atomicWrite(file, content) {
+function atomicWrite(file, content, { preserveHistory = false } = {}) {
+  if (existsSync(file)) {
+    const current = readFileSync(file, 'utf8')
+    if (current === content) return false
+    if (preserveHistory) {
+      const firstBackup = `${file}.pre-permanent.bak`
+      const backup = existsSync(firstBackup)
+        ? `${file}.history-${Date.now()}-${randomUUID()}.bak`
+        : firstBackup
+      copyFileSync(file, backup)
+      try { chmodSync(backup, 0o600) } catch {}
+    }
+  }
   const temp = `${file}.tmp-${process.pid}-${randomUUID()}`
-  writeFileSync(temp, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
-  renameSync(temp, file)
+  try {
+    writeFileSync(temp, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+    renameSync(temp, file)
+    return true
+  } catch (error) {
+    try { unlinkSync(temp) } catch {}
+    throw error
+  }
 }
 
 function turnGroups(events, tombstones) {
@@ -179,9 +197,7 @@ export async function exportHomeArchive({ dbPath = DEFAULT_DB, outDir = DEFAULT_
     for (const [day, dayEvents] of [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b))) {
       dayEvents.sort((a, b) => Number(a.at ?? 0) - Number(b.at ?? 0) || Number(a.seq ?? 0) - Number(b.seq ?? 0) || Number(a.raw_id) - Number(b.raw_id))
       const file = join(archiveDir, `${day}.md`)
-      const backup = `${file}.pre-permanent.bak`
-      if (existsSync(file) && !existsSync(backup)) { copyFileSync(file, backup); chmodSync(backup, 0o600) }
-      atomicWrite(file, renderDay(day, dayEvents, journal.tombstones))
+      atomicWrite(file, renderDay(day, dayEvents, journal.tombstones), { preserveHistory: true })
       dayIndex.push({ day, events: dayEvents.length, tombstones: dayEvents.filter((event) => journal.tombstones.has(Number(event.raw_id)) || Number(event.tombstone) === 1).length, file: `${day}.md` })
     }
 
@@ -208,7 +224,7 @@ export async function exportHomeArchive({ dbPath = DEFAULT_DB, outDir = DEFAULT_
       '- 每日 Markdown 与 INDEX.json 是可重建的派生视图。',
       '- 已撤回消息保留原正文，并在可见档案中标注“已撤回”。',
       '- 补齐脚本以只读方式访问 SQLite；不会修改数据库，也不依赖 raw 文件目录。',
-      '- 首次重建已有 Markdown 时，会保留一份 `.pre-permanent.bak` 备份。',
+      '- 每次替换已有每日 Markdown 前都会保留历史版本：首次为 `.pre-permanent.bak`，后续为唯一 `.history-*.bak`。',
       '- 时区固定为 Asia/Shanghai。',
       '',
       `最近生成：${new Date(now).toISOString()}`,

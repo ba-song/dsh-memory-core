@@ -230,6 +230,39 @@ test('raw_id idempotency is global across date files and invalidates after exter
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
+test('daily markdown replacement preserves each prior version', async () => {
+  const dir = mk('markdown-history')
+  const { db, file: dbPath } = openDb(dir)
+  const archiveDir = join(dir, 'permanent')
+  const raw = new RawArchive({ db, dir: join(dir, 'raw'), cwdPrefixes: [HOME], log: { warn() {}, info() {} } })
+  const at = Date.now()
+  const day = dayOf(at)
+  const file = join(archiveDir, day + '.md')
+  try {
+    mkdirSync(archiveDir, { recursive: true })
+    writeFileSync(file, '# 人工保留的初始历史\n')
+    raw.onEvent(session('markdown-history-session', HOME), event('user/message', 1, at, {
+      message: { source: { kind: 'user' } }, content: [{ type: 'text', text: '第一条永久记录' }],
+    }))
+    await exportHomeArchive({ dbPath, outDir: archiveDir, homeCwd: HOME, now: at + 1000 })
+    assert.match(readFileSync(file + '.pre-permanent.bak', 'utf8'), /人工保留的初始历史/)
+    writeFileSync(file, readFileSync(file, 'utf8') + '\n人工补充的第二版说明\n')
+    raw.onEvent(session('markdown-history-session', HOME), event('user/message', 2, at + 2000, {
+      message: { source: { kind: 'user' } }, content: [{ type: 'text', text: '第二条永久记录' }],
+    }))
+    await exportHomeArchive({ dbPath, outDir: archiveDir, homeCwd: HOME, now: at + 3000 })
+    const backups = readdirSync(archiveDir).filter((name) => name.includes('.history-') && name.endsWith('.bak'))
+    assert.equal(backups.length, 1)
+    assert.match(readFileSync(join(archiveDir, backups[0]), 'utf8'), /人工补充的第二版说明/)
+    const current = readFileSync(file, 'utf8')
+    assert.match(current, /第一条永久记录/)
+    assert.match(current, /第二条永久记录/)
+  } finally {
+    try { db.close() } catch {}
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('export repairs missing journal rows from read-only DB and does not depend on raw files', async () => {
   const dir = mk('export')
   const { db, file: dbPath } = openDb(dir)
