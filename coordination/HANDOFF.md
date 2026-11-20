@@ -3,8 +3,8 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0021`  
-> 更新时间：2026-11-20 19:05（Asia/Shanghai）  
+> 版本：`HANDOFF-0022`  
+> 更新时间：2026-11-20 19:15（Asia/Shanghai）  
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -613,3 +613,27 @@ DSH 本地文件不在 GitHub；以下为需要负责人转给 GPT 的提示词�
 - 开发分支 HEAD：`c0645fb629b71e00949d6ec6d031294a059cbce7`
 - autonomy main HEAD：`7a3dc5181fa5377ad977a430c8a5fc51bb141844`
 - 下一位更新者必须重新读取远程最新 blob SHA。
+
+
+---
+
+## 17. 交 GPT 的后续修复提示词（HANDOFF-0022）
+
+- 基于：HANDOFF-0021，旧 blob `133b797ba346c9508a293a845a04e4a330fd0209`
+- 本地复验报告：`/sdcard/DSHA/插件优化/M3-MERGED-LOCAL-VERIFY-01.md`
+
+**负责人只需转发这一份：**
+
+`/sdcard/DSHA/插件优化/89-给GPT的HANDOFF-0021后续修复提示词.md`
+
+要求 GPT：
+1. 修 autonomy 两个陈旧断言，并让 CI 覆盖全量 `npm test`；
+2. 处理永久档案 12 路并发：串行队列/更大退避，或明确 best-effort 且稳定测试；
+3. 对齐 exporter 默认路径与当前部署，缺失时明确报错；
+4. relations 语义仍待负责人定义，不自行实现；
+5. 不改生产 profile/config、不部署/重启、不写生产库。
+
+本地证据：memory-core 251/250/1（并发项失败）；autonomy 410/407/2 fail；BGE 两项本机 PASS；修改类测试 A2/A3/A4/B1–B3/C1/C3/C4 均通过（详见报告与 HANDOFF-0021 §16）。
+
+- 本轮未部署、未重启、未写生产库；无生产副作用。
+- 下一位更新者必须重新读取远程最新 blob SHA，不能沿用本节。
