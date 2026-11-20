@@ -2,9 +2,8 @@
 
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
-> 版本：`HANDOFF-0045`
-> 更新时间：2026-11-20（Asia/Shanghai）
-> 更新者：GPT
+> 版本：`HANDOFF-0046`
+> 更新时间：2026-11-20 23:12（Asia/Shanghai）
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -2847,3 +2846,47 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - HANDOFF：`coordination/HANDOFF.md`，当前 HANDOFF-0045。
 - 完整报告：`coordination/REPORT.md`，当前 REPORT-0002。
 - 本轮由于 GitHub connector 的文件更新接口不提供 tree SHA，REPORT 与 HANDOFF 分两次顺序提交；HANDOFF-0045 明确引用已提交的 REPORT-0002 commit/blob。后续继续按更新前重新读取最新 Blob SHA、SHA 保护和并发冲突重读合并，不覆盖他人更新。
+
+
+---
+
+## 44. Persona 本地核对与 Memory 情绪数据流（HANDOFF-0046）
+
+> 完整报告：`coordination/REPORT.md`（REPORT-0003）
+> 本轮按新协议：HANDOFF 只留摘要；完整报告覆盖 REPORT.md；本地只生成提示词。
+> 只读；未改 Persona/Memory 源码、DB、profile/config；未启动 staging；未部署/重启。
+
+### 44.1 Persona 本地版本
+- 路径：`/root/.dsh/plugin-src/dsh-persona-core`；package `dsh-persona-core@0.2.0`。
+- 无 `.git`；按文件级证据：本地 71 个文件与 GitHub `a84c7badd1e6c971a66b6c39dd4f7ab795df4b90` **71/71 SHA256 完全一致**。
+- 同步 manifest：71 文件/0.2.0，`.last-sync` 2026-11-20 22:01:08 CST。
+- 不能声称 git 干净（无 Git）；只能声称文件哈希一致。
+
+### 44.2 Memory 情绪调用链（源码+只读计数）
+- `lib/ingest/archive.js:244 snapshotEmotion`，触发于 `:494 assistant/message`；写 `raw_emotion_archive`（`:183`）。
+- 读取：`lib/inject/anchors.js:569 emotionAtTime`（persona.emotionAt 优先→emotionTimeline→本地 emotion_timeline）、`lib/inject/context-blocks.js:70-81`、`lib/archive/tools.js:105`。
+- 生产只读：`raw_emotion_archive` 1,957 行；episode 69 条；episode meta 含 emotion **0**；memory 遗留 emotion_timeline 10 行。
+- `addEpisode` meta 无 emotion（`lib/service.js:311`）；episode 不保存情绪。
+- 结论：**raw 级情绪快照已实现；memory/episode 级情绪关联未实现；情绪不参与召回，只用于上下文展示。**
+- 风险：只对 assistant 消息快照；24h 窗口可能把当前/较近情绪挂到旧消息；多情绪未落地（`composeEmotionView` 仍只选一个）。
+
+### 44.3 EI 计划确认
+- 保留 EI-0..EI-5，不删减；六基础+57 组合共 63 非空组合是参考维度，不是上限；衰减不删除原始对话/永久档案/历史记忆；情绪只影响表达/关注/反思。
+
+### 44.4 状态
+| 项 | 状态 |
+|---|---|
+| Persona 文件哈希与 a84c7ba | PASS（71/71） |
+| Persona Git HEAD | BLOCKED（无 .git） |
+| raw 情绪快照 | PASS（代码+1,957 行） |
+| episode 情绪关联 | FAIL/缺口（0 meta） |
+| 情绪召回信号 | FAIL/缺口（仅展示） |
+| 多情绪视图 | FAIL/缺口（单标签） |
+| end-to-end 运行时情绪 | NOT RUN |
+| P0 staging/生产写入 | NOT RUN/禁止 |
+
+### 44.5 交接
+- 版本：`HANDOFF-0046`
+- 基于旧 blob：`d86db7e96fbbc1e2dfeff2c128e135089a90d58f`
+- REPORT-0003：`coordination/REPORT.md`
+- 下一位更新者必须重新读取最新 blob SHA。
