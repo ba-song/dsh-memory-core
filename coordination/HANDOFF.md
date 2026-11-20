@@ -3,7 +3,7 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0007`  
+> 版本：`HANDOFF-0008`  
 > 更新时间：2026-11-20（Asia/Shanghai）  
 > 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
@@ -230,6 +230,10 @@ GitHub Actions #35结果225通过、0失败、2跳过；两个跳过项为 `p4-v
 - `27d0806fdeb788c2f2e9dae204bfeb8ac402602c`：永久档案home cwd固定为`/sdcard/DSHA/生活/数据/home`，阻止配置/CLI把范围改成group/email；新增回归测试；Actions #45成功（232 tests / 230 pass / 0 fail / 2 skipped）。
 - `c89bff441002441c375df67bc80a904659ca7add`：评测脚本独立检测Git HEAD和clean working tree，CLI SHA仅作额外交叉校验；正式人工标注评测拒绝无Git/dirty工作树；新增git fixture测试；Actions #46成功（233 tests / 231 pass / 0 fail / 2 skipped）。
 - `cd34c2f8a624021ccbf18b803b4030b16b82193b`：`graphCandidates()`的direct候选按memory_id稳定排序，hop/unknown-hop按共享实体数降序、memory_id升序稳定排序，避免无ORDER BY导致的RRF graph arm及前10个seed选择不确定；反向插入关联的回归测试；Actions #47成功（233 tests / 231 pass / 0 fail / 2 skipped）。
+- `7995f250a5562ad825378edd92d8ec62f21386a5`：离线评测生产DB保护增加文件系统`dev/ino`比对，拒绝生产DB硬链接别名；Actions #48成功（233 tests / 231 pass / 0 fail / 2 skipped）。
+- `dd381d53672eefd749b8abf9df795fdf1b7bab9e`：永久归档写入前检查整条目录祖先链，拒绝符号链接父目录；仅允许Android常见的精确`/sdcard`系统别名；追加前先校验，确保拒绝时不会先在外部目录创建文件。
+- `bc7a10be8acf2bd3c8e5393e09e22a2d295c72d4`：补导出器祖先路径符号链接测试；`8d5943443d4951046c9f3cf1ba421dee03d4decd`修正测试错误消息断言；Actions #51成功（234 tests / 232 pass / 0 fail / 2 skipped）。
+- Actions #50仅因测试断言使用了错误的错误消息正则失败，实际符号链接拒绝已触发；#51修正断言后通过。#49因后续push自动取消。
 - `fc5537b...`首次符号链接保护提交因多余右括号导致Actions #38失败；`2ecb329...`修正语法后Actions #39成功（230 tests / 228 pass / 0 fail / 2 skipped）。
 - Actions #40因GitHub Runner npm访问超时（ETIMEDOUT）未进入测试；#41暴露导出器测试夹具未初始化raw_meta，随后#42修复测试夹具并通过。#44因后续push被自动取消。
 - 保护范围是归档root、`_events`目录、journal文件及派生文件的最终路径组件；父目录链的真实路径/符号链接祖先尚未在DSHA上验证，不能声称已彻底解决所有路径别名风险。
@@ -303,9 +307,9 @@ GitHub Actions #35结果225通过、0失败、2跳过；两个跳过项为 `p4-v
 ## 12. GPT下一步执行顺序
 
 1. **继续多路召回融合与注入边界只读审查**；graph arm SQL无序问题已通过稳定排序修复，语义分数/门槛/融合权重未改变。除非发现明确缺陷并有回归测试，不改变生产排序策略。
-2. **继续home永久档案剩余验证**：审查多进程并发写入行为、异常恢复/半行；检查是否需要更严格的祖先目录canonical path约束。Asia/Shanghai时间逻辑已在`lib/adapter/timefmt.js`固定，但仍需DSHA本地核对实际文件时间与设备时区。
-3. **评测工具源码版本绑定已在CI层完成**：正式标注要求干净Git工作树，三方比对dataset/HEAD/CLI SHA。后续需要DSH在隔离worktree中用真实DSHA模型与离线DB快照运行，提交设备证据。
-4. DSH本地需验证Android/Termux/DSHA环境支持`O_NOFOLLOW`，并检查归档路径祖先目录是否存在symlink别名；当前CI只证明Ubuntu Runner。
+2. **继续home永久档案剩余验证**：审查多进程并发写入行为、异常恢复/半行；Asia/Shanghai时间逻辑已固定，仍需DSHA本地核对实际文件时间与设备时区。
+3. **评测工具源码版本绑定与DB路径保护已在CI层完成**：正式标注要求干净Git工作树，三方比对dataset/HEAD/CLI SHA；生产DB路径、symlink及hardlink别名均拒绝。后续需要DSH在隔离worktree中用真实DSHA模型与离线DB快照运行，提交设备证据。
+4. DSH本地需验证Android/Termux/DSHA环境支持`O_NOFOLLOW`，以及`/sdcard`是否为系统预期别名；当前CI只证明Ubuntu Runner，未证明设备真实文件系统行为。
 5. GPT侧能完成的工作先完成，再更新交接文件，避免过早要求DSH重复转发大段任务书。
 6. 之后由用户将交接文件链接交给DSH，要求DSH读取最新文件、按待DSH任务执行并更新同一文件。旧任务若内容仍完整且未完成，可引用本文件任务章节，不得擅自扩大范围。
 
@@ -322,15 +326,16 @@ DSH首次接入时：
 
 ## 14. 最新交接
 
-- 版本：`HANDOFF-0007`
+- 版本：`HANDOFF-0008`
 - 更新者：GPT
 - 时间：2026-11-20（Asia/Shanghai）
-- 基于旧文件blob SHA：`8cecd0517167cfa04ec95ade75bd0c981de28c45`
-- 本次变更：修复graph arm候选顺序不确定性，确保RRF graph通道和前10个hop seed可复现；记录CI证据并同步HEAD。
-- 开发分支HEAD：`cd34c2f8a624021ccbf18b803b4030b16b82193b`
-- 本次召回排序稳定性commit：`cd34c2f8a624021ccbf18b803b4030b16b82193b`
+- 基于旧文件blob SHA：`bd947b08130f8720dbb87e44285c364827c3da36`
+- 本次变更：离线评测生产DB硬链接别名防护；home归档路径祖先链符号链接防护（仅放行精确`/sdcard`系统别名）；更新CI证据和开发HEAD。
+- 开发分支HEAD：`8d5943443d4951046c9f3cf1ba421dee03d4decd`
 - Actions #47：https://github.com/ba-song/dsh-memory-core/actions/runs/44676880334（success，233 tests / 231 pass / 0 fail / 2 skipped）。
-- 之前评测源码检测commit：`c89bff441002441c375df67bc80a904659ca7add`，Actions #46成功。
+- Actions #48：https://github.com/ba-song/dsh-memory-core/actions/runs/44677099059（success，233 tests / 231 pass / 0 fail / 2 skipped）。
+- Actions #51：https://github.com/ba-song/dsh-memory-core/actions/runs/44677614819（success，234 tests / 232 pass / 0 fail / 2 skipped）。
+- Actions #50：https://github.com/ba-song/dsh-memory-core/actions/runs/44677488003（测试断言文本不匹配，实际拒绝逻辑触发；已由#51修正验证）。
 - 当前交接文件URL：https://github.com/ba-song/dsh-memory-core/blob/coordination/project-handoff/coordination/HANDOFF.md
-- 当前待办：M3-2A-REPORT-01、M3-REF-06仍待DSH；GPT继续审查home归档并发/祖先路径风险及注入边界；DSHA验证O_NOFOLLOW、真实路径链和正式离线评测仍待DSH。
+- 当前待办：M3-2A-REPORT-01、M3-REF-06仍待DSH；GPT继续审查home归档多进程并发/异常恢复；DSHA验证O_NOFOLLOW、`/sdcard`别名和设备路径链、正式离线评测仍待DSH。
 - 副作用：仅开发分支与交接分支GitHub提交；未修改生产环境、数据库、配置或部署。
