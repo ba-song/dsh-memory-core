@@ -3,8 +3,8 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0032`  
-> 更新时间：2026-11-20 20:00（Asia/Shanghai）  
+> 版本：`HANDOFF-0034`  
+> 更新时间：2026-11-20 20:12（Asia/Shanghai）  
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -1553,3 +1553,40 @@ HANDOFF-0032 要求独立仓库，但当前已连接 GitHub 工具集合没有�
 - 未写生产数据库、生产配置、真实记忆、人格或技能。
 - 未部署、未重启、未启用 M3-2B/永久双写/15 天调度。
 - 后续继续前必须重新读取 HANDOFF 全文和最新 Blob SHA；不得覆盖 DSH 或负责人并发更新。
+
+
+---
+
+## 31. P0 候选包本地证据（HANDOFF-0034）
+
+- 报告：`/sdcard/DSHA/插件优化/P0-CANDIDATE-LOCAL-VERIFY-01.md`
+- 候选：`/sdcard/DSHA/备份/候选/dsh-memory-core-732e3fa-20261120-194319.tar.gz`
+
+### 31.1 复核结果
+| 项 | 实际 |
+|---|---|
+| SHA-256 | `6d05b33d17f0bca92a9060c4614541e3b26cb0905dfdf0fb29cf7c7698b1ea21`（与 HANDOFF-0032 一致） |
+| 大小 | 423,468 bytes（一致） |
+| 归档 | 302 entries / 271 files / 31 dirs |
+| 路径安全 | 绝对路径/`..`：0 |
+| 污染 | `node_modules`/`.db`/`.env`/凭据模式：0 |
+| 关键文件 | package.json、package-lock.json、cordis.patch.yml、scripts/export-home-archive.mjs、lib/permanent/home-archive.js 齐全 |
+| 相对导入 | 257 个 JS/MJS，701 个相对 import，**0 unresolved** |
+| 隔离测试 | 解包目录 `npm test` → 251/251 pass，exit 0（使用现有 node_modules 软链；非部署） |
+| Node/SQLite | Node v24.19.0；npm 11.17.0；node:sqlite SQLite 3.53.3 可用 |
+
+### 31.2 部署入口（只读）
+- 生产加载：`/root/.dsh/profiles/web/package.json:17` → `link:/root/.dsh/plugin-src/dsh-memory-core`；
+- profile patch：`/root/.dsh/profiles/web/cordis.patch.yml:41`；
+- 插件管理：`/root/dsh-bin/dsha-plugin` → `/root/.dsh/plugin-manager.py import <包>`；
+- `sync-from-ubuntu.sh` 只同步到 SD 备份，不是部署脚本；
+- 未发现 memory-core 专用部署脚本。
+
+### 31.3 未完成/阻塞
+- **未部署**、未覆盖生产插件、未重启；
+- 未连接生产 DB、未使用真实 archiveRoot、未运行生产导出；
+- 候选包不含 `node_modules`（仅 `onnxruntime-node` 等外部依赖）；部署前需在 staging 执行 `npm ci` 并验证依赖完整性；
+- 未执行真实部署/启动/回归；生产仍 `bb77de2`/schema 4。
+
+### 31.4 结论
+候选包实物、源码完整性、相对导入、隔离测试均 PASS；**仍不可直接部署**，缺 staging 依赖安装与部署授权。报告和 tar 清单证据在 `/sdcard/DSHA/插件优化/P0-CANDIDATE-LOCAL-VERIFY-01.md`、`/tmp/p0-tar-list.txt`（本地临时）。
