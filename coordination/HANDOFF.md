@@ -3,7 +3,7 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0014`  
+> 版本：`HANDOFF-0015`  
 > 更新时间：2026-11-20（Asia/Shanghai）  
 > 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
@@ -326,20 +326,17 @@ DSH首次接入时：
 
 ## 14. 最新交接
 
-- 版本：`HANDOFF-0014`
+- 版本：`HANDOFF-0015`
 - 更新者：GPT
 - 时间：2026-11-20（Asia/Shanghai）
-- 基于旧文件blob SHA：`f3dbb2ca28a587df670c5960ff8fbc9e608efe1d`
-- 开发分支HEAD：`e57722c8711870424e90042428fe64fafd5e008f`
-- Actions #61：https://github.com/ba-song/dsh-memory-core/actions/runs/44679770673（success，238 tests / 236 pass / 0 fail / 2 skipped）。
-- 派生文件写入器安全加固：读取既有Markdown/INDEX/README时先lstat并通过O_NOFOLLOW打开，比较路径与fd的dev/ino；拒绝符号链接和非普通文件。备份文件采用wx排他创建，遇到已有路径则使用唯一历史备份名，避免跟随备份目标符号链接。
-- 修复备份错误处理边界：只有读取源派生文件时的ENOENT表示文件不存在；备份创建失败不再被误当作源文件不存在而吞掉，备份失败会终止本次替换，保留旧文件。
-- Actions #58为新增尾部损坏测试fixture缺少raw_meta schema而失败；#59已修复fixture并通过（238 tests含该测试）。该失败不涉及生产逻辑。
-- Actions #57：12个Node子进程并发追加测试成功，12条事件全部落盘、journal解析错误0。
-- Actions #56：锁路径符号链接拒绝、锁释放dev/ino身份校验、损坏锁恢复等测试通过。
-- Actions #54：导出期间journal变化指纹检测通过。导出视图乐观一致性检测不是跨DB/JSONL原子快照。
-- 尾部半行策略：不截断/覆盖已有不完整字节；后续append先补换行；导出将损坏行放入journalErrors并使consistent=false，但仍可导出有效记录。原始JSONL保持不变。
-- 当前交接文件URL：https://github.com/ba-song/dsh-memory-core/blob/coordination/project-handoff/coordination/HANDOFF.md
-- M3-2A-REPORT-01、M3-REF-06仍待DSH本地报告。GPT继续检查范围：导出文件替换在Android/Termux文件系统上的原子性与权限语义、路径祖先TOCTOU残余；然后整理完整自包含DSH同步提示词。
-- DSHA仍需实机验证：O_NOFOLLOW、rename语义、`/sdcard`别名、mtime/ctime精度、并发进程行为和模型依赖评测。
-- 副作用：仅开发分支和交接分支GitHub提交；没有生产数据库/源码/profile/config改动、部署或重启。
+- 基于旧文件blob SHA：`89230edf52c93a152fab1fe58d214fbb3d627a94`
+- 开发分支HEAD：`4b4b5f17a123533cceef7a0cd05f3a08ff5f2004`
+- Actions #62：https://github.com/ba-song/dsh-memory-core/actions/runs/44680017982（success，238 tests / 236 pass / 0 fail / 2 skipped）。
+- 派生文件安全写入进一步收口：读取现有派生文件时以O_NOFOLLOW打开并比较dev/ino；权限收紧改用已验证fd上的fchmodSync，不再在关闭fd后通过路径chmod文件，降低路径被替换时误chmod外部目标的风险。备份和临时文件以`wx`及0600创建，不再通过路径chmod备份文件。
+- Actions #61同样成功（238 / 236 / 0 / 2），验证派生文件O_NOFOLLOW读取和排他备份创建基础实现；#62验证fd权限收紧调整后仍全套通过。
+- 当前已验证的自动化：锁符号链接拒绝、锁文件身份保护、损坏锁保守回收、12进程并发追加、导出期journal变化检测、尾部半行保留和错误报告、派生文件历史备份、symlink输出边界。
+- 已知限制：目录祖先检查与后续mkdir/open/rename之间仍有平台级TOCTOU窗口；Node当前实现未使用openat/dirfd相对路径操作。DSHA Android共享存储通常由单用户应用操作，但外部进程可访问共享存储，因此不能宣称完全消除此类竞态。需在本机确认共享存储权限和实际威胁模型。
+- CI仍有2项跳过：`p4-vector-conflict-corpus`与`p4-ingest-pipeline`，日志明确因GitHub runner未安装DSHA BGE模型；真实embedding检索须DSHA隔离环境验证。
+- M3-2A-REPORT-01、M3-REF-06仍待DSH本地报告。GPT下一步继续审查目录TOCTOU可缓解措施、最终核对开发分支与交接状态，再提供完整DSH同步提示词。
+- 交接文件URL：https://github.com/ba-song/dsh-memory-core/blob/coordination/project-handoff/coordination/HANDOFF.md
+- 副作用：仅开发分支与交接分支GitHub提交；无生产数据库/配置/源码改动、无部署或重启。
