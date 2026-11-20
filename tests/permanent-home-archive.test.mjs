@@ -55,6 +55,42 @@ test('permanent archive refuses symlink roots, _events directories and journal f
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
+
+test('exporter refuses symlinked output root, _events directory and derived INDEX file', async () => {
+  const dir = mk('export-symlink-boundary')
+  const { db, file: dbPath } = openDb(dir)
+  db.close()
+  const outside = join(dir, 'outside')
+  const rootLink = join(dir, 'root-link')
+  const eventsLink = join(dir, 'events-link')
+  const indexLink = join(dir, 'index-link')
+  mkdirSync(outside, { recursive: true })
+  const target = join(outside, 'target.txt')
+  writeFileSync(target, 'must remain unchanged')
+  try {
+    symlinkSync(outside, rootLink, 'dir')
+    await assert.rejects(
+      () => exportHomeArchive({ dbPath, outDir: rootLink, homeCwd: HOME }),
+      /must not be a symbolic link/,
+    )
+
+    mkdirSync(eventsLink, { recursive: true })
+    symlinkSync(outside, join(eventsLink, '_events'), 'dir')
+    await assert.rejects(
+      () => exportHomeArchive({ dbPath, outDir: eventsLink, homeCwd: HOME }),
+      /must not be a symbolic link/,
+    )
+
+    mkdirSync(join(indexLink, '_events'), { recursive: true })
+    symlinkSync(target, join(indexLink, 'INDEX.json'), 'file')
+    await assert.rejects(
+      () => exportHomeArchive({ dbPath, outDir: indexLink, homeCwd: HOME }),
+      /must not be a symbolic link/,
+    )
+    assert.equal(readFileSync(target, 'utf8'), 'must remain unchanged')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
 test('home raw rows are best-effort dual-written as append-only JSONL events', () => {
   const dir = mk('dual')
   const { db } = openDb(dir)
