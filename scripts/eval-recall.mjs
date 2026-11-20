@@ -8,7 +8,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { openDb } from '../lib/store/db.js'
+import { DatabaseSync } from 'node:sqlite'
 import { loadVectors } from '../lib/store/memories.js'
 import { recall } from '../lib/recall/recall.js'
 import { loadEmbed, embedAvailable } from '../lib/embed/onnx.mjs'
@@ -18,7 +18,8 @@ const getArg = (n, d) => { const i = args.indexOf(n); return i >= 0 && args[i + 
 const dataDir = getArg('--data-dir', process.env.DY_MEMORY_DIR || '/sdcard/DSHA/记忆/数据')
 const limit = Math.max(1, Number(getArg('--limit', 30)) || 30)
 const asJson = args.includes('--json')
-const { db } = openDb(dataDir)
+const db = new DatabaseSync(join(dataDir, 'memory.db'), { readOnly: true })
+db.exec('PRAGMA query_only=ON')
 await loadEmbed('/opt/qqai/models/bge-small-zh')
 const vectors = loadVectors(db)
 
@@ -42,7 +43,7 @@ const details = []
 for (const q of questions) {
   if (!q?.query || !Array.isArray(q.expected) || !q.expected.length) continue
   let hits = []
-  try { hits = await recall(db, q.query, { vectors, limit: 8 }) } catch {}
+  try { hits = await recall(db, q.query, { vectors, limit: 8, trackAccess: false }) } catch {}
   const ids = hits.map((h) => Number(h.id))
   const rank = ids.findIndex((id) => q.expected.map(Number).includes(id))
   evaluated++
@@ -57,3 +58,6 @@ else {
   console.log(`evaluated=${out.evaluated} recall@1=${out.recall1.toFixed(3)} recall@3=${out.recall3.toFixed(3)} MRR=${out.mrr.toFixed(3)}`)
   for (const d of details.filter((x) => x.rank < 0).slice(0, 10)) console.log(`  MISS ${d.query}  expected=${d.expected}  got=${d.got}`)
 }
+
+
+db.close()
