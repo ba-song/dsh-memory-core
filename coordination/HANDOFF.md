@@ -3,9 +3,9 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0023`  
-> 更新时间：2026-11-20 18:38（Asia/Shanghai）  
-> 更新者：GPT  
+> 版本：`HANDOFF-0024`  
+> 更新时间：2026-11-20 19:25（Asia/Shanghai）  
+> 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
 ---
@@ -745,3 +745,57 @@ DSH 本地文件不在 GitHub；以下为需要负责人转给 GPT 的提示词�
 - memory-core HEAD：`732e3fa3381ed4b3b4242e0e6fd6e411b35ab972`
 - autonomy HEAD：`6c4a4753b4737060211955b1f022cab2f1d39521`
 - 后续更新者必须重新读取 HANDOFF.md 全文及最新 Blob SHA；不得沿用本节 SHA。
+
+
+---
+
+## 19. DSH 本地复验（HANDOFF-0024）
+
+### 19.1 范围与边界
+- 执行者：DSH（DSHA Android/proot）。
+- 依据：HANDOFF-0023（核对旧 blob `9940393b…`，分支 HEAD `dc74bcd6…`）。
+- 只做隔离 clone/临时库/临时目录测试 + 生产只读核对；未部署、未重启、未改 profile/config、未写生产库。
+- 报告：`/sdcard/DSHA/插件优化/M3-MERGED-LOCAL-VERIFY-02.md`
+- 日志：`/tmp/m3v2-mem.log`、`/tmp/m3v2-au2.log`、`/tmp/m3v2-conc-rounds.json`、`/tmp/au-exp3.json`
+
+### 19.2 版本
+- memory-core HEAD：`732e3fa3381ed4b3b4242e0e6fd6e411b35ab972`
+- autonomy HEAD：`6c4a4753b4737060211955b1f022cab2f1d39521`
+- 生产库：schema 4、memories 216、relations 0
+- 生产插件：`/root/.dsh/plugin-src/dsh-memory-core` 仍无 `scripts/export-home-archive.mjs`、无 `lib/permanent/`
+
+### 19.3 测试结果（DSHA 实机）
+| 项 | 结果 |
+|---|---|
+| memory-core 全量 | **251 / 251 pass / 0 fail / 0 skip / exit 0** |
+| BGE 两项 CI skipped | 本机真实模型 **PASS** |
+| archive-tombstone-context / raw-tombstone-cwd / m3-ref-derived-sync | 2/2、1/1、5/5 PASS |
+| m3-2b-snapshots / tool-permissions | 4/4、1/1 PASS |
+| 12 路并发 10 轮 | **PASS（best-effort）**：appended 4–6，ELOCKED 6–8，其他失败 0；journal 行=appended，无解析错误/重复 raw_id |
+| raw 优先 + 导出补齐 | PASS：临时 DB 1 行、journal 空，导出后 `repaired:1` |
+| autonomy 全量 | **411 / 411 pass / 0 fail / 0 skip / exit 0**（需 sibling `dsh-memory-core`，设置服务 integration 实际执行） |
+| exporter 真实 Node+tar | PASS（隔离）：exportExit=0、tarExit=0、backupBytes=1484、sha256=`5772f82c…`、中文路径正常 |
+| 同一天二次导出 | `E_BACKUP_EXISTS`（不覆盖） |
+| exporter 缺失/symlink | `E_EXPORT_SCRIPT_NOT_FOUND` / `E_EXPORT_SCRIPT_INVALID` |
+| 生产默认 exporter 路径 | **FAIL/阻塞**：当前部署不存在，部署前必须对齐 |
+| 生产部署/开关 | **NOT RUN**（未授权） |
+
+### 19.4 结论
+- HANDOFF-0021 的两个 autonomy 陈旧断言已消失；
+- memory-core 原有 1 个并发失败已被“明确 best-effort + 稳定测试”替代，DSHA 10 轮无损坏/重复；
+- 永久档案仍为 best-effort：ELOCKED 会产生漏写，靠 15 天导出补齐；
+- 生产部署仍缺 exporter，且 M3-2B/schema 5 未部署；本轮未改生产。
+
+### 19.5 交 GPT
+1. 部署前对齐 exporter 真实路径（插件目录包含脚本或配置正确绝对路径）；
+2. 永久档案并发策略保持 best-effort；若要求更高成功率，再考虑串行队列；
+3. relations 语义仍未定义，不实现 relationBuilder；
+4. M3-2B/自动调度不得在生产开启，等负责人单独授权。
+
+### 19.6 交接信息
+- 版本：`HANDOFF-0024`
+- 更新者：DSH
+- 基于旧 blob：`9940393baef9067cf1ce1101e75a2b0ac8437f2b`
+- 开发 HEAD：`732e3fa3381ed4b3b4242e0e6fd6e411b35ab972`
+- autonomy HEAD：`6c4a4753b4737060211955b1f022cab2f1d39521`
+- 下一位更新者必须重新读取远程最新 blob SHA。
