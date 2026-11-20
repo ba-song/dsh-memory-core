@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { evaluateRankedResults, explainRrf } from '../lib/recall/eval-metrics.js'
+import { evaluateRankedResults, explainRrf, compareRankStability } from '../lib/recall/eval-metrics.js'
 
 test('human graded metrics distinguish unlabelled queries from zero-recall labels', () => {
   const unlabelled = evaluateRankedResults([1, 2, 3], [])
@@ -17,7 +17,7 @@ test('human graded metrics distinguish unlabelled queries from zero-recall label
   assert.equal(labelled.precision[3], 1 / 3)
   assert.equal(labelled.mrr, 1 / 2)
   assert.ok(labelled.ndcgAt5 > 0 && labelled.ndcgAt5 <= 1)
-  assert.equal(labelled.evidenceCoverage, 0)
+  assert.equal(labelled.evidenceCoverage, 0)\n\n  const forbidden = evaluateRankedResults([7, 8], [{ memoryId: 7, grade: 1 }], { forbiddenMemoryIds: [7] })\n  assert.deepEqual(forbidden.forbiddenReturnedIds, [7])
 })
 
 test('RRF explanation exposes per-arm rank and contribution without mutating inputs', () => {
@@ -28,4 +28,10 @@ test('RRF explanation exposes per-arm rank and contribution without mutating inp
   assert.deepEqual(rows[0].ranks, { keyword: 1, semantic: 2, graph: 1 })
   assert.ok(rows[0].total > rows[1].total)
   assert.equal(JSON.stringify(arms), before)
+})
+
+test('rank stability reports overlap and exact ordering independently', () => {
+  const result = compareRankStability([1, 2, 3], [2, 1, 4], { k: 3 })
+  assert.equal(result.jaccard, 0.5)
+  assert.equal(result.exactTopK, false)
 })

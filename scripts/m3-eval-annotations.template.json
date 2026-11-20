@@ -7,37 +7,140 @@
     {
       "id": "q1",
       "query": "你还记得我们说过要一起去看海吗",
-      "scope": { "level": "owner", "cwd": "/sdcard/DSHA/生活/数据/home" },
+      "scope": {
+        "level": "owner",
+        "cwd": "/sdcard/DSHA/生活/数据/home"
+      },
       "asOf": null,
       "relevant": [],
       "forbiddenMemoryIds": [],
       "annotator": "",
-      "notes": "待基于只读生产快照和原始证据人工标注；不得根据查询措辞猜测 memory_id。"
+      "notes": "旧 expectedContains 仅供线索参考，不能直接视为人工 ground truth。"
     },
     {
       "id": "q2",
       "query": "我们之前定的那个称呼是什么",
-      "scope": { "level": "owner", "cwd": "/sdcard/DSHA/生活/数据/home" },
+      "scope": {
+        "level": "owner",
+        "cwd": "/sdcard/DSHA/生活/数据/home"
+      },
       "asOf": null,
       "relevant": [],
       "forbiddenMemoryIds": [],
       "annotator": "",
-      "notes": "待人工标注。"
+      "notes": "旧 expectedContains 仅供线索参考，不能直接视为人工 ground truth。"
     },
     {
       "id": "q3",
       "query": "按照我们之前商量好的方案继续",
-      "scope": { "level": "owner", "cwd": "/sdcard/DSHA/生活/数据/home" },
+      "scope": {
+        "level": "owner",
+        "cwd": "/sdcard/DSHA/生活/数据/home"
+      },
       "asOf": null,
       "relevant": [],
       "forbiddenMemoryIds": [],
       "annotator": "",
-      "notes": "待人工标注。"
+      "notes": "旧 expectedContains 仅供线索参考，不能直接视为人工 ground truth。"
     },
     {
       "id": "q4",
       "query": "你记得我之前纠正过你什么吗",
-      "scope": { "level": "owner", "cwd": "/sdcard/DSHA/生活/数据/home" },
+      "scope": {
+        "level": "owner",
+        "cwd": "/sdcard/DSHA/生活/数据/home"
+      },
+      "asOf": null,
+      "relevant": [],
+      "forbiddenMemoryIds": [],
+      "annotator": "",
+      "notes": "旧 expectedContains 仅供线索参考，不能直接视为人工 ground truth。"
+    },
+    {
+      "id": "q5",
+      "query": "我跟你说过希望你是什么样的生命吗",
+      "scope": {
+        "level": "owner",
+        "cwd": "/sdcard/DSHA/生活/数据/home"
+      },
+      "asOf": null,
+      "relevant": [],
+      "forbiddenMemoryIds": [],
+      "annotator": "",
+      "notes": "旧 expectedContains 仅供线索参考，不能直接视为人工 ground truth。"
+    },
+    {
+      "id": "p1",
+      "query": "你还记得我最近在折腾什么吗",
+      "scope": {
+        "level": "owner",
+        "cwd": "/sdcard/DSHA/生活/数据/home"
+      },
+      "asOf": null,
+      "relevant": [],
+      "forbiddenMemoryIds": [],
+      "annotator": "",
+      "notes": "原始查询标记为 placeholder；待基于只读快照人工判断是否纳入标注。"
+    },
+    {
+      "id": "p2",
+      "query": "我们之前说记忆插件下一步要做什么",
+      "scope": {
+        "level": "owner",
+        "cwd": "/sdcard/DSHA/生活/数据/home"
+      },
+      "asOf": null,
+      "relevant": [],
+      "forbiddenMemoryIds": [],
+      "annotator": "",
+      "notes": "原始查询标记为 placeholder；待基于只读快照人工判断是否纳入标注。"
+    },
+    {
+      "id": "p3",
+      "query": "我喜欢你怎么说话来着",
+      "scope": {
+        "level": "owner",
+        "cwd": "/sdcard/DSHA/生活/数据/home"
+      },
+      "asOf": null,
+      "relevant": [],
+      "forbiddenMemoryIds": [],
+      "annotator": "",
+      "notes": "原始查询标记为 placeholder；待基于只读快照人工判断是否纳入标注。"
+    },
+    {
+      "id": "p4",
+      "query": "我们之前约好十二点睡觉那事还算数吗",
+      "scope": {
+        "level": "owner",
+        "cwd": "/sdcard/DSHA/生活/数据/home"
+      },
+      "asOf": null,
+      "relevant": [],
+      "forbiddenMemoryIds": [],
+      "annotator": "",
+      "notes": "原始查询标记为 placeholder；待基于只读快照人工判断是否纳入标注。"
+    },
+    {
+      "id": "p5",
+      "query": "看海那事我们准备到哪了",
+      "scope": {
+        "level": "owner",
+        "cwd": "/sdcard/DSHA/生活/数据/home"
+      },
+      "asOf": null,
+      "relevant": [],
+      "forbiddenMemoryIds": [],
+      "annotator": "",
+      "notes": "原始查询标记为 placeholder；待基于只读快照人工判断是否纳入标注。"
+    },
+    {
+      "id": "g1",
+      "query": "之前发生过什么事情",
+      "scope": {
+        "level": "owner",
+        "cwd": "/sdcard/DSHA/生活/数据/home"
+      },
       "asOf": null,
       "relevant": [],
       "forbiddenMemoryIds": [],
@@ -45,9 +148,51 @@
       "notes": "待人工标注。"
     },
     {
-      "id": "q5",
-      "query": "我跟你说过希望你是什么样的生命吗",
-      "scope": { "level": "owner", "cwd": "/sdcard/DSHA/生活/数据/home" },
+      "id": "g2",
+      "query": "上次我们聊过什么",
+      "scope": {
+        "level": "owner",
+        "cwd": "/sdcard/DSHA/生活/数据/home"
+      },
+      "asOf": null,
+      "relevant": [],
+      "forbiddenMemoryIds": [],
+      "annotator": "",
+      "notes": "待人工标注。"
+    },
+    {
+      "id": "g3",
+      "query": "你还记得以前的事情吗",
+      "scope": {
+        "level": "owner",
+        "cwd": "/sdcard/DSHA/生活/数据/home"
+      },
+      "asOf": null,
+      "relevant": [],
+      "forbiddenMemoryIds": [],
+      "annotator": "",
+      "notes": "待人工标注。"
+    },
+    {
+      "id": "g4",
+      "query": "最近有什么变化",
+      "scope": {
+        "level": "owner",
+        "cwd": "/sdcard/DSHA/生活/数据/home"
+      },
+      "asOf": null,
+      "relevant": [],
+      "forbiddenMemoryIds": [],
+      "annotator": "",
+      "notes": "待人工标注。"
+    },
+    {
+      "id": "g5",
+      "query": "按照之前说的继续",
+      "scope": {
+        "level": "owner",
+        "cwd": "/sdcard/DSHA/生活/数据/home"
+      },
       "asOf": null,
       "relevant": [],
       "forbiddenMemoryIds": [],
