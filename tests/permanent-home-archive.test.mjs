@@ -146,6 +146,13 @@ test('stale lock recovery checks owner process before deleting an old lock', () 
       () => appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: { ...item, raw_id: 992 } }),
       (error) => error?.code === 'ELOCKED',
     )
+    const recoveryDir = join(eventsDir, '.home-archive.recovery')
+    mkdirSync(recoveryDir, { mode: 0o700 })
+    assert.throws(
+      () => appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: { ...item, raw_id: 993 } }),
+      (error) => error?.code === 'ELOCKED',
+    )
+    rmSync(recoveryDir, { recursive: true, force: true })
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
