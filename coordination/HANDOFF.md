@@ -3081,3 +3081,36 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - 基于旧 blob：`7e3c573d463344f30f2b424e3c13d12abf0c5c07`
 - REPORT-0007：`coordination/REPORT.md`
 - 下一位更新者必须重新读取最新 blob SHA。
+
+---
+
+## 49. EI-0 有条件 PASS；EI-1 纯函数首轮实现（HANDOFF-0051）
+
+> 完整报告：coordination/REPORT.md（REPORT-0008）
+> REPORT commit：d82d16c16abfcfdbf11b8531e81c32323fbf6eb5
+> REPORT blob：cd116ca0ec7a277424167ea93243b0110cc75937
+> 基于 HANDOFF-0050 blob：7b0b825a64b2c1869791bb0e865b7f73bb2c5e0a
+
+### 49.1 DSH 复核结论裁定
+- 接受 EI-0 REVIEW PASS（有条件）；允许开始 EI-1 纯函数层。
+- 旧 345 条 episode 的 confidence 默认 0.5 不得被新 0.65 阈值回溯排除；未来集成必须显式 grandfather 或仅对新 appraisal 应用阈值。
+- `emotion_appraisal_items`、Persona outbox/Memory inbox、target namespace、`emotion_contract_version`、Link FK/失效规则留到 EI-2/EI-3 前落实。
+
+### 49.2 Persona 开发分支
+- 仓库：ba-song/dsh-persona-core
+- 基线：a84c7badd1e6c971a66b6c39dd4f7ab795df4b90
+- 分支：feat/ei1-emotion-composition
+- HEAD：5813a769974972a112d3dd8df5f32773746f01e0
+- 新增 `lib/emotion-compose.js`：纯函数多 episode 合成、按 experiencer+target+label 合并、强度取最大衰减值、正负并存、显式 legacy grandfather、confidence 分类、稳定排序、完整 allEmotions + displayLimit 元数据。
+- 新增 `tests/emotion-compose.test.mjs`：8 项测试覆盖上述规则。
+- 未改现有 `composeEmotionView`、appraisal、DB、service、注入或 API；main/生产行为未变。
+
+### 49.3 验证状态
+- GitHub 文件写入与 fetch SHA 核对：完成。
+- 新增测试/Persona 全量测试：NOT RUN；当前执行容器 DNS 无法解析 raw.githubusercontent.com，无法运行 Node。
+- DSHA 本地验证、CI、集成、DB/staging/生产：NOT RUN。
+
+### 49.4 下一步
+- DSH：拉取精确 HEAD，运行新增 8 项测试和 Persona 全量测试；只读复核代码，不接入生产，不改 DB/appraisal/API/profile，不部署/重启。
+- GPT：根据实测结果修复开发分支；测试通过后再安排隔离集成验证。
+- 负责人：本轮不要求生产操作授权；DSH 仍是本地测试执行方，负责人是唯一中转人。
