@@ -9,6 +9,7 @@ import { keywordOverlapRatio, filterInjectionHits, buildHitsBlock, relevanceOf }
 import { buildStable } from '../lib/inject/stable.js'
 import { buildQuotesBlock } from '../lib/inject/quotes.js'
 import { scopeForSession } from '../lib/scope.js'
+import { evaluateRankedResults, explainRrf } from '../lib/recall/eval-metrics.js'
 
 const args = process.argv.slice(2)
 const valueAfter = (flag) => {
@@ -20,10 +21,13 @@ const cwd = valueAfter('--cwd') || '/sdcard/DSHA/生活/数据/home'
 const factsPath = valueAfter('--facts') || '/sdcard/DSHA/记忆/数据/事实卡.md'
 const ownerQQ = valueAfter('--owner-qq') || ''
 const ownerDir = valueAfter('--owner-dir') || ''
+const annotationsPath = valueAfter('--annotations') || new URL('./m3-eval-annotations.template.json', import.meta.url)
 const stablePath = valueAfter('--stable')
 const jsonOnly = args.includes('--json')
 const queryPath = new URL('./m3-eval-queries.json', import.meta.url)
 const queries = JSON.parse(readFileSync(queryPath, 'utf8'))
+const annotationDataset = JSON.parse(readFileSync(annotationsPath, 'utf8'))
+const annotationsById = new Map((annotationDataset.queries ?? []).map((item) => [String(item.id), item]))
 const db = new DatabaseSync(dbPath, { readOnly: true })
 let vectors = new Map()
 try { vectors = loadVectors(db) } catch {}
@@ -50,11 +54,29 @@ let labelled = 0, hitsAt3 = 0, precisionNumerator = 0, precisionDenominator = 0
 let generalizedInjectionCount = 0, placeholderInjectionCount = 0
 let stableCoveredCount = 0, coverageCount = 0, hitsOnlyCount = 0, hitsBlockOnlyCount = 0
 try {
+  const gradedRows = []
+  let forbiddenReturnedTotal = 0
   for (const item of queries) {
+    const annotation = annotationsById.get(String(item.id)) ?? null
+    const queryCwd = String(annotation?.scope?.cwd ?? cwd)
+    const queryScope = scopeForSession({
+      cwd: queryCwd, sessionId: `eval:${item.id}`,
+      isOwner: annotation?.scope?.level ? annotation.scope.level === 'owner' : true,
+    })
+    let armSnapshot = {}
+    const monitor = { record(value) { armSnapshot = value?.arms ?? {} } }
     const found = await recall(db, item.query, {
       vectors, gate: { semantic: 0.55, keyword: 0.35 }, limit: 5,
-      trackAccess: false,
+      scope: queryScope, monitor, trackAccess: false,
     })
+    const graded = evaluateRankedResults(
+      found.map((hit) => Number(hit.id)),
+      annotation?.relevant ?? [],
+      { forbiddenMemoryIds: annotation?.forbiddenMemoryIds ?? [] },
+    )
+    forbiddenReturnedTotal += graded.forbiddenReturnedCount ?? 0
+    if (graded.labelled) gradedRows.push(graded)
+    const rrfExplanation = explainRrf(armSnapshot, found.slice(0, 5).map((hit) => Number(hit.id)))
     const top = found.slice(0, 3).map((hit) => ({
       kind: hit.kind, text: String(hit.text ?? '').slice(0, 160),
       scores: hit.scores ?? {},
@@ -64,7 +86,7 @@ try {
       .filter((hit) => relevanceOf(hit) >= 0.55)
     const hitsBlock = buildHitsBlock(injectedHits, { maxItems: 3, maxChars: 200, minScore: 0.55 })
     const injectedCount = hitsBlock ? (hitsBlock.match(/^- \[/gm) ?? []).length : 0
-    const quotesBlock = buildQuotesBlock(db, { cwd, hits: [], query: item.query, maxHits: 2 }).block
+    const quotesBlock = buildQuotesBlock(db, { cwd: queryCwd, hits: [], query: item.query, maxHits: 2 }).block
     if (String(item.id).startsWith('g')) generalizedInjectionCount += injectedCount
     if (item.placeholder === true) placeholderInjectionCount += injectedCount
     const expected = Array.isArray(item.expectedContains) ? item.expectedContains : []
@@ -89,19 +111,33 @@ try {
       if (hitsBlockOnly) hitsBlockOnlyCount++
     }
     rows.push({
-      id: item.id, query: item.query, placeholder: item.placeholder === true,
+      id: item.id, query: item.query, placeholder: item.placeholder === true, scope: queryScope.level,
       labelled: expected.length > 0, hitAt3: expected.length ? matching > 0 : null,
       injectedCount,
       precisionAt3: expected.length ? matching / 3 : null,
       top1Score: top[0] ? Math.max(Number(top[0].scores.semantic ?? 0), Number(top[0].scores.keyword ?? 0), Number(top[0].scores.graph ?? 0)) : 0,
       top1Overlap: top[0]?.overlap ?? 0, top,
-      stableHit, hitsBlock, hitsInjected: injectedCount,
+      stableHit, hitsBlock, hitsInjected: injectedCount, rrfExplanation, gradedMetrics: graded,
       quotesBlock, quotesHit, coverage, hitsOnly, hitsBlockOnly,
     })
   }
   const report = {
     ok: true, dbPath, readOnly: true, trackAccess: false,
     queryCount: queries.length, labelledCount: labelled,
+    annotationDatasetVersion: annotationDataset.datasetVersion ?? null,
+    gradedQueryCount: gradedRows.length,
+    gradedMetrics: {
+      recallAt1: gradedRows.length ? gradedRows.reduce((sum, row) => sum + row.recall[1], 0) / gradedRows.length : null,
+      recallAt3: gradedRows.length ? gradedRows.reduce((sum, row) => sum + row.recall[3], 0) / gradedRows.length : null,
+      recallAt5: gradedRows.length ? gradedRows.reduce((sum, row) => sum + row.recall[5], 0) / gradedRows.length : null,
+      precisionAt1: gradedRows.length ? gradedRows.reduce((sum, row) => sum + row.precision[1], 0) / gradedRows.length : null,
+      precisionAt3: gradedRows.length ? gradedRows.reduce((sum, row) => sum + row.precision[3], 0) / gradedRows.length : null,
+      precisionAt5: gradedRows.length ? gradedRows.reduce((sum, row) => sum + row.precision[5], 0) / gradedRows.length : null,
+      mrr: gradedRows.length ? gradedRows.reduce((sum, row) => sum + row.mrr, 0) / gradedRows.length : null,
+      ndcgAt5: gradedRows.length ? gradedRows.reduce((sum, row) => sum + row.ndcgAt5, 0) / gradedRows.length : null,
+      evidenceCoverage: gradedRows.length ? gradedRows.reduce((sum, row) => sum + row.evidenceCoverage, 0) / gradedRows.length : null,
+      forbiddenReturnedCount: forbiddenReturnedTotal,
+    },
     hitAt3: labelled ? hitsAt3 / labelled : null,
     precisionAt3: precisionDenominator ? precisionNumerator / precisionDenominator : null,
     generalizedInjectionCount, placeholderInjectionCount,
