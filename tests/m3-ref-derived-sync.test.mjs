@@ -51,13 +51,14 @@ test('deleteMemory removes revision and owned relation orphans',async()=>{
 })
 
 test('syncDerived refuses to discard existing relations without a validated builder',async()=>{
- const id=await insertMemory(db,{kind:'fact',text:'主人和汐一起看电影'})
- linkMemory(db,id,'主人和汐一起看电影')
+ const id=await insertMemory(db,{kind:'fact',text:'主人喜欢抖音'})
+ linkMemory(db,id,'主人喜欢抖音')
  const rows=db.prepare('SELECT entity_id FROM memory_entities WHERE memory_id=? ORDER BY entity_id').all(id)
  assert.ok(rows.length>=2)
  db.prepare('INSERT INTO relations(src,dst,relation,memory_id) VALUES(?,?,?,?)').run(rows[0].entity_id,rows[1].entity_id,'together',id)
  const before=JSON.stringify({row:scalar('SELECT * FROM memories WHERE id=?',id),relations:db.prepare('SELECT * FROM relations WHERE memory_id=?').all(id),fts:scalar('SELECT text FROM fts_bigram WHERE rowid=?',id)})
- await assert.rejects(()=>updateMemory(db,id,{text:'主人和汐一起去旅行'},1,{syncDerived:true,embedFn:async()=>new Float32Array([1,0])}),/E_RELATION_REBUILDER_REQUIRED/)
+ await assert.rejects(()=>updateMemory(db,id,{text:'主人改为喜欢 GitHub'},1,{syncDerived:true,embedFn:async()=>new Float32Array([1,0])}),/E_RELATION_REBUILDER_REQUIRED/)
  const after=JSON.stringify({row:scalar('SELECT * FROM memories WHERE id=?',id),relations:db.prepare('SELECT * FROM relations WHERE memory_id=?').all(id),fts:scalar('SELECT text FROM fts_bigram WHERE rowid=?',id)})
  assert.equal(after,before)
+ db.close();rmSync(dir,{recursive:true,force:true})
 })
