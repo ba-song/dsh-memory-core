@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { DatabaseSync } from 'node:sqlite'
 import {
-  chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync,
+  chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync,
   renameSync, writeFileSync,
 } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -59,7 +59,16 @@ function emotionMapOf(db) {
   return out
 }
 
+function assertNoSymlink(path, label) {
+  try {
+    if (lstatSync(path).isSymbolicLink()) throw new Error(`${label} must not be a symbolic link: ${path}`)
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
+}
+
 function atomicWrite(file, content, { preserveHistory = false } = {}) {
+  assertNoSymlink(file, 'home archive derived file')
   if (existsSync(file)) {
     try { chmodSync(file, 0o600) } catch {}
     const current = readFileSync(file, 'utf8')
@@ -145,8 +154,13 @@ export async function exportHomeArchive({ dbPath = DEFAULT_DB, outDir = DEFAULT_
   const archiveDir = resolve(outDir)
   const cwd = String(homeCwd ?? '').trim().replace(/[/\\]+$/, '')
   if (!cwd) throw new Error('home cwd 不能为空')
+  assertNoSymlink(archiveDir, 'home archive output directory')
   mkdirSync(archiveDir, { recursive: true, mode: 0o700 })
-  mkdirSync(join(archiveDir, '_events'), { recursive: true, mode: 0o700 })
+  assertNoSymlink(archiveDir, 'home archive output directory')
+  const eventsDir = join(archiveDir, '_events')
+  assertNoSymlink(eventsDir, 'home archive _events directory')
+  mkdirSync(eventsDir, { recursive: true, mode: 0o700 })
+  assertNoSymlink(eventsDir, 'home archive _events directory')
   try { chmodSync(archiveDir, 0o700) } catch {}
   try { chmodSync(join(archiveDir, '_events'), 0o700) } catch {}
 

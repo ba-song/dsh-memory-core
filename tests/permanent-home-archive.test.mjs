@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync,
+  chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -20,6 +20,40 @@ const mk = (prefix) => {
 }
 const event = (type, seq, time, data) => ({ type, seq, time, data })
 const session = (id, cwd) => ({ header: { id, cwd } })
+
+
+test('permanent archive refuses symlink roots, _events directories and journal files', () => {
+  const dir = mk('symlink-boundary')
+  const outside = join(dir, 'outside')
+  const rootLink = join(dir, 'root-link')
+  const eventsLinkRoot = join(dir, 'events-link-root')
+  const fileLinkRoot = join(dir, 'file-link-root')
+  mkdirSync(outside, { recursive: true })
+  try {
+    symlinkSync(outside, rootLink, 'dir')
+    assert.throws(
+      () => appendPermanentEvent({ dir: rootLink, homeCwd: HOME, cwd: HOME, event: { raw_id: 701, day: '2026-11-20' } }),
+      /must not be a symbolic link/,
+    )
+
+    mkdirSync(eventsLinkRoot, { recursive: true })
+    symlinkSync(outside, join(eventsLinkRoot, '_events'), 'dir')
+    assert.throws(
+      () => appendPermanentEvent({ dir: eventsLinkRoot, homeCwd: HOME, cwd: HOME, event: { raw_id: 702, day: '2026-11-20' } }),
+      /must not be a symbolic link/,
+    )
+
+    const eventsDir = join(fileLinkRoot, '_events')
+    mkdirSync(eventsDir, { recursive: true })
+    symlinkSync(join(outside, 'target.jsonl'), join(eventsDir, '2026-11-20.jsonl'), 'file')
+    assert.throws(
+      () => appendPermanentEvent({ dir: fileLinkRoot, homeCwd: HOME, cwd: HOME, event: { raw_id: 703, day: '2026-11-20' } }),
+      /must not be a symbolic link/,
+    )
+    assert.throws(() => readPermanentJournal(fileLinkRoot), /must not be a symbolic link/)
+    assert.equal(readdirSync(outside).length, 0)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
 
 test('home raw rows are best-effort dual-written as append-only JSONL events', () => {
   const dir = mk('dual')
