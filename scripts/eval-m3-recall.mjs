@@ -10,6 +10,7 @@ import { buildStable } from '../lib/inject/stable.js'
 import { buildQuotesBlock } from '../lib/inject/quotes.js'
 import { scopeForSession } from '../lib/scope.js'
 import { evaluateRankedResults, explainRrf } from '../lib/recall/eval-metrics.js'
+import { eventChainCandidates } from '../lib/recall/event-chain.js'
 
 const args = process.argv.slice(2)
 const valueAfter = (flag) => {
@@ -24,6 +25,15 @@ const ownerDir = valueAfter('--owner-dir') || ''
 const annotationsPath = valueAfter('--annotations') || new URL('./m3-eval-annotations.template.json', import.meta.url)
 const stablePath = valueAfter('--stable')
 const jsonOnly = args.includes('--json')
+const eventChainEnabled = args.includes('--event-chain')
+const asOfOf = (value, queryId) => {
+  if (value == null || value === '') return null
+  const numeric = Number(value)
+  if (Number.isFinite(numeric)) return numeric
+  const parsed = Date.parse(String(value))
+  if (Number.isFinite(parsed)) return parsed
+  throw new Error(`评测查询 ${queryId} 的 asOf 无法解析：${value}`)
+}
 const queryPath = new URL('./m3-eval-queries.json', import.meta.url)
 const queries = JSON.parse(readFileSync(queryPath, 'utf8'))
 const annotationDataset = JSON.parse(readFileSync(annotationsPath, 'utf8'))
@@ -59,6 +69,7 @@ try {
   for (const item of queries) {
     const annotation = annotationsById.get(String(item.id)) ?? null
     const queryCwd = String(annotation?.scope?.cwd ?? cwd)
+    const asOfAt = asOfOf(annotation?.asOf, item.id)
     const queryScope = scopeForSession({
       cwd: queryCwd, sessionId: `eval:${item.id}`,
       isOwner: annotation?.scope?.level ? annotation.scope.level === 'owner' : true,
@@ -67,7 +78,7 @@ try {
     const monitor = { record(value) { armSnapshot = value?.arms ?? {} } }
     const found = await recall(db, item.query, {
       vectors, gate: { semantic: 0.55, keyword: 0.35 }, limit: 5,
-      scope: queryScope, monitor, trackAccess: false,
+      scope: queryScope, asOf: asOfAt, monitor, trackAccess: false,
     })
     const graded = evaluateRankedResults(
       found.map((hit) => Number(hit.id)),
@@ -77,6 +88,19 @@ try {
     forbiddenReturnedTotal += graded.forbiddenReturnedCount ?? 0
     if (graded.labelled) gradedRows.push(graded)
     const rrfExplanation = explainRrf(armSnapshot, found.slice(0, 5).map((hit) => Number(hit.id)))
+    const chainMap = new Map()
+    if (eventChainEnabled && queryScope.level === 'owner') {
+      for (const seedHit of found.slice(0, 3)) {
+        const seed = db.prepare('SELECT * FROM memories WHERE id=?').get(Number(seedHit.id))
+        if (!seed) continue
+        for (const candidate of eventChainCandidates(db, seed, { cwd: queryCwd, asOf: asOfAt, limit: 5 })) {
+          const existing = chainMap.get(candidate.id)
+          if (existing) existing.seedIds.push(Number(seed.id))
+          else chainMap.set(candidate.id, { ...candidate, seedIds: [Number(seed.id)] })
+        }
+      }
+    }
+    const eventChainDiagnostic = [...chainMap.values()].slice(0, 10)
     let queryStableText = ''
     if (queryScope.level === 'owner') {
       if (queryCwd === cwd) queryStableText = stableText
@@ -124,20 +148,20 @@ try {
       if (hitsBlockOnly) hitsBlockOnlyCount++
     }
     rows.push({
-      id: item.id, query: item.query, placeholder: item.placeholder === true, scope: queryScope.level,
+      id: item.id, query: item.query, placeholder: item.placeholder === true, scope: queryScope.level, asOf: asOfAt,
       legacyStringHeuristicLabelled: expected.length > 0,
       legacyStringHeuristicHitAt3: expected.length ? matching > 0 : null,
       injectedCount,
       legacyStringHeuristicPrecisionAt3: expected.length ? matching / 3 : null,
       top1Score: top[0] ? Math.max(Number(top[0].scores.semantic ?? 0), Number(top[0].scores.keyword ?? 0), Number(top[0].scores.graph ?? 0)) : 0,
       top1Overlap: top[0]?.overlap ?? 0, top,
-      stableHit, hitsBlock, hitsInjected: injectedCount, rrfExplanation, gradedMetrics: graded,
+      stableHit, hitsBlock, hitsInjected: injectedCount, rrfExplanation, eventChainDiagnostic, gradedMetrics: graded,
       quotesBlock, quotesHit, coverage, hitsOnly, hitsBlockOnly,
     })
   }
   const report = {
     ok: true, dbPath, readOnly: true, trackAccess: false,
-    queryCount: queries.length,
+    queryCount: queries.length, eventChainDiagnosticEnabled: eventChainEnabled,
     annotationDatasetVersion: annotationDataset.datasetVersion ?? null,
     gradedQueryCount: gradedRows.length,
     gradedMetrics: {
