@@ -180,7 +180,7 @@ export async function exportHomeArchive({ dbPath = DEFAULT_DB, outDir = DEFAULT_
       dayEvents.sort((a, b) => Number(a.at ?? 0) - Number(b.at ?? 0) || Number(a.seq ?? 0) - Number(b.seq ?? 0) || Number(a.raw_id) - Number(b.raw_id))
       const file = join(archiveDir, `${day}.md`)
       const backup = `${file}.pre-permanent.bak`
-      if (existsSync(file) && !existsSync(backup)) { copyFileSync(file, backup); chmodSync(backup, 0o600) }
+      if (existsSync(file) && !existsSync(backup)) { copyFileSync(file, backup); try { chmodSync(backup, 0o600) } catch {} }
       atomicWrite(file, renderDay(day, dayEvents, journal.tombstones))
       dayIndex.push({ day, events: dayEvents.length, tombstones: dayEvents.filter((event) => journal.tombstones.has(Number(event.raw_id)) || Number(event.tombstone) === 1).length, file: `${day}.md` })
     }
