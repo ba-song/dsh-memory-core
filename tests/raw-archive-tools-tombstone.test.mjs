@@ -3,13 +3,16 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { openDb } from '../lib/store/db.js'
-import { RawArchive } from '../lib/ingest/archive.js'
 
 test('raw group and person archive tools never return tombstoned messages', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-raw-tools-tombstone-'))
   const previousMemoryDir = process.env.DY_MEMORY_DIR
   process.env.DY_MEMORY_DIR = dir
+  // config.js computes DATA_DIR at module load: import all plugin modules only after setting the isolated path.
+  const { openDb } = await import('../lib/store/db.js')
+  const { RawArchive } = await import('../lib/ingest/archive.js')
+  const { DATA_DIR } = await import('../lib/config.js')
+  assert.equal(DATA_DIR, dir, 'plugin config must point at the isolated test directory')
   const registered = {}
   const ctx = {
     get(name) {
