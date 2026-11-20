@@ -196,16 +196,25 @@ test('schema migration rejects an invalid version marker and rolls back DDL', ()
   } finally { rmSync(fixture.dir, { recursive: true, force: true }) }
 })
 
-test('schema migration rejects an incomplete snapshot table and rolls back other DDL', () => {
+test('schema migration rejects missing snapshot columns in the explicit column-validation branch and rolls back prior DDL', () => {
   const fixture = makeSchema4Fixture()
   try {
     const inject = new DatabaseSync(fixture.file)
-    inject.exec('CREATE TABLE episode_rewrite_snapshots(id INTEGER PRIMARY KEY)')
+    // Force a real ALTER before validation, but provide the two columns needed
+    // by idx_ers_memory so index creation succeeds and snapshotColumns is reached.
+    inject.exec('ALTER TABLE memories DROP COLUMN valid_to')
+    inject.exec('CREATE TABLE episode_rewrite_snapshots(id INTEGER PRIMARY KEY, memory_id INTEGER NOT NULL)')
     inject.close()
-    assert.throws(() => openDb(fixture.dir), /no such column: memory_id/)
+
+    assert.throws(
+      () => openDb(fixture.dir),
+      /E_SCHEMA_MIGRATION_INCOMPLETE: episode_rewrite_snapshots missing revision/,
+    )
     const after = new DatabaseSync(fixture.file, { readOnly: true })
     assert.equal(after.prepare("SELECT v FROM meta WHERE k='schema_version'").get().v, '4')
-    assert.equal(after.prepare("SELECT count(*) AS n FROM pragma_table_info('episode_rewrite_snapshots')").get().n, 1)
+    assert.equal(after.prepare("SELECT count(*) AS n FROM pragma_table_info('episode_rewrite_snapshots')").get().n, 2)
+    assert.equal(after.prepare("SELECT count(*) AS n FROM pragma_table_info('memories') WHERE name='valid_to'").get().n, 0)
+    assert.equal(indexExists(after, 'idx_ers_memory'), false)
     assert.equal(indexExists(after, 'idx_mem_scope_key'), false)
     assert.equal(indexExists(after, 'idx_mem_valid'), false)
     assert.equal(after.prepare('PRAGMA integrity_check').get().integrity_check, 'ok')
