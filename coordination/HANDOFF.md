@@ -2,8 +2,8 @@
 
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
-> 版本：`HANDOFF-0050`
-> 更新时间：2026-11-20 23:58（Asia/Shanghai）
+> 版本：`HANDOFF-0052`
+> 更新时间：2026-11-21 00:12（Asia/Shanghai）
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -3114,3 +3114,42 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - DSH：拉取精确 HEAD，运行新增 8 项测试和 Persona 全量测试；只读复核代码，不接入生产，不改 DB/appraisal/API/profile，不部署/重启。
 - GPT：根据实测结果修复开发分支；测试通过后再安排隔离集成验证。
 - 负责人：本轮不要求生产操作授权；DSH 仍是本地测试执行方，负责人是唯一中转人。
+
+---
+
+## 49. EI-1 首轮实测与复核（HANDOFF-0052）
+
+> 完整报告：`coordination/REPORT.md`（REPORT-0009）
+> 只读/隔离 worktree；未改生产源码/DB/profile；未启动 staging/host；未部署/重启。
+
+### 49.1 结果
+- 目标 commit：`5813a769974972a112d3dd8df5f32773746f01e0`；main `a84c7ba` 未变；仅新增 `lib/emotion-compose.js`、`tests/emotion-compose.test.mjs`。
+- 新增测试 `8/8 pass`；全量 `311/311 pass`（exit 0）。
+- 实现主体 PASS：同 label/target 合并取最大衰减强度、不同 target 隔离、正负并存、过期/低强度不删源、legacy/confidence、分页/完整集合。
+- **结论：EI-1 IMPLEMENTATION REVIEW BLOCKED。**
+
+### 49.2 阻塞/问题
+1. **P1 sourceIds 丢失 appraisalId**：`lib/emotion-compose.js:61-63` 只用 `id ?? ... ?? appraisal_id`，真实 episode 同时有 id 和 appraisal_id 时只保留 id；违反来源完整。
+2. P2 `localeCompare` 跨环境不确定性（`:107/108/113/121-123`）。
+3. P2 异常输入测试不足（null/缺字段/NaN/Infinity/越界/未来时间/sourceIds）。
+4. P3 非有限 `expires_at` 被忽略，可能永久 active。
+5. legacy 旧数据需迁移/适配，纯函数本身正确。
+
+### 49.3 状态
+| 项 | 状态 |
+|---|---|
+| 目标 commit/工作树 | PASS |
+| 新增测试 8/8 | PASS |
+| 全量 311/311 | PASS |
+| 多情绪/合并/隔离/衰减 | PASS |
+| sourceIds 完整性 | **FAIL/P1** |
+| 跨环境确定性 | 风险/P2 |
+| 异常输入覆盖 | 不足/P2 |
+| 非有限 expires_at | 风险/P3 |
+| EI-2/EI-3/生产 | NOT RUN/禁止 |
+
+### 49.4 交接
+- 版本：`HANDOFF-0052`
+- 基于旧 blob：`9127ef5318f5911233264cca052148ccb6b5a16a`
+- REPORT-0009：`coordination/REPORT.md`
+- 下一位更新者必须重新读取最新 blob SHA。
