@@ -84,6 +84,8 @@ test('schema v4 fixture migrates atomically to v5 and preserves synthetic data',
     assert.equal(SCHEMA_VERSION, 5)
     assert.equal(tableExists(db, 'episode_rewrite_snapshots'), true)
     assert.equal(indexExists(db, 'idx_ers_memory'), true)
+    assert.equal(indexExists(db, 'idx_mem_scope_key'), true)
+    assert.equal(indexExists(db, 'idx_mem_valid'), true)
     assert.deepEqual(counts(db), {
       memories: 1, ftsBigram: 1, ftsTrigram: 1, vectors: 1, entities: 1,
       memoryEntities: 1, relations: 1, revisions: 1, rawMeta: 4, rawFts: 1, rawVectors: 1,
@@ -94,6 +96,16 @@ test('schema v4 fixture migrates atomically to v5 and preserves synthetic data',
     assert.equal(db.prepare('SELECT count(*) AS n FROM episode_rewrite_snapshots').get().n, 0)
     assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok')
     db.close()
+
+    // Reopening a migrated v5 DB must be idempotent and preserve all row identities/counts.
+    const reopened = openDb(fixture.dir)
+    assert.equal(reopened.db.prepare("SELECT v FROM meta WHERE k='schema_version'").get().v, '5')
+    assert.deepEqual(counts(reopened.db), {
+      memories: 1, ftsBigram: 1, ftsTrigram: 1, vectors: 1, entities: 1,
+      memoryEntities: 1, relations: 1, revisions: 1, rawMeta: 4, rawFts: 1, rawVectors: 1,
+    })
+    assert.equal(reopened.db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok')
+    reopened.db.close()
   } finally {
     rmSync(fixture.dir, { recursive: true, force: true })
   }
