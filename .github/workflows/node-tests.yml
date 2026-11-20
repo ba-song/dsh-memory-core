@@ -30,5 +30,7 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Install DSH host schema dependency for tests
+        run: npm install --no-save --package-lock=false @deepseek-ai/schemastery@3.18.1
       - name: Run test suite
         run: npm test
