@@ -3,8 +3,8 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0034`  
-> 更新时间：2026-11-20 20:12（Asia/Shanghai）  
+> 版本：`HANDOFF-0035`  
+> 更新时间：2026-11-20 20:18（Asia/Shanghai）  
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -1590,3 +1590,21 @@ HANDOFF-0032 要求独立仓库，但当前已连接 GitHub 工具集合没有�
 
 ### 31.4 结论
 候选包实物、源码完整性、相对导入、隔离测试均 PASS；**仍不可直接部署**，缺 staging 依赖安装与部署授权。报告和 tar 清单证据在 `/sdcard/DSHA/插件优化/P0-CANDIDATE-LOCAL-VERIFY-01.md`、`/tmp/p0-tar-list.txt`（本地临时）。
+
+
+---
+
+## 32. P0 候选包交 GPT 的提示词（HANDOFF-0035）
+
+**负责人只需转发这一份：**
+
+`/sdcard/DSHA/插件优化/93-给GPT的P0候选包证据与staging部署计划提示词.md`
+
+摘要：
+- 候选包证据：sha256/大小一致；302 entries/271 files；701 相对 import 0 unresolved；无 DB/.env/凭据/node_modules；隔离 251/251 pass；Node 24.19.0/SQLite 3.53.3。
+- 候选含 schema 5/M3-2B 表，生产仍 schema 4；**未部署**。
+- 让 GPT：验收候选包；给出 staging 解包+`npm ci`+schema 4→5 迁移/回滚+exporter 对齐+真实 tar 的步骤；不要部署生产。
+- 边界：不改生产/不部署/不重启；部署仍等负责人单独授权。
+
+- 本轮未写生产库、未改生产配置、未部署；候选包与报告均为本地证据。
+- 下一位更新者必须重新读取远程最新 blob SHA。
