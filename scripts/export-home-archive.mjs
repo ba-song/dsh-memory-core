@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { DatabaseSync } from 'node:sqlite'
 import {
-  chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync,
-  renameSync, writeFileSync,
+  constants as fsConstants, chmodSync, closeSync, existsSync, fstatSync, lstatSync, mkdirSync,
+  openSync, readFileSync, readdirSync, unlinkSync, renameSync, writeFileSync,
 } from 'node:fs'
 import { join, resolve, parse, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -93,21 +93,53 @@ function assertNoSymlinkAncestors(path, label) {
   }
 }
 
-function atomicWrite(file, content, { preserveHistory = false } = {}) {
-  assertNoSymlink(file, 'home archive derived file')
-  if (existsSync(file)) {
-    try { chmodSync(file, 0o600) } catch {}
-    const current = readFileSync(file, 'utf8')
-    if (current === content) return false
-    if (preserveHistory) {
-      const firstBackup = `${file}.pre-permanent.bak`
-      const backup = existsSync(firstBackup)
-        ? `${file}.history-${Date.now()}-${randomUUID()}.bak`
-        : firstBackup
-      copyFileSync(file, backup)
+function readRegularFileNoFollow(file) {
+  const pathStat = lstatSync(file)
+  if (!pathStat.isFile() || pathStat.isSymbolicLink()) throw new Error(`home archive derived path must be a regular file: ${file}`)
+  if (typeof fsConstants.O_NOFOLLOW !== 'number') throw new Error('filesystem does not support O_NOFOLLOW; refusing derived file access')
+  const fd = openSync(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW)
+  try {
+    const fdStat = fstatSync(fd)
+    if (!fdStat.isFile() || fdStat.dev !== pathStat.dev || fdStat.ino !== pathStat.ino) {
+      throw new Error(`home archive derived file changed during open: ${file}`)
+    }
+    return readFileSync(fd, 'utf8')
+  } finally { closeSync(fd) }
+}
+
+function writeBackupExclusive(file, content) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let backup = `${file}.pre-permanent.bak`
+    try {
+      lstatSync(backup)
+      backup = `${file}.history-${Date.now()}-${randomUUID()}.bak`
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
+    try {
+      writeFileSync(backup, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
       try { chmodSync(backup, 0o600) } catch {}
+      return backup
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error
     }
   }
+  throw new Error(`unable to reserve a unique history backup for ${file}`)
+}
+
+function atomicWrite(file, content, { preserveHistory = false } = {}) {
+  assertNoSymlink(file, 'home archive derived file')
+  let current = null
+  try {
+    current = readRegularFileNoFollow(file)
+    try { chmodSync(file, 0o600) } catch {}
+    if (current === content) return false
+    if (preserveHistory) writeBackupExclusive(file, current)
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
+  assertNoSymlinkAncestors(file, 'home archive derived file')
+  assertNoSymlink(file, 'home archive derived file')
   const temp = `${file}.tmp-${process.pid}-${randomUUID()}`
   try {
     writeFileSync(temp, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
