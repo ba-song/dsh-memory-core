@@ -59,6 +59,7 @@ test('permanent archive refuses symlink roots, _events directories and journal f
 test('exporter refuses symlinked output root, _events directory and derived INDEX file', async () => {
   const dir = mk('export-symlink-boundary')
   const { db, file: dbPath } = openDb(dir)
+  new RawArchive({ db, dir: join(dir, 'raw'), cwdPrefixes: [HOME], log: { warn() {}, info() {} } })
   db.close()
   const outside = join(dir, 'outside')
   const rootLink = join(dir, 'root-link')
