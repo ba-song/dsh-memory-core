@@ -14,7 +14,8 @@ test('M3-2B preview is read-only and apply snapshots all derived state',async()=
  const id=await insertMemory(db,{kind:'episode',text:'主人在抖音看了视频',quote:'主人在抖音看了视频',sourceMsgId:'s:1',meta:{source:'fixture'}})
  linkMemory(db,id,'主人在抖音看了视频')
  await saveVector(db,id,[1,0,0])
- const ent=get("SELECT e.id FROM entities e JOIN memory_entities me ON me.entity_id=e.id WHERE me.memory_id=? AND e.name='抖音'",id)
+ const ent=get("SELECT e.id,e.last_seen,e.first_seen,e.mention_count FROM entities e JOIN memory_entities me ON me.entity_id=e.id WHERE me.memory_id=? AND e.name='抖音'",id)
+ const entityBefore={last_seen:ent.last_seen,first_seen:ent.first_seen,mention_count:ent.mention_count}
  const other=get("SELECT id FROM entities WHERE name='主人' AND type='person'")
  db.prepare('INSERT INTO relations(src,dst,relation,weight,memory_id,created_at) VALUES(?,?,?,?,?,?)').run(ent.id,other.id,'mentions',0.8,id,10)
  const before=Number(get('SELECT total_changes() n').n)
@@ -45,6 +46,8 @@ test('rollback restores text, quote, vector, entities, relations and creates a n
  assert.equal(get('SELECT hex(vec) v FROM vectors WHERE memory_id=?',id).v,Buffer.from(new Float32Array([1,0,0]).buffer).toString('hex').toUpperCase())
  assert.equal(Number(get('SELECT count(*) c FROM relations WHERE memory_id=?',id).c),1)
  assert.equal(Number(get("SELECT count(*) c FROM memory_entities me JOIN entities e ON e.id=me.entity_id WHERE me.memory_id=? AND e.name='抖音'",id).c),1)
+ const entityAfter=get("SELECT e.last_seen,e.first_seen,e.mention_count FROM entities e JOIN memory_entities me ON me.entity_id=e.id WHERE me.memory_id=? AND e.name='抖音'",id)
+ assert.deepEqual({last_seen:entityAfter.last_seen,first_seen:entityAfter.first_seen,mention_count:entityAfter.mention_count},entityBefore)
  assert.equal(get('SELECT status FROM episode_rewrite_snapshots WHERE id=?',snap.id).status,'rolled_back')
  assert.equal(Number(get('SELECT revision FROM memories WHERE id=?',id).revision),3)
 })
