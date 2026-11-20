@@ -3,8 +3,8 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0041`  
-> 更新时间：2026-11-20 22:15（Asia/Shanghai）  
+> 版本：`HANDOFF-0042`  
+> 更新时间：2026-11-20 22:45（Asia/Shanghai）  
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -2501,3 +2501,52 @@ DSH 仅做只读源码/manifest/CLI/计划复核，不执行 staging。重点：
 本轮仍不得解包、npm ci、运行测试、创建 staging DB/profile、执行任何 `dsh plugin add`、启动 host、连接生产 DB、修改生产环境、部署或重启。只有 plan v4 复核通过后，才能由负责人安排下一轮 staging；**plan review PASS 不等于 staging PASS，更不等于生产部署授权。**
 
 DSH 完成后必须更新 HANDOFF（预计 HANDOFF-0042），使用最新 Blob SHA 做并发保护，并向负责人提供完整可直接转交 GPT 的反馈（命令/原始输出/退出码/路径/hash/代码 HEAD/CI run/HANDOFF 新旧 Blob SHA/commit/link/副作用/NOT RUN 清单）。必须提醒负责人将完整反馈转交 GPT。HANDOFF 是 GPT、DSH、负责人共同维护的唯一长期项目状态入口；开始前完整读取全文，结束后更新全文，不能只发“完成”。
+
+
+---
+
+## 40. P0 staging plan v4 复核（HANDOFF-0042）
+
+> 报告：`/sdcard/DSHA/插件优化/P0-STAGING-PLAN-V4-REVIEW-01.md`
+> 反馈：`/sdcard/DSHA/插件优化/97-给GPT的P0-staging-plan-v4复核反馈.md`
+> 本轮只读；未解包、未 npm ci、未测试、未创建 staging/profile、未执行 dsh plugin add、未启动 host、未连生产 DB、未部署。
+
+### 40.1 版本
+- HANDOFF-0041：commit `b85e98124ab574c88ba13d86098fe6ab1af20379`，blob `f87273be869f94bf0c224f910b274b9217065840`。
+- memory HEAD：`7548e49ed0b8d8673818464325d8e72ec7704b27`。
+- CI #90：run `44751203163`，head=`7548e49`，success（GitHub API 核实）。
+
+### 40.2 结论
+- 核心“先加 web 再 link 候选”流程：**PASS（源码静态）**。
+- 新 snapshotColumns 测试：**PASS**，确实先 DROP valid_to/建 2 列 snapshot，让索引成功后进入显式缺列分支。
+- **仍需修正 3 处文档/命令**：
+  1. `dsh.profile.bundles` 是字符串数组，不是 descriptor；plan 的“descriptor”断言需改为精确名称集合；
+  2. web 实际默认 bind host 是 `127.0.0.1`，plan 的 `0.0.0.0` 预检不一致；
+  3. 候选包命令需写死 commit `7548e49`，不能只说“修复后 HEAD”。
+
+### 40.3 逐项状态
+| 项 | 状态 |
+|---|---|
+| base/web manifest | PASS |
+| bundle 类型/loader | PASS（字符串数组；plan 措辞需改） |
+| web add 保留 | PASS（静态） |
+| link 候选 | PASS（静态） |
+| profile 精确断言 | **BLOCKED** |
+| node_modules symlink | 预期 PASS/未运行 |
+| host CLI | PASS |
+| bind host/预检一致 | **BLOCKED**（127.0.0.1 vs 0.0.0.0） |
+| CI #90 | PASS |
+| snapshotColumns 测试 | PASS |
+| 候选包 commit | **BLOCKED**（未写死 7548e49） |
+| 快照/WAL | PASS（设计）/NOT RUN |
+| strace | PASS（能力）/NOT RUN |
+| DSHA staging | **NOT RUN** |
+
+### 40.4 交 GPT
+1. bundle 断言改为字符串数组+精确名称；
+2. 端口预检改为 127.0.0.1（或实际 --host）；
+3. 候选包命令写死 `7548e49`；
+4. 更新 HANDOFF 后再 staging；仍不部署。
+
+### 40.5 副作用
+未解包、未 npm ci、未运行测试、未创建 staging/profile、未执行 dsh plugin add、未启动 host、未连生产 DB、未改生产环境、未部署/重启。
