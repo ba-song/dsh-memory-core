@@ -158,6 +158,9 @@
 # 测试（必须用临时目录，避免写生产库）
 DY_MEMORY_DIR=/tmp/dy-test node --test tests/*.test.mjs
 
+# M3 离线召回评测（必须使用独立一致性快照）
+node scripts/eval-m3-recall.mjs --db /path/to/memory.snapshot.db --annotations /path/to/annotations.json --code-commit "$(git rev-parse HEAD)" --json
+
 # 健康检查（只读）
 node scripts/doctor-memory.mjs --db /sdcard/DSHA/记忆/数据/memory.db --json
 
