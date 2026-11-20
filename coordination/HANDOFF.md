@@ -3,8 +3,8 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0043`  
-> 更新时间：2026-11-20 22:50（Asia/Shanghai）  
+> 版本：`HANDOFF-0044`  
+> 更新时间：2026-11-20 23:00（Asia/Shanghai）  
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -2762,3 +2762,42 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - 本轮未创建 `REPORT.md`（尚无下一轮完整报告）；从下一轮开始执行。
 - 未修改生产环境；仅更新工作区守则与 HANDOFF。
 - 下一位更新者必须重新读取远程最新 blob SHA。
+
+
+---
+
+## 43. P0 staging plan v5 复核与 REPORT 首次使用（HANDOFF-0044）
+
+> 完整报告：`coordination/REPORT.md`（REPORT-0001）
+> 本轮按新协议：HANDOFF 只留摘要，完整报告进单一 REPORT.md；本地只生成提示词。
+> 只读；未解包、未 npm ci、未测试、未创建 staging/profile、未执行 dsh plugin add、未启动 host、未连生产 DB、未部署。
+
+### 43.1 结论
+**PLAN V5 REVIEW PASS（仅设计/静态）。** 只代表可进入下一阶段 staging，不代表 staging 已通过，更不代表生产部署授权。
+
+### 43.2 前轮三点修正
+1. `dsh.profile.bundles` 已按字符串数组断言：base/web/memory 三个精确名称，长度3、去重3、无额外/旧版。
+2. web 默认 bind host 为 `127.0.0.1`，Node 预检已对齐。
+3. 候选 commit 固定 `7548e49ed0b8d8673818464325d8e72ec7704b27`，禁止浮动 HEAD/旧 tar。
+
+### 43.3 关键证据
+- base/web/candidate manifest 均为 `dsh.bundle.patch`，profile bundles 是字符串数组；
+- `dsh plugin add web` → `reconcile` 加入 web；再 `add link` 保留 web 并加入候选；预期 symlink；
+- host 命令：`env HOME=... DSH_HOME=... /root/dsh-bin/dsh --profile p0-staging --port 31873 --no-open`；
+- CI #90 run `44751203163` head `7548e49` success；
+- snapshotColumns 新测试命中显式缺列分支；ALTER/FTS5/version 测试存在。
+- DSHA SQLite 3.53.3/ONNX/exporter/WAL/host 均 NOT RUN。
+
+### 43.4 仍需 staging 实测
+- `dsh plugin add web/link` 实际执行与 bundle 断言；
+- 候选 symlink realpath；
+- npm ci/ONNX session；
+- schema4 fixture 迁移、失败回滚、WAL/快照；
+- host/strace/端口；
+- 生产部署未授权。
+
+### 43.5 交接
+- 版本：`HANDOFF-0044`
+- 基于旧 blob：`b2fee5cc8e78edd229ed71dfc338521860389f35`
+- 完整报告：`coordination/REPORT.md`（REPORT-0001）
+- 下一位更新者必须重新读取最新 blob SHA。
