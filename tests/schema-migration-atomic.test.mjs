@@ -29,16 +29,23 @@ function makeSchema4Fixture() {
   db.prepare('INSERT INTO memory_revisions(memory_id,revision,previous_json,changed_at,invalidation) VALUES(?,?,?,?,?)')
     .run(41, 2, '{"text":"synthetic-previous"}', 1700000003, '')
   // raw tables are deliberately represented too: the migration must not touch them.
-  db.exec(`CREATE TABLE raw_meta(id INTEGER PRIMARY KEY, role TEXT NOT NULL, raw_text TEXT NOT NULL, tombstone INTEGER NOT NULL DEFAULT 0)`)
-  db.exec('CREATE TABLE raw_fts(raw_id INTEGER PRIMARY KEY, text TEXT NOT NULL)')
-  db.exec('CREATE TABLE raw_vectors(raw_id INTEGER PRIMARY KEY, dim INTEGER NOT NULL, vec BLOB NOT NULL)')
-  const raw = db.prepare('INSERT INTO raw_meta(id,role,raw_text,tombstone) VALUES(?,?,?,?)')
-  raw.run(1, 'user', 'synthetic user fixture', 0)
-  raw.run(2, 'self', 'synthetic self fixture', 0)
-  raw.run(3, 'tool', 'synthetic tool fixture', 0)
-  raw.run(4, 'user', 'synthetic tombstone fixture', 1)
-  db.prepare('INSERT INTO raw_fts(raw_id,text) VALUES(?,?)').run(1, 'synthetic raw fts')
-  db.prepare('INSERT INTO raw_vectors(raw_id,dim,vec) VALUES(?,?,?)').run(1, 2, Buffer.from(new Float32Array([1, 0]).buffer))
+  db.exec(`CREATE TABLE raw_meta(
+    id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT, file TEXT, line_no INTEGER,
+    seq INTEGER, role TEXT, speaker TEXT, channel TEXT, tombstone INTEGER DEFAULT 0,
+    chars INTEGER DEFAULT 0, raw_text TEXT DEFAULT '', at INTEGER, extra TEXT DEFAULT '{}',
+    cwd TEXT DEFAULT '', person_id TEXT DEFAULT ''
+  )`)
+  db.exec('CREATE INDEX idx_raw_day ON raw_meta(day, role)')
+  db.exec("CREATE VIRTUAL TABLE raw_fts USING fts5(text, tokenize='unicode61')")
+  db.exec('CREATE TABLE raw_vectors(raw_id INTEGER PRIMARY KEY, dim INTEGER NOT NULL, vec BLOB NOT NULL, model TEXT, updated_at INTEGER NOT NULL)')
+  const raw = db.prepare('INSERT INTO raw_meta(id,day,seq,role,raw_text,tombstone,at,extra,cwd) VALUES(?,?,?,?,?,?,?,?,?)')
+  raw.run(1, '2026-01-01', 1, 'user', 'synthetic user fixture', 0, 1767225600000, '{}', '/sdcard/DSHA/生活/数据/home')
+  raw.run(2, '2026-01-01', 1, 'self', 'synthetic self fixture', 0, 1767225601000, '{}', '/sdcard/DSHA/生活/数据/home')
+  raw.run(3, '2026-01-01', 1, 'tool', 'synthetic tool fixture', 0, 1767225602000, '{}', '/sdcard/DSHA/生活/数据/home')
+  raw.run(4, '2026-01-01', 2, 'user', 'synthetic tombstone fixture', 1, 1767225603000, '{}', '/sdcard/DSHA/生活/数据/home')
+  db.prepare('INSERT INTO raw_fts(rowid,text) VALUES(?,?)').run(1, 'synthetic raw fts')
+  db.prepare('INSERT INTO raw_vectors(raw_id,dim,vec,model,updated_at) VALUES(?,?,?,?,?)')
+    .run(1, 2, Buffer.from(new Float32Array([1, 0]).buffer), 'synthetic-model', 1767225600000)
   db.close()
   return { dir, file }
 }
