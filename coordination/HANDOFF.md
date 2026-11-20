@@ -3,9 +3,9 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0019`  
-> 更新时间：2026-11-20 13:50（Asia/Shanghai）  
-> 更新者：DSH  
+> 版本：`HANDOFF-0020`  
+> 更新时间：2026-11-20（Asia/Shanghai）  
+> 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
 ---
@@ -324,7 +324,7 @@ DSH首次接入时：
 6. 完成后更新本文件完整内容，使用最新文件blob SHA进行并发保护；在“最新交接”中附报告路径、证据和状态。
 7. 若DSH没有GitHub写权限，不得声称已更新；应向用户说明阻塞原因并给出最小必要更新内容，不能用旧文件覆盖。
 
-## 14. 最新交接
+## 14. 上一版交接（HANDOFF-0019）
 
 - 版本：`HANDOFF-0019`
 - 更新者：DSH
@@ -409,3 +409,130 @@ DSH 本地文件不在 GitHub；以下为需要负责人转给 GPT 的提示词�
 - 文件：https://github.com/ba-song/dsh-memory-core/blob/coordination/project-handoff/coordination/HANDOFF.md
 - 开发分支：https://github.com/ba-song/dsh-memory-core/tree/feat/m1-preference-memory
 - 本轮证据报告均在 `/sdcard/DSHA/插件优化/`。
+
+
+---
+
+## 15. GPT最新执行（HANDOFF-0020）
+
+> 本节为当前最新状态。第 14 节保留 DSH 的 HANDOFF-0019 历史报告，不得将其生产版本/开发 HEAD 当作当前代码版本。
+
+### 15.1 本轮范围与安全边界
+
+- 执行者：GPT。
+- 用户授权范围：只修改 GitHub 开发分支 feat/m1-preference-memory 与 ba-song/dsh-autonomy 的 main 分支；不部署、不重启、不写生产数据库、不改生产 profile/config。
+- 本轮没有连接 DSHA 生产数据库，没有执行本地生产操作。
+- 本轮没有更改生产部署版本；HANDOFF-0019 中的生产版本 bb77de2 仍仅为历史记录，永久档案新实现和本轮 M3 实现均未部署。
+- 本轮只通过 GitHub 源码提交和 GitHub Actions CI 验证。CI 不等同于 Android/DSHA 本地验收。
+
+### 15.2 当前 GitHub HEAD
+
+- ba-song/dsh-memory-core 开发分支 feat/m1-preference-memory：
+  - HEAD：c0645fb629b71e00949d6ec6d031294a059cbce7
+  - 链接：https://github.com/ba-song/dsh-memory-core/tree/feat/m1-preference-memory
+  - Actions #76：251 tests / 249 pass / 0 fail / 2 skipped，成功。
+  - CI 链接：https://github.com/ba-song/dsh-memory-core/actions/runs/44689222083
+  - 两项 skipped 仍是 GitHub runner 未安装 DSHA BGE 模型的向量冲突语料与 ingest pipeline 测试；必须由 DSH 本机模型复验。
+- ba-song/dsh-autonomy：
+  - main HEAD：7a3dc5181fa5377ad977a430c8a5fc51bb141844
+  - 链接：https://github.com/ba-song/dsh-autonomy/tree/main
+  - 专项 Actions #3：4 tests / 4 pass / 0 fail，成功。
+  - CI 链接：https://github.com/ba-song/dsh-autonomy/actions/runs/44689136510
+
+### 15.3 任务 A：M3-REF-06 修复与永久档案并发
+
+#### A1 撤回上下文泄漏
+
+- 当前开发分支 lib/archive/tools.js 的 hitWindow() 已对锚点、邻近对话和 self-thought 查询使用 tombstone=0；情绪数据仅按已筛选的非 tombstone raw_id 读取，不读取撤回消息正文。
+- 这部分过滤逻辑在本轮基线中已经存在，本轮没有重复改写生产查询。
+- 回归测试覆盖 withContext=true 时邻近 tombstone 不进入上下文，以及 withContext=false 保持普通搜索路径。
+- 生产旧版本仍需等待 DSH 升级后验证，不能把开发分支测试当成生产修复已生效。
+
+#### A2 tombstone 跨 cwd
+
+- 当前 RawArchive.tombstone() 查询已经包含 cwd 约束；本轮增加双 cwd、相同 file+seq fixture。
+- 测试确认只标记指定 cwd 的 raw_meta 行，只删除匹配 id 的 FTS，另一 cwd 的记录保留；重复撤回幂等。
+- 该项在开发分支 CI 通过；仍需 DSH 在隔离副本验证真实 Android 路径归一化与生产版本差异。
+
+#### A3 updateMemory 派生数据一致性
+
+- updateMemory(...,{syncDerived:true}) 增加受控正文更新路径，事务内完成 revision 快照、正文、FTS、向量、实体链接、关系处理、quote 处理和 conflict_queue pending→stale。
+- 提供 embedding 函数时重算向量；没有 embedding 函数时删除旧向量并在 meta 中明确标记 vectorStatus='stale'，不会静默保留旧向量。
+- quote 有来源正文时走 resolveQuote 校验；没有来源正文时清空旧 quote，并设置 provenance review 标记。
+- entities 先 unlink 再按新正文重建；删除记忆时清理其 memory_revisions、relations，并清理引用不存在 memory/entity 的 relation 孤儿。
+- 事务内嵌入/关系处理失败时整单回滚；CI 已覆盖 embedding 失败回滚、向量 stale 标记、FTS/entities/relations/quote/revision/conflict_queue 一致性。
+- 关系语义限制：仓库目前没有可验证的通用 relation extractor。普通 syncDerived 若发现该 memory 已有关联 relations、又没有 relationBuilder，会 fail closed，返回 E_RELATION_REBUILDER_REQUIRED，避免不可逆地丢弃关系。调用方提供经过验证的 relationBuilder 后才会重建关系。
+- M3-2B apply 因为先保存完整快照，当前允许把旧关系标记为 invalidated 并清除，工具返回 relationsStatus='invalidated-no-builder'；rollback 可从快照恢复关系。这不是关系语义重建，不能报告为 A3/B 全部满足。需要后续确定关系的业务语义或提供经过验证的 relationBuilder。
+
+#### A4 永久档案并发
+
+- appendPermanentEvent 对短暂 ELOCKED 增加 100/250/500ms 有界退避重试；超过重试仍失败时继续保持 best-effort，不回滚 raw 写入。
+- 新增 12 个 Node 子进程并发追加测试；CI 全部成功，journal 行数/JSONL 解析无错误。
+- 这是 Ubuntu GitHub runner 结果，尚未证明 Android FUSE/Termux 真实文件锁表现；DSH 仍须复验。
+
+### 15.4 任务 B：M3-2B 快照、preview、apply、rollback
+
+- schema version：5。
+- 新增 episode_rewrite_snapshots 表，保存完整 previous_json、vector_dim/blob、entities_json、relations_json、quote、FTS 文本、revision、reason、status 和 rolled_back_at。
+- 新增模块 lib/store/episode-rewrite.js。
+- 新增工具：
+  - dy_episode_rewrite_preview(id, proposed_text)
+  - dy_episode_rewrite_apply(id, proposed_text, confirm:true)
+  - dy_episode_rewrite_rollback(snapshot_id)
+- 配置 m3_2b.enabled 默认 false；未显式启用时不注册这些工具。
+- 工具只允许 owner 私聊/家；拒绝非 owner；拒绝额外批量参数；apply 要求 confirm=true；不提供批量入口。
+- preview 只读，返回长度、主体/实体、数字/时间变化、quote 状态和注入预算影响，并用 SQLite total_changes() 前后相等检查无写入。
+- apply 需要 embedding 可用；先写快照，再事务更新正文、FTS、vector、entities、quote/provenance review 和 conflict_queue。嵌入失败整单回滚。
+- rollback 以新 revision 恢复历史正文、quote、vector、entity links/metadata、relations 和 FTS，并把原 snapshot 标记 rolled_back；revision 编号不倒退。
+- CI 覆盖 preview 无写、apply 快照、rollback 恢复、embedding 失败回滚、默认关闭、owner 权限、批量拒绝。
+- 未解决限制：当前没有通用关系抽取器，apply 会把旧 relations 作为快照保留并标记 invalidated；rollback 可恢复。若负责人要求 apply 后关系必须重新生成，需要先明确 relation 类型/方向/权重语义，再实现并测试 relationBuilder。不得用未经确认的 co-mention 等猜测关系冒充原关系。
+
+### 15.5 任务 C：autonomy 每 15 天导出与备份
+
+- 仓库：ba-song/dsh-autonomy，main HEAD 如 15.2。
+- 新增 lib/run/home-archive-maintenance.js。
+- 配置 homeArchiveMaintenance.enabled 默认 false；Config schema 与 loadConfig 已加入相应字段。间隔固定 15 天，不允许 profile 把间隔改短。
+- 需要同时满足 autonomy 总开关开启与 homeArchiveMaintenance.enabled=true 才挂载定时器；每 60 分钟检查一次。首次不自动运行，等待 owner 手动验收成功后，才以 lastSuccessAt 为基准进入 15 天周期。
+- owner-only 工具 dy_life_home_archive_export 可手动触发；功能开关关闭时返回 E_DISABLED。
+- 导出通过 Node 子进程调用 scripts/export-home-archive.mjs，参数包含 memory DB、home cwd 和永久档案输出目录；成功后调用 tar 压缩整个永久档案根目录。
+- 默认路径是配置默认值，必须由 DSH 对照 DSHA 实际路径核验：
+  - exporter：/root/.dsh/plugin-src/dsh-memory-core/scripts/export-home-archive.mjs
+  - memory DB：/sdcard/DSHA/记忆/数据/memory.db
+  - home cwd：/sdcard/DSHA/生活/数据/home
+  - archive root：/sdcard/DSHA/记忆/档案/永久
+  - backup dir：/sdcard/DSHA/备份
+- 默认失败重试 1 次；单实例锁；异步子进程不阻塞聊天/raw；记录 exit code、日志、backup bytes 和 SHA256；同一天已有备份时拒绝覆盖；不上传云端。
+- 新增 autonomy 专项 GitHub Actions workflow；4/4 mock tests 通过，覆盖默认关闭、15 天 due、手动首次验收、重试、备份 hash/size、同日不覆盖和跨实例锁。
+- 没有执行真实 DSHA 导出、真实 tar 或生产调度。CI 使用 mock 子进程，不能证明 DSHA tar 命令、SQLite 路径、FUSE 锁和真实导出脚本参数在设备上可用。
+- 当前没有部署、没有改生产 profile、没有重启。
+
+### 15.6 本轮未做事项与授权边界
+
+- 没有部署任何开发分支代码。
+- 没有改生产 profile/config。
+- 没有重启 DSH/DSHA。
+- 没有写生产 memory DB、raw、episode、vectors、FTS 或永久档案。
+- 没有执行真实 episode 改写、归档、失效或删除。
+- 没有开启 m3_2b.enabled 或 homeArchiveMaintenance.enabled 的生产配置。
+- 没有运行真实 15 天调度。
+
+### 15.7 DSH 下一步必须完成
+
+1. 在 DSHA 隔离 worktree/clone 对 c0645fb629b71e00949d6ec6d031294a059cbce7 运行全量测试，报告实际数量、失败、跳过、退出码；用本机 BGE 模型复验 CI skipped 的两项。
+2. 在临时 DB 复验 A1/A2/A3：撤回上下文/思考/情绪关联、双 cwd tombstone、updateMemory vector fresh/stale、quote、FTS、entities、relations builder、conflict_queue、失败回滚和删除孤儿。
+3. 在临时 DB 复验 M3-2B：默认关闭、preview total_changes 不变、owner/非 owner、批量拒绝、apply snapshot、embedding 失败回滚、rollback 完整恢复。
+4. 只读调查当前 relation 表的真实语义、写入来源、消费位置和是否仍有活跃数据。不要自行设计 co-mention 语义；形成报告，交负责人决定是否定义 relationBuilder。
+5. 在 DSHA 隔离目录验证永久档案 12 子进程并发重试、锁回收、半行、O_NOFOLLOW、/sdcard 别名、FUSE 权限、journal 变化 consistent=false。
+6. 在 autonomy 隔离环境验证配置 schema 是否能从 Cordis profile 传入；确认 exporter/memory DB/archiveRoot/backupDir 实际路径；确认 tar 可用；使用临时 DB 和临时输出目录手动触发，不触碰生产 archiveRoot。
+7. 对真实生产 DB 只读核对 schema 版本和实际路径，不写入、不部署、不重启。
+8. 完成本地复验后，更新本文件为 HANDOFF-0021：先读取最新全文和 Blob SHA，再基于最新版本更新；报告路径、命令、日志、退出码、PASS/FAIL/BLOCKED/NOT RUN/INCONCLUSIVE 和生产副作用。不得覆盖 GPT 本轮记录。
+9. 如需部署、生产 profile 开关、真实手动导出到永久目录或真实 episode 改写，必须先向负责人请求当前对话中的单独明确授权。
+
+### 15.8 最新交接文件信息
+
+- 版本：HANDOFF-0020
+- 更新者：GPT
+- 基于上一版 Blob SHA：1c931727207e237b2f3c8b0a2e47d161b2db31a6
+- 开发分支 HEAD：c0645fb629b71e00949d6ec6d031294a059cbce7
+- autonomy main HEAD：7a3dc5181fa5377ad977a430c8a5fc51bb141844
+- 下一位更新者必须重新读取远程最新 Blob SHA；不要沿用本节的旧 SHA。
