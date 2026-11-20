@@ -38,11 +38,12 @@ test('event chain only returns same-session, same-scope, anchored shared-entity 
     emit(otherSid, 1, '主人也讨论了海边旅行')
     emit(sid, 6, '主人讨论了一件工资方面的事情')
     emit(sid, 7, '主人和鲸鱼继续讨论海边旅行', OTHER)
+    emit(sid, 9, '主人用显式来源继续讨论海边旅行')
 
     const add = async (seq, text, opts = {}) => {
       const id = await insertMemory(db, {
         kind: 'episode', text, scopeType: opts.scopeType ?? 'owner',
-        scopeId: opts.scopeId ?? '', sourceMsgId: `p4:${opts.sid ?? sid}:${seq}`,
+        scopeId: opts.scopeId ?? '', sourceMsgId: `${opts.sourceKind ?? 'p4'}:${opts.sid ?? sid}:${seq}`,
         sourceTs: at + seq * 1000, validFrom: opts.validFrom ?? at - 1000,
         validTo: opts.validTo ?? null, temporalKind: opts.temporalKind ?? 'current',
         status: opts.status ?? 'active',
@@ -59,6 +60,7 @@ test('event chain only returns same-session, same-scope, anchored shared-entity 
     const otherSession = await add(1, '主人也讨论了海边旅行', { sid: otherSid })
     const genericOnly = await add(6, '主人讨论了一件工资方面的事情')
     const sameSessionOtherCwd = await add(7, '主人和鲸鱼继续讨论海边旅行')
+    const explicitNeighbor = await add(9, '主人用显式来源继续讨论海边旅行', { sourceKind: 'explicit' })
 
     // 撤回 seq=4；它必须从链中消失。
     raw.onEvent({ header: { id: sid, cwd: HOME } }, event('message/recall', 8, '', at + 8000, { seq: 4 }))
@@ -66,11 +68,11 @@ test('event chain only returns same-session, same-scope, anchored shared-entity 
     db.prepare('DELETE FROM raw_meta WHERE id=?').run(Number(missingRaw.id))
 
     const rows = eventChainCandidates(db, seed, { cwd: HOME })
-    assert.deepEqual(rows.map((row) => row.id), [neighbor.id])
+    assert.deepEqual(rows.map((row) => row.id), [neighbor.id, explicitNeighbor.id])
     assert.equal(rows[0].relation, 'same-session+shared-entity')
     assert.equal(rows[0].sourceSeq, 2)
-    assert.ok(rows[0].sharedEntities.length > 0)
-    assert.notEqual(rows[0].anchorRawId, 0)
+    assert.equal(rows[1].sourceSeq, 9)
+    assert.ok(rows.every((row) => row.sharedEntities.length > 0 && row.anchorRawId !== 0))
     assert.equal(rows[0].scopeType, 'owner')
     assert.equal(rows[0].scopeId, '')
     assert.ok(!rows.some((row) => [wrongScope.id, otherSession.id, missing.id, genericOnly.id, sameSessionOtherCwd.id].includes(row.id)))
