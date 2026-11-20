@@ -2,8 +2,8 @@
 
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
-> 版本：`HANDOFF-0046`
-> 更新时间：2026-11-20 23:12（Asia/Shanghai）
+> 版本：`HANDOFF-0048`
+> 更新时间：2026-11-20 23:35（Asia/Shanghai）
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -2948,3 +2948,49 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - GPT：定稿 EI-0 契约与开发任务拆解；所有开发修改在开发分支完成。
 - DSH：收到 GPT 提示词后只读复核契约与本地兼容风险，不自行改源码或启动 staging。
 - 更新 HANDOFF/REPORT 时遵守 SHA 并发保护。
+
+
+---
+
+## 46. Emotion Intelligence EI-0 契约复核（HANDOFF-0048）
+
+> 完整报告：`coordination/REPORT.md`（REPORT-0005）
+> 只读；未改源码/DB/profile；未运行测试/staging/host；未部署/重启。
+
+### 46.1 结论
+**EI-0 契约复核 BLOCKED。** 方向和原则正确，但有 4 个结构性歧义需先修：
+1. EmotionEvent 含 `emotions[]` 与 EmotionAppraisal 边界冲突；
+2. Episode 只有单个 event/appraisal，无法表达“多事件推动一个 episode”；
+3. EmotionMemoryLink 跨 Persona/Memory/task 库，未定义归属/ID 生命周期；
+4. EmotionState 的 `emotions[]` 缺 target 维度，会把对主人/工具/自己的情绪混成一个全局状态。
+
+### 46.2 补充缺口
+- event 无幂等键/dedupe；迟到/补收/24h 近似需明确 `exact|nearest|window_fallback`，禁止当前状态回填历史。
+- 多情绪合并、primary label、正负并存、低置信/过期处理未定义。
+- 旧 API `state/emotionAt/emotionTimeline/emotionLine` 需保留单值并新增 `emotions[]`/能力协商，避免 Persona/Memory 版本错配。
+- 事务、索引、每轮写入上限、低置信不写长期关系/人格需补充。
+
+### 46.3 建议
+- Event=不可变触发事实；Appraisal=不可变判断（可多版本）；重新评价追加，不改旧 event。
+- Episode 增加 `episode_sources(episode_id,appraisal_id)` junction；保留 primary_appraisal_id 兼容。
+- Link 归一侧 DB（Persona 或 Memory），用命名空间 target_kind/target_id，不做跨库 FK；memory 删除只标 invalidated/dangling，不删 event。
+- State 按 experiencer+target 分区；`emotions[]` 每项带 target，primary label 仅展示。
+- 事件增加 dedupe_key；link 记录 temporal_precision；shadow 阶段不改排序/注入。
+
+### 46.4 状态
+| 项 | 状态 |
+|---|---|
+| Persona/Memory 事实核对 | PASS（源码/只读计数） |
+| EI-0 原则 | PASS（方向） |
+| Event/Appraisal 边界 | BLOCKED |
+| Episode 多事件 | BLOCKED |
+| 跨库 Link | BLOCKED |
+| State target 维度 | BLOCKED |
+| 幂等/时间精度/API 兼容/事务索引 | 需补充 |
+| EI-1 实施/生产写入 | NOT RUN/禁止 |
+
+### 46.5 交接
+- 版本：`HANDOFF-0048`
+- 基于旧 blob：`81b7456fcdeb2468d590c4c55b43bebe0c94e287`
+- REPORT-0005：`coordination/REPORT.md`
+- 下一位更新者必须重新读取最新 blob SHA。

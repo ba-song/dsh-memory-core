@@ -1,135 +1,157 @@
-# REPORT-0004 · Emotion Intelligence 第二轮源码审查与 EI-0 契约草案
-## 2026-11-20 · GPT GitHub 静态审查 · 基于 HANDOFF-0046 / REPORT-0003
+# REPORT-0005 · Emotion Intelligence EI-0 契约复核
+## 2026-11-20 23:30 · 只读 · HANDOFF-0048
 
-> Persona 基线：`ba-song/dsh-persona-core@a84c7badd1e6c971a66b6c39dd4f7ab795df4b90`
-> Memory 基线：`ba-song/dsh-memory-core@7548e49ed0b8d8673818464325d8e72ec7704b27`
-> 本轮只读源码审查与协调文档更新；未改插件源码、未运行测试、未连接/修改生产 DB、未启动 staging、未部署/重启。
+> 依据：HANDOFF-0047（commit `0ceb934...`，实际 header 仍 0046，§45 为 0047）、REPORT-0004（blob `9d3ec42b...`）
+> Persona 基线：`a84c7badd1e6c971a66b6c39dd4f7ab795df4b90`
+> Memory 基线：`7548e49ed0b8d8673818464325d8e72ec7704b27`
+> 本轮只读；未改源码/DB/profile；未运行测试/staging/host；未部署/重启。
 
-## 1. 核对 DSH 的 HANDOFF-0046 / REPORT-0003
+## 1. 结论
 
-DSH 报告与 GPT 复核的源码一致：
-- Persona 本地安装路径 `/root/.dsh/plugin-src/dsh-persona-core`，package 0.2.0；无 `.git`，但本地 71/71 文件 SHA256 与 GitHub 基线完全一致。准确表述为“文件级一致”，不声称 Git 工作树 clean。
-- Memory raw 情绪快照已存在；episode meta 尚无 emotion；情绪用于上下文展示而非主召回排序。
-- 用户消息、工具结果、自主行动结果尚未形成统一快照关联路径。
-- 24h 近似取值可能把非精确时间的状态关联到历史 raw。
-- P0 staging plan v5 仅静态复核 PASS；staging NOT RUN；生产操作未授权。
+**EI-0 契约复核：BLOCKED（需修订后再进入 EI-1）。**
 
-## 2. Persona 第二轮源码审查
+方向和原则基本正确，但当前契约有 4 个会导致后续 schema/实现返工的结构性歧义：
+1. EmotionEvent 与 EmotionAppraisal 的边界冲突；
+2. EmotionEpisode 只能关联一个 event，无法表达“多个事件推动一个 episode”；
+3. EmotionMemoryLink 跨 Persona DB / Memory DB / task 系统，未定义归属和 ID 生命周期；
+4. EmotionState 的 `emotions[]` 未定义 target 维度，会把“对主人/工具/事件”的情绪混成一个全局状态。
 
-### 2.1 当前状态不是单一维度
-`lib/emotion.js` 已包含：
-- valence / arousal / certainty / intensity；
-- mood 慢层、dominance、energy/social；
-- 规则打分、平滑、惰性衰减、单条变化限幅；
-- emotion episodes、appraisal、timeline、event；
-- 关系轴与目标对象概念。
+另有多情绪合成、幂等、时间精度、API 能力协商等需要补的细节。
 
-`lib/db.js` 的 persona schema v2 已有 `emotion_state`、`emotion_timeline`、`emotion_points`、`emotion_episodes`、`emotion_event`、`emotion_appraisal` 等表。说明当前基础是“状态维度 + 事件/appraisal + 有限 episode”，并非只有一个标签。
+## 2. 现有代码事实（证据）
 
-### 2.2 复合情绪视图仍被压成单标签
-`lib/emotion.js:774-812` 的 `composeEmotionView()`：
-- 先按强度排序的 active episodes 只取第一个有效 episode；
-- 返回单个 `label` / `intensity` / `episode`；
-- 无有效 episode 才回落到 valence/mood 合成标签。
+### Persona schema
+- `emotion_event`：`id,self_id,at,kind,actor,subject,target,goal,goal_congruence,certainty,novelty,source_ref,excerpt,payload_json,confidence`（`lib/db.js:186`）。
+- `emotion_appraisal`：`event_id,self_id,at,rule_id,emotion,intensity,valence,arousal,cause,target,confidence,accepted,source,...`；**一行一个 emotion**，一个 event 可有多行 appraisal（`lib/db.js:203`）。
+- `emotion_episodes`：`id,self_id,at,emotion,intensity,cause,target,half_life_s,expires_at,appraisal_id,msg_ref`；**一个 episode 只关联一个 appraisal_id**（`lib/db.js:173`）。
+- `emotion_state`：每个 `self_id` 一行当前聚合状态；没有 target 列。
 
-因此多个 episode 虽可并存，但服务层没有提供完整的多情绪集合。建议新增 `emotions[]` 作为权威复合视图，并保留 `label` 作为兼容 primary label，不删除旧字段。
+### Persona API
+- `emotion.state()` 返回单个 `label/intensity/episode`，由 `composeEmotionView()` 取**最强一个** active episode（`lib/emotion.js:774-812`；`lib/service.js:220`）。
+- `emotionAt(at,{windowMs})` 返回单条 timeline 行（`lib/service.js:159`）。
+- `emotionTimeline({from,to,limit})` 返回 timeline 行数组（`lib/service.js:185`）。
+- `_emotionLine/_emotionLineFor/_emotionActFor` 都消费单 label（`lib/service.js:275-360`）。
+- `dyPersona.emotion.why()` 返回 points（`lib/service.js:262`）。
 
-### 2.3 Appraisal 仍为单情绪
-`lib/appraisal.js`：
-- system prompt 定义单个 `emotion(...)`；
-- `parseAppraisal()` 只校验并返回一个 `emotion`；
-- 单一 `intensity/valence/arousal/target/cause`；
-- LLM 超时/失败回 null，由调用方规则回退。
+### Memory 消费
+- `lib/ingest/archive.js:244` `snapshotEmotion` 写 `raw_emotion_archive`；`:494` 仅 assistant/message 触发。
+- `lib/service.js:311` `addEpisode` meta 无 emotion。
+- `lib/inject/anchors.js:569` `emotionAtTime` 从 Persona timeline/emotionAt 取历史近似值；`:581` 可退化本地 `emotion_timeline`。
+- `lib/inject/context-blocks.js:70-81` 用情绪给上下文附文字。
+- `lib/maintain/factors.js` 读 `meta.emotionIntensity`，但 episode 未写入。
+- 生产只读：raw_emotion_archive 1,957；episode 69；episode meta emotion 0；memory 遗留 emotion_timeline 10。
 
-建议未来兼容旧 `emotion`，新增 `emotions[]`；解析器必须对数组长度、标签、数值范围、重复项、置信度和未知标签做严格归一化。低置信/无把握允许输出空数组或 uncertain，不应强造复合情绪。
+## 3. 契约结构性问题
 
-### 2.4 状态、事件和 episode 的语义边界需明确
-目前：
-- `emotion_state` 是当前聚合状态；
-- `emotion_timeline` 是带时间的状态采样；
-- `emotion_event` 是触发事件及上下文；
-- `emotion_appraisal` 是对事件的评价结果；
-- `emotion_episodes` 是带半衰期的活跃情绪。
+### 3.1 EmotionEvent 与 EmotionAppraisal 边界冲突
+草案的 EmotionEvent 保存 `emotions[]` + `appraisal_version`，但现有模型已经把“事件触发”与“评价结果”分开，且一个 event 可有多条 appraisal。
+- 若 event 固定 emotions[]，后续重新评价就要修改“不可变事件”，与不可变原则冲突；
+- 若 appraisal 可多版本，event 只能保存初始 proposal，不能代表最终判断。
 
-EI-0 必须把“发生过的不可变情绪事件”“当前衰减后的状态投影”“短期活跃 episode”“对记忆的关联”分开，不能让当前 state 反写历史 event，也不能把 episode 衰减当成删除历史。
+建议：**Event = 不可变触发事实**（who/when/source/cause/target/evidence），不放 emotions[]；**Appraisal = 不可变判断**，带 `event_id`、`appraisal_version`、`emotions[]`；重新评价=追加新 appraisal，不改旧 event/appraisal。Event 可记录 `initial_appraisal_id` 仅作索引。
 
-### 2.5 关系与人格成长边界
-`lib/relationship.js` 将情绪类型/强度映射到 trust/warmth/disclosure/tension 等关系轴，并有限幅和日衰减。EI-4 应复用现有关系轴，但必须避免一次低置信 appraisal 直接长期改变关系；先 shadow/suggest-only，保留来源、置信度和可解释依据。
+### 3.2 Episode 单 event_id 无法表达多事件
+草案 `episode.emotion_event_id` 单值；现有 `emotion_episodes.appraisal_id` 也是单值。但需求明确“一个 episode 可由多个事件共同推动”。
+建议：
+- 增加 `emotion_episode_sources(episode_id, appraisal_id, weight, added_at)` 关联表；或 `source_appraisal_ids` JSON（不推荐，难索引）；
+- episode 保留 `primary_appraisal_id` 作为兼容/主因；
+- 迁移时把现有 appraisal_id 填入 junction，保证旧数据可用。
 
-## 3. Memory 情绪链路复核
+### 3.3 EmotionMemoryLink 跨库归属未定义
+Persona DB、Memory DB、task 系统是不同 SQLite/服务；`raw_id/memory_id/task_id` 不能在同一表做真实外键。
+建议二选一：
+1. Link 表归 Persona DB，只存 `event_id` + `target_kind/target_id`（字符串命名空间），由 Memory/task 服务校验存在性；不做跨库 FK；
+2. Link 表归 Memory DB，存 `emotion_event_id` + raw/memory id；Persona 不直接读。
+必须定义：
+- ID 命名空间（persona:self、memory:memories.id、raw:raw_meta.id、task:...）；
+- memory 删除/撤回时的 link 处理（保留历史 link，标记 dangling/invalidated，不物理删 event）；
+- episode 合并/拆分时 link 迁移规则。
 
-基于开发 commit `7548e49...`：
-- `lib/ingest/archive.js:244-260`：`snapshotEmotion(rawId, at)` 查询 Persona timeline/emotionAt，并写 `raw_emotion_archive`。
-- `lib/ingest/archive.js:494`：只在 `assistant/message` 且存在 `_firstSelfId` 时触发。
-- `lib/service.js:311`：`addEpisode` meta 目前包含 source/actionId/channel/ref/dedupeKey 等，不含 emotion。
-- `lib/inject/anchors.js:569+`：`emotionAtTime` 从 Persona 时间线或 Memory 旧表取近似情绪。
-- `lib/inject/context-blocks.js:70-81`：相关上下文可附加情绪文字。
-- `lib/maintain/factors.js: emotionFactorOf()` 已读取 `meta.emotionIntensity` 并产生最多 15% 的记忆权重乘数，但 DSH 生产统计显示 episode meta 中该字段缺失，因此目前该因子没有真实情绪值可用。
-- DSH 生产只读统计：raw_emotion_archive 1,957；episode 69；episode meta emotion 0。
+### 3.4 State 缺 target 维度
+现有 emotion_state 是 self 全局单行；episode 有 target。若 `emotions[]` 只是全局数组，会把“担心主人”“对工具烦”“对自己难过”混成一个 current state，`emotionLineFor` 无法选对目标。
+建议：
+- `EmotionState` 按 `experiencer + target` 分区（至少 owner/tool/self/event），或 `emotions[]` 每项带 `target`，并提供 `stateFor(target)`；
+- 全局 primary label 仅作展示，不覆盖分目标状态；
+- 明确 owner 情绪与汐自身情绪不能混写。
 
-注意：24h 时间窗口并非“事件时刻精确状态”。EI-0 要求时间关联必须明确标记 exact / nearest / window_fallback 等精度，不允许把近似匹配伪装成 exact。
+## 4. 还需补齐的契约细节
 
-## 4. EI-0 逻辑契约草案（供后续开发）
+### 4.1 幂等/迟到/补收
+- 草案无 event 幂等键；`source_ref` 不保证唯一。
+- 建议 event 增加 `dedupe_key`，唯一约束 `(experiencer, source_kind, dedupe_key)`；无 dedupe 时用 `source_kind+source_ref+occurred_at+actor+target` 的哈希。
+- 迟到消息：`occurred_at` 与 `recorded_at` 分开；补收可产生 event，但 link 的 `temporal_precision` 标 `window_fallback`，不能伪装 exact。
+- 禁止用当前 state 回填旧 event；没有历史 timeline 时 link 可 null/uncertain，不强行匹配。
 
-### 4.1 核心对象分层
-1. **EmotionEvent（不可变历史事件）**：记录一次情绪判断发生的时间、体验者、触发来源、目标、情绪集合、置信度及证据引用。
-2. **EmotionEpisode（短期活跃状态）**：由一个或多个事件推动，带独立强度/半衰期/状态；衰减只改变有效强度/激活，不删除事件。
-3. **EmotionState（当前投影）**：由多个活跃 episode 合成的当前多情绪视图；不是历史事实。
-4. **EmotionMemoryLink（关联边）**：将 event 与 raw_id / memory_id / task_id 关联，支持一对多、多对多和来源追踪；不能把情绪全文复制进 memory 正文。
-5. **EmotionRecallSignal（可选召回信号）**：仅作为低权重、可解释的辅助因子；不得覆盖事实相关性、时间、权限、scope、tombstone 等硬约束。
+### 4.2 多情绪合成
+- 明确同 label 合并规则（取最大强度还是加权和）、正负并存的展示顺序、primary label 选取（强度/置信度/目标优先级）；
+- 低置信/冲突不合成“复杂情绪”，允许 `uncertain` 或空数组；
+- 过期 episode 只影响 active 投影，不删 event/link；
+- 每个 emotion 保留 source episode/appraisal id，便于 why/追溯；
+- 多情绪上限/排序/预算，避免注入膨胀。
 
-### 4.2 推荐字段（逻辑契约，不是已实施 schema）
-- event：`schema_version, event_id, occurred_at, recorded_at, experiencer=self, actor, source_kind, source_ref, cause, target, confidence, appraisal_version`
-- emotions[]：`emotion_id, label, family(optional), intensity(0..1), confidence(0..1), valence(-1..1), arousal(0..1), target, evidence_ref(optional)`
-- episode：`episode_id, emotion_event_id, started_at, updated_at, intensity, half_life, status, target`
-- link：`emotion_event_id, raw_id?, memory_id?, task_id?, association_kind, temporal_precision(exact|nearest|window_fallback), confidence, created_at`
+### 4.3 API 兼容
+必须保留旧字段并增加能力协商：
+- `state()` 继续返回 `label,intensity,episode`；新增 `emotions[]`、`schema_version`、`capabilities`。
+- `emotionAt()` 继续返回单行 `label/intensity/...`；新增 `emotions[]`；旧 Memory 不读新字段。
+- `emotionTimeline()` 行新增 `emotions[]`；旧调用方不受影响。
+- `emotionLine/emotionLineFor/emotionActHint` 继续用 primary label；多情绪只作为可选附加，不能改变旧注入格式。
+- `dyPersona` 服务增加 `capabilities.emotionV2`（或 schema_version）；Memory 先探测再调用，避免 Persona/Memory 版本错配。
+- `why()` 返回 points 兼容；新增 event/appraisal id 可选。
 
-所有时间统一毫秒 epoch；所有数值在边界处校验；保留原始来源引用；schema_version 版本化。字段可在实现审查后调整。
+### 4.4 事务/性能/索引
+- Appraisal+emotions+episode+link 应在一个事务；failure 全回滚。
+- 新表索引：event(self_id,occurred_at)、appraisal(event_id,at)、episode(self_id,status,expires_at)、link(raw_id/memory_id/event_id)。
+- 每轮最多 N 个 emotion；低置信不写 episode；避免每 token 写库。
+- SQLite JSON 字段仅作 payload，不把 `emotions[]` 只塞 JSON 后依赖 JSON1 查询；需要可检索字段/子表。
 
-### 4.3 兼容原则
-- 保留现有 `emotion`、`label`、`intensity` 等单值 API；旧调用方继续可用。
-- 新增 `emotions[]` 权威字段；primary label 仅为兼容展示，不代表其他情绪被丢弃。
-- 六基础情绪、图中组合是参考 ontology，不是封闭 enum；允许新情绪、混合情绪和正负并存。
-- 区分“汐自己的情绪”与“汐对主人/工具/事件的情绪目标”；不能把用户情绪直接写成汐的情绪。
-- LLM 评估必须区分模型推断与明确自述；低置信结果保留不确定性。
-- 情绪不参与事实真伪判断，不得作为操控用户的筹码。
+### 4.5 安全/关系/成长
+- 低置信 appraisal 不得直接 `advanceRelationship` 或写长期人格；EI-4 先 suggest-only。
+- 用户情绪（主人难过）不能被写成汐自己的情绪；`experiencer` 必须显式。
+- 情绪不能改变事实判断/权限/scope/tombstone；recall 只做低权重、可解释加分。
+- 安全区/消散区只影响激活/检索/摘要细节，不删除 raw/永久档案/event/link。
 
-### 4.4 记忆生命周期
-- “安全区/消散区”定义为保留/激活/检索状态，不是物理删除机制。
-- 原始对话、永久档案、历史 EmotionEvent 不因衰减而删除或改写。
-- 消散可以降低摘要细节、激活度或召回优先级；不得破坏 source raw 或不可变事件。
-- 再次调用记忆可更新激活状态/产生新事件，但不得覆盖旧情绪快照。
-- 历史情绪按 event occurred_at 查询；禁止用当前 state 覆盖历史。
+## 5. 建议修订后的最小对象
 
-### 4.5 召回与注入
-- 第一阶段只做 shadow 计算/日志，不改变召回结果或注入。
-- 后续可在满足 scope、权限、tombstone、事实相关性门槛后，加入小幅、可解释的辅助权重。
-- 情绪匹配不得单独使无关记忆进入 top-k；不得突破注入字符预算。
-- 对照评测必须证明事实准确率不下降，且情绪匹配带来可测收益后才可考虑启用。
+```
+EmotionEvent: event_id, occurred_at, recorded_at, experiencer, actor,
+  source_kind, source_ref, dedupe_key, cause, target, evidence_ref, confidence
+EmotionAppraisal: appraisal_id, event_id, appraised_at, appraisal_version,
+  emotions[] {label,intensity,confidence,valence,arousal,target,evidence_ref}
+EmotionEpisode: episode_id, primary_appraisal_id, started_at, updated_at,
+  status, half_life, intensity, target
+EmotionEpisodeSource: episode_id, appraisal_id, weight, added_at
+EmotionState: per experiencer+target projection; emotions[] + primary label
+EmotionMemoryLink: link_id, appraisal_id/event_id, target_kind, target_id,
+  association_kind, temporal_precision, confidence, created_at, invalidated_at
+EmotionRecallSignal: shadow score, reasons[], no direct rank mutation first
+```
 
-## 5. EI-0..EI-5 阶段路线
+## 6. 状态
 
-| 阶段 | 内容 | 验收门槛 |
-|---|---|---|
-| EI-0 | 逻辑契约、兼容矩阵、事件/episode/link/state 边界 | GPT/DSH审查通过；无 schema/行为歧义 |
-| EI-1 | 纯函数多情绪合成；多 episode 不再丢失 | 单测覆盖正负并存、重复标签、过期、低置信、确定性 |
-| EI-2 | Appraisal 多标签输出和解析 | shadow 对照旧单标签；无效输出安全回退 |
-| EI-3 | Persona↔Memory 情绪事件关联 | raw/episode/task 可追溯；时间精度可区分；无历史污染 |
-| EI-4 | 关系与成长反思 | suggest-only；低置信不写长期人格 |
-| EI-5 | 隔离测试、渐进启用与回滚 | fixture/兼容/迁移/回滚全通过；生产启用另行授权 |
+| 项 | 状态 |
+|---|---|
+| 现有 Persona 数据结构/API 核对 | PASS（源码证据） |
+| Memory 消费链核对 | PASS（源码+只读计数） |
+| EI-0 原则（不可变/不删除/不操控） | PASS（方向） |
+| Event/Appraisal 边界 | **BLOCKED**（需拆分） |
+| Episode 多事件 | **BLOCKED**（需 junction） |
+| 跨库 MemoryLink | **BLOCKED**（需定归属） |
+| State target 维度 | **BLOCKED**（需分目标） |
+| 幂等/迟到/时间精度 | 需补充 |
+| API 兼容/能力协商 | 需补充 |
+| 事务/索引/性能 | 需补充 |
+| EI-1 实施 | NOT RUN（本轮不实施） |
+| 生产写入/部署 | NOT RUN/禁止 |
 
-## 6. 建议优先级与尚待决定
-1. 先完成 EI-0 契约复核，不立即改源码或 DB。
-2. EI-1 先纯函数、零迁移、保留旧 API。
-3. EI-2 先 shadow mode，不改变表达/注入策略。
-4. EI-3 先只读关联设计，再做隔离 fixture。
-5. 不把 P0 staging 与 EI 开发互相阻塞；P0 plan v5 PASS，但 staging 仍等待负责人单独决定。
+## 7. 需要 GPT 决策
 
-## 7. 本轮验证边界
-- GitHub 静态源码审查：已完成（上述指定文件/行段）。
-- Persona tests：NOT RUN。
-- Memory tests：NOT RUN。
-- DSHA runtime / E2E：NOT RUN。
-- 生产 DB：未连接；无写入。
-- staging / host / exporter：NOT RUN。
-- 生产部署/重启：NOT RUN。
+1. Event/Appraisal 是否按“事件不可变 + 判断多版本”拆分；
+2. Episode 多事件用 junction 表还是 JSON；
+3. Link 归 Persona 还是 Memory（跨库不能 FK）；
+4. State 是否按 target 分区，primary label 如何选；
+5. 多情绪上限/合并规则/低置信阈值；
+6. 旧 API 能力协商字段名（emotionV2/schema_version）。
+
+## 8. 副作用
+
+只读源码/DB；未改 Persona/Memory 源码、DB、profile/config；未运行测试/staging/host；未部署/重启。
