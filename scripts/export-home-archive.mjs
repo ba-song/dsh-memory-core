@@ -224,6 +224,7 @@ export async function exportHomeArchive({ dbPath = DEFAULT_DB, outDir = DEFAULT_
       '',
       '- 本目录为明文永久档案；只处理指定 home cwd。',
       '- 目录尝试设置为 0700、文件尝试设置为 0600；Android 共享存储可能不支持 POSIX 权限，必须以 DSHA 本机实测为准。',
+      '- 若 `.home-archive.recovery` 因进程被强制终止而残留，写入会安全失败；确认没有归档写入进程后再人工清除该恢复目录。',
       '- `_events/YYYY-MM-DD.jsonl` 是追加式事件日志，不覆盖、不清理。',
       '- 每日 Markdown 与 INDEX.json 是可重建的派生视图。',
       '- 已撤回消息保留原正文，并在可见档案中标注“已撤回”。',
