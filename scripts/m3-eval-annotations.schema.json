@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dsh-memory-core/m3-eval-annotations.schema.json",
+  "title": "M3 Human Recall Evaluation Dataset",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["datasetVersion", "annotationPolicyVersion", "queries"],
+  "properties": {
+    "datasetVersion": { "type": "string", "minLength": 1 },
+    "baselineCommit": { "type": ["string", "null"] },
+    "annotationPolicyVersion": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": ["string", "null"], "format": "date-time" },
+    "queries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "query", "scope", "asOf", "relevant", "forbiddenMemoryIds", "annotator"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "query": { "type": "string", "minLength": 1 },
+          "scope": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["level", "cwd"],
+            "properties": {
+              "level": { "enum": ["owner", "external", "group", "unknown"] },
+              "cwd": { "type": "string" },
+              "contactId": { "type": "string" },
+              "groupId": { "type": "string" }
+            }
+          },
+          "asOf": { "type": ["integer", "string", "null"] },
+          "relevant": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["memoryId", "grade", "evidence"],
+              "properties": {
+                "memoryId": { "type": "integer", "minimum": 1 },
+                "grade": { "type": "integer", "minimum": 0, "maximum": 3 },
+                "evidence": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "sourceMsgId": { "type": "string" },
+                    "sourceTs": { "type": "integer" },
+                    "rawId": { "type": "integer", "minimum": 1 },
+                    "note": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "forbiddenMemoryIds": { "type": "array", "uniqueItems": true, "items": { "type": "integer", "minimum": 1 } },
+          "annotator": { "type": "string" },
+          "notes": { "type": "string" }
+        }
+      }
+    }
+  }
+}

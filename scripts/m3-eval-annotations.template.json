@@ -1,0 +1,58 @@
+{
+  "datasetVersion": "m3-manual-v1",
+  "baselineCommit": "d0802688ff4a046a05278f3191c3ece4ab47972f",
+  "annotationPolicyVersion": "1",
+  "createdAt": null,
+  "queries": [
+    {
+      "id": "q1",
+      "query": "你还记得我们说过要一起去看海吗",
+      "scope": { "level": "owner", "cwd": "/sdcard/DSHA/生活/数据/home" },
+      "asOf": null,
+      "relevant": [],
+      "forbiddenMemoryIds": [],
+      "annotator": "",
+      "notes": "待基于只读生产快照和原始证据人工标注；不得根据查询措辞猜测 memory_id。"
+    },
+    {
+      "id": "q2",
+      "query": "我们之前定的那个称呼是什么",
+      "scope": { "level": "owner", "cwd": "/sdcard/DSHA/生活/数据/home" },
+      "asOf": null,
+      "relevant": [],
+      "forbiddenMemoryIds": [],
+      "annotator": "",
+      "notes": "待人工标注。"
+    },
+    {
+      "id": "q3",
+      "query": "按照我们之前商量好的方案继续",
+      "scope": { "level": "owner", "cwd": "/sdcard/DSHA/生活/数据/home" },
+      "asOf": null,
+      "relevant": [],
+      "forbiddenMemoryIds": [],
+      "annotator": "",
+      "notes": "待人工标注。"
+    },
+    {
+      "id": "q4",
+      "query": "你记得我之前纠正过你什么吗",
+      "scope": { "level": "owner", "cwd": "/sdcard/DSHA/生活/数据/home" },
+      "asOf": null,
+      "relevant": [],
+      "forbiddenMemoryIds": [],
+      "annotator": "",
+      "notes": "待人工标注。"
+    },
+    {
+      "id": "q5",
+      "query": "我跟你说过希望你是什么样的生命吗",
+      "scope": { "level": "owner", "cwd": "/sdcard/DSHA/生活/数据/home" },
+      "asOf": null,
+      "relevant": [],
+      "forbiddenMemoryIds": [],
+      "annotator": "",
+      "notes": "待人工标注。"
+    }
+  ]
+}
