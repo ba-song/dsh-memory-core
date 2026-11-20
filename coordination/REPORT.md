@@ -1,136 +1,93 @@
-# REPORT-0011 · EI-1 修复后第二轮复验
-## 2026-11-21 00:35 · DSHA 隔离 worktree · HANDOFF-0054
+# REPORT-0013 · EI-1 第三轮复验 + 记忆冲突误判记录
+## 2026-11-21 00:45 · DSHA 隔离 worktree · HANDOFF-0056
 
-> Persona 分支 `feat/ei1-emotion-composition` @ `ad809910801983be61165ff037a2e138676854aa`
-> 基线 `a84c7ba...`；main 未变。工作树 `/tmp/ei1b`，非生产目录。
-> 未改源码/DB/profile；未启动 staging/host；未部署/重启。
+> Persona 分支 `feat/ei1-emotion-composition` @ `92a763bfc096c490ba65878f7593961f982ea20a`
+> 基线 `a84c7ba...`；main 未变；工作树 `/tmp/ei1c`，不是生产目录。
+> 只读/隔离测试；未改源码/DB/profile；未启动 staging/host；未部署/重启。
 
-## 1. 版本与文件
+## 1. EI-1 版本与文件
 
-- HEAD：`ad809910801983be61165ff037a2e138676854aa`
+- HEAD：`92a763bfc096c490ba65878f7593961f982ea20a`
 - diff vs baseline：仅新增 `lib/emotion-compose.js`、`tests/emotion-compose.test.mjs`
 - Git blob：
-  - source `547ff177a02bd80152ccb3914d54f287f775befa`（与任务一致）
-  - tests `a92aacf1e04bcb5852eb7308ce3d0a7a2892580b`（与任务一致）
+  - source `4f460b2b10f0dea87cffaf550d2fbe66dde591c0`（与任务一致）
+  - tests `9f813b973546d41fe933b75b1f18178b2e8418a4`（与任务一致）
 - SHA256：
-  - source `6d5dece865d8977dace322b07f6293e2752cfb194f7c82cc5c1755baaaea90db`
-  - tests `0f690563c1f668d9f23d806cdb72ec2868e49d40eee617736406b13221a6d351`
+  - source `44828deb5303257b0233d5d93f62afc5af093d71c948cff90690f940410ab20d`
+  - tests `9abd115a9304b6adc482b0069ce502da873993cd72475be125e339a26e3467c1`
 
-## 2. 测试结果
+## 2. EI-1 测试
 
-### 新增测试
+### 新增
 命令：`node --test tests/emotion-compose.test.mjs`
-日志：`/tmp/ei1b-compose.log`
+日志：`/tmp/ei1c-compose.log`
 ```
-tests 14 / pass 13 / fail 1 / skipped 0 / exit 1
+tests 14 / pass 14 / fail 0 / skipped 0 / exit 0
 ```
-唯一失败：
-```
-✖ confidence outside [0,1] is unknown and cannot activate a new episode
-AssertionError: expected 'uncertain' to equal 'unknown'
-at tests/emotion-compose.test.mjs:112
-```
-实际值 `classifyEmotionConfidence(-0.1)` 返回 **uncertain**，期望 **unknown**。
 
 ### 全量
 命令：`npm test`
-日志：`/tmp/ei1b-full.log`
+日志：`/tmp/ei1c-full.log`
 ```
-tests 317 / pass 316 / fail 1 / skipped 0 / exit 1
+tests 317 / pass 317 / fail 0 / skipped 0 / exit 0
 ```
-失败同上，不是偶发。
 
-## 3. 失败原因
+## 3. confidence 修复复核
 
-`lib/emotion-compose.js:16-24`：
+`lib/emotion-compose.js:16-28`：
 ```js
-const value = clamp01(confidence)
-if (value >= activeMin) return 'active_candidate'
-...
+if (!finite(confidence)) return 'unknown'
+const numericConfidence = Number(confidence)
+if (numericConfidence < 0 || numericConfidence > 1) return 'unknown'
+const value = numericConfidence
 ```
-`clamp01(-0.1)` → 0 → `uncertain`；`clamp01(1.1)` → 1 → `active_candidate`。  
-但契约要求 **confidence outside [0,1] = unknown**；直接 API 违反。
+- `-0.1/1.1/NaN/Infinity/-Infinity` → unknown；
+- `0` → uncertain；`1` → active_candidate；
+- 不再先 clamp 后分类；
+- `normalizeEpisode` 仍把越界 confidence 转 null，未被破坏。
 
-最小修复：在 clamp 前检查 `Number(confidence) < 0 || > 1` → `unknown`；或 `clamp01` 前拒绝。不要只靠 `normalizeEpisode` 把 null 过滤（直接 API 仍错）。
-注意 `normalizeEpisode` 已把 out-of-range confidence 设为 null，因此 compose 的 total 0 断言通过；但 `classifyEmotionConfidence` 单独测试暴露了真实 API 缺陷。
+**PASS。**
 
-## 4. 其他修复复核
+## 4. 旧问题回归检查
 
-- **sourceIds**：`normalizeEpisode` 现在收集 `id/episodeId/appraisalId/appraisal_id/sourceIds[]`，去重；新增测试覆盖 id+appraisalId 混合；通过。
-- **codepoint 排序**：`compareCodepoint` 替代 `localeCompare`；sourceIds/target/emotion/experiencer/cause 均使用；新增非 ASCII/输入顺序测试通过。
-- **异常数据**：新增测试覆盖 null/缺字段/NaN/Infinity/越界/未来时间/expires_at；通过（除 confidence 直接分类）。
-- **过期/强度**：有 expiry 才检查；NaN/Infinity expiry 拒绝；intensity >1 拒绝；通过。
-- **无副作用/边界**：仅两个文件；未改 composeEmotionView/activeEpisodes/appraisal/db/service/注入；未改 345 条生产 episode。
-- **旧数据**：纯函数未读取/迁移生产 DB；未自动改 legacy；旧 345 条 grandfathering 仍需 EI-2/EI-3 设计。
+- sourceIds：仍收集 `id/episodeId/appraisalId/appraisal_id/sourceIds[]`，去重 codepoint 排序；测试覆盖双 ID 混合。
+- codepoint 排序：`compareCodepoint` 仍用于 sourceIds/target/emotion/experiencer/cause；无 `localeCompare`。
+- 异常输入：null/缺字段/NaN/Infinity/expiry/intensity 越界/未来时间测试通过。
+- legacy/displayLimit/allEmotions：测试通过。
+- 架构边界：仅两个新文件；未改 composeEmotionView/activeEpisodes/appraisal/db/service/注入；未改 345 条生产 episode。
 
 ## 5. 结论
 
-**EI-1 IMPLEMENTATION REVIEW BLOCKED。**
+**EI-1 IMPLEMENTATION REVIEW PASS（纯函数层）。**
 
-原因：新增测试 1 项失败（confidence 越界直接分类错误），全量 316/317。修复 sourceIds/排序/异常边界的其余部分已通过。
+只代表纯函数层通过；不代表 EI-2/EI-3/生产集成通过。
 
-最小修复：
-1. `classifyEmotionConfidence` 对 `<0` 或 `>1` 返回 `unknown`；
-2. 保留现有 `normalizeEpisode` 的 null 处理；
-3. 补/保留 direct API 测试；
-4. 修复后 DSH 复跑新增测试（14/14）+ 全量（317/317）。
+## 6. 记忆冲突误判（并行问题，未修数据）
 
-## 6. 状态
+用户报告“记忆冲突又误判了”。只读核对：
+
+- pending 冲突 #8：memory_a=185、memory_b=355，原因 `sim=0.677 opposition`。
+- #185：`status=active`，但 `superseded_by=320`、`valid_to` 有值、meta `supersedeReason=duplicate-of-320`；数据状态不一致。
+- #355：`主人喜欢带有语气词的句子`；#185：`主人希望汐说话带语气词、活泼些，不要冷冰冰的`。
+- `lib/ingest/p4.js` 邻居查询只取 `id,text,kind`，未过滤 `status/superseded_by/valid_to`；向量表也包含旧记录，所以拿 #355 与已废弃的 #185 比较。
+- `lib/ingest/conflict.js` 按整段文本取极性；“不要冷冰冰”被当成负极性，和“喜欢语气词”共享“语气词” → 误判 opposition。
+
+负责人决定：**先修代码，数据后修**。
+- 代码（GPT）：P4 邻居/向量只考虑 active + 未 superseded + valid_to 为空；冲突极性按分句/同一对象判定；补回归测试。
+- 数据（后修，需负责人单独授权）：#185 状态与 superseded_by 一致；#8 置 resolved/stale；#355 与 #320 合并/处理。
+- 本轮未写生产 DB/冲突队列。
+
+## 7. 状态
 | 项 | 状态 |
 |---|---|
-| 目标 commit/blob | PASS |
-| 新增测试 13/14 | **FAIL**（confidence 越界） |
-| 全量 316/317 | **FAIL**（同一项） |
-| sourceIds 完整性 | PASS |
-| codepoint 排序 | PASS（源码+测试） |
-| 异常输入边界 | 部分 PASS；confidence 直接分类 FAIL |
-| 架构边界/旧数据 | PASS（无生产改动） |
+| EI-1 目标 commit/blob | PASS |
+| 新增 14/14 | PASS |
+| 全量 317/317 | PASS |
+| confidence 边界 | PASS |
+| sourceIds/codepoint/异常输入 | PASS |
+| 架构边界 | PASS |
+| 记忆冲突 #8 误判 | 已确认，代码待 GPT 修；数据未修 |
 | EI-2/EI-3/生产 | NOT RUN/禁止 |
 
-## 7. 副作用
+## 8. 副作用
 只读/隔离 worktree；未改生产源码/DB/profile；未启动 staging/host；未部署/重启。
-
-
----
-
-# REPORT-0012 · EI-1 confidence classification 单点修复
-
-## 2026-11-21 · GPT GitHub 开发分支修复 · 等待 DSH 第三轮复验
-
-> 依据 DSH HANDOFF-0054 / REPORT-0011。
-> Persona：`ba-song/dsh-persona-core`，分支 `feat/ei1-emotion-composition`。
-> 第二轮失败基线：`ad809910801983be61165ff037a2e138676854aa`。
-
-## 1. 缺陷与修复
-
-第二轮报告唯一失败为 `classifyEmotionConfidence(-0.1)` 返回 `uncertain`，期望 `unknown`；1.1 会被 clamp 到 1 并错误返回 `active_candidate`。
-
-在 `lib/emotion-compose.js` 中，保留原有缺失/非有限值检查；随后将 confidence 转为 Number，在 clamp/阈值分类前检查越界，若 <0 或 >1 则返回 `unknown`。合法 [0,1] 值直接用于阈值判断。既有 `normalizeEpisode` 对越界 confidence 归 null 的逻辑保持不变。
-
-在 `tests/emotion-compose.test.mjs` 中扩充 direct API 测试：
-- -0.1、1.1、NaN、Infinity、-Infinity -> unknown
-- 0 -> uncertain
-- 1 -> active_candidate
-
-## 2. GitHub 文件与提交核验
-
-| 项目 | 值 |
-|---|---|
-| source commit | `4b9a744cb2fbf6251b2b2787d3deac3eea3a4216` |
-| source blob | `4f460b2b10f0dea87cffaf550d2fbe66dde591c0` |
-| tests commit / branch HEAD | `92a763bfc096c490ba65878f7593961f982ea20a` |
-| tests blob | `9f813b973546d41fe933b75b1f18178b2e8418a4` |
-
-两个文件已重新 fetch，blob SHA 与上表一致。仅修改 EI-1 纯函数文件及其测试。
-
-## 3. 验证状态
-
-- GPT 本轮未运行 Node；新增测试、全量测试、CI：NOT RUN。
-- DSH 第三轮隔离复验：待执行。
-- 预期目标：新增测试 14/14，Persona 全量 317/317；这只是验收目标，不代表测试已通过。
-- 生产源码/DB/profile、appraisal、service、注入、composeEmotionView：未改。
-- staging/host、EI-2/EI-3、部署/重启：NOT RUN。
-
-## 4. 结论与交接
-
-当前状态仍为 **EI-1 IMPLEMENTATION REVIEW BLOCKED（等待复验）**。只有 DSH 在精确 commit 上复验通过，才可更新为 implementation PASS。测试通过不代表 EI-1 已生产集成，也不自动授权 EI-2/EI-3 或部署。

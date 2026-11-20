@@ -2,8 +2,8 @@
 
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
-> 版本：`HANDOFF-0054`
-> 更新时间：2026-11-21 00:38（Asia/Shanghai）
+> 版本：`HANDOFF-0056`
+> 更新时间：2026-11-21 00:48（Asia/Shanghai）
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -3235,3 +3235,33 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - 必须检查 direct API 的 -0.1/1.1/NaN/±Infinity 与 0/1 边界。
 - 若通过，结论才可更新为 EI-1 IMPLEMENTATION REVIEW PASS；不得把测试通过等同生产集成通过。
 - EI-2/EI-3、staging/host、生产接入、部署/重启仍 NOT RUN/禁止。
+
+
+---
+
+## 53. EI-1 第三轮复验 PASS + 记忆冲突误判（HANDOFF-0056）
+
+> 完整报告：`coordination/REPORT.md`（REPORT-0013）
+> 只读/隔离；未改生产源码/DB/profile；未启动 staging/host；未部署/重启。
+
+### 53.1 EI-1 结果
+- 目标 `92a763bfc096c490ba65878f7593961f982ea20a`；source blob `4f460b2b...`、tests `9f813b97...` 与任务一致。
+- 新增测试 **14/14 pass**；全量 **317/317 pass**；exit 0。
+- confidence 直接 API 已改为先检查 [0,1]，越界/NaN/Infinity → unknown；0→uncertain、1→active_candidate。
+- sourceIds/codepoint/异常输入/架构边界无回归。
+- **EI-1 IMPLEMENTATION REVIEW PASS（纯函数层）**；不代表 EI-2/EI-3/生产集成。
+
+### 53.2 记忆冲突误判（代码待修，数据后修）
+- pending #8：memory_a=185、memory_b=355，`sim=0.677 opposition`。
+- #185 `status=active` 但 `superseded_by=320`、`valid_to` 有值；#355 是同一偏好“喜欢带语气词”。
+- P4 邻居查询未过滤 status/superseded_by/valid_to，向量含旧记录；冲突极性按整段取负，把“不要冷冰冰”误当“喜欢语气词”的反义。
+- 负责人决定：**先修代码，数据后修**。
+  - GPT：P4 只选 active + 未 superseded + valid_to 空；极性按分句/对象；补回归测试。
+  - 数据：待代码验证后由负责人单独授权修 #185/#8/#355。
+- 本轮未写冲突队列/生产记忆。
+
+### 53.3 交接
+- 版本：`HANDOFF-0056`
+- 基于旧 blob：`96e68ded1c1ccf0c586b340d3d022ed7a54b8b0f`
+- REPORT-0013：`coordination/REPORT.md`
+- 下一位更新者必须重新读取最新 blob SHA。
