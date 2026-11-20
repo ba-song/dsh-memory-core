@@ -4,58 +4,238 @@
   "title": "M3 Human Recall Evaluation Dataset",
   "type": "object",
   "additionalProperties": false,
-  "required": ["datasetVersion", "annotationPolicyVersion", "queries"],
+  "required": [
+    "datasetVersion",
+    "annotationPolicyVersion",
+    "codeCommit",
+    "databaseSnapshotSha256",
+    "embeddingModel",
+    "runParameters",
+    "queries"
+  ],
   "properties": {
-    "datasetVersion": { "type": "string", "minLength": 1 },
-    "baselineCommit": { "type": ["string", "null"] },
-    "annotationPolicyVersion": { "type": "string", "minLength": 1 },
-    "createdAt": { "type": ["string", "null"], "format": "date-time" },
+    "datasetVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "baselineCommit": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "annotationPolicyVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "createdAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
     "queries": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "query", "scope", "asOf", "relevant", "forbiddenMemoryIds", "annotator"],
+        "required": [
+          "id",
+          "query",
+          "scope",
+          "asOf",
+          "relevant",
+          "forbiddenMemoryIds",
+          "annotator"
+        ],
         "properties": {
-          "id": { "type": "string", "minLength": 1 },
-          "query": { "type": "string", "minLength": 1 },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "query": {
+            "type": "string",
+            "minLength": 1
+          },
           "scope": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["level", "cwd"],
+            "required": [
+              "level",
+              "cwd"
+            ],
             "properties": {
-              "level": { "enum": ["owner", "external", "group", "unknown"] },
-              "cwd": { "type": "string" },
-              "contactId": { "type": "string" },
-              "groupId": { "type": "string" }
+              "level": {
+                "enum": [
+                  "owner",
+                  "external",
+                  "group",
+                  "unknown"
+                ]
+              },
+              "cwd": {
+                "type": "string"
+              },
+              "contactId": {
+                "type": "string"
+              },
+              "groupId": {
+                "type": "string"
+              }
             }
           },
-          "asOf": { "type": ["integer", "string", "null"] },
+          "asOf": {
+            "type": [
+              "integer",
+              "string",
+              "null"
+            ]
+          },
           "relevant": {
             "type": "array",
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["memoryId", "grade", "evidence"],
+              "required": [
+                "memoryId",
+                "grade",
+                "evidence"
+              ],
               "properties": {
-                "memoryId": { "type": "integer", "minimum": 1 },
-                "grade": { "type": "integer", "minimum": 0, "maximum": 3 },
+                "memoryId": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "grade": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 3
+                },
                 "evidence": {
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
-                    "sourceMsgId": { "type": "string" },
-                    "sourceTs": { "type": "integer" },
-                    "rawId": { "type": "integer", "minimum": 1 },
-                    "note": { "type": "string" }
-                  }
+                    "sourceMsgId": {
+                      "type": "string"
+                    },
+                    "sourceTs": {
+                      "type": "integer"
+                    },
+                    "rawId": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "note": {
+                      "type": "string"
+                    }
+                  },
+                  "anyOf": [
+                    {
+                      "required": [
+                        "sourceMsgId"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "sourceTs"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "rawId"
+                      ]
+                    }
+                  ]
                 }
               }
             }
           },
-          "forbiddenMemoryIds": { "type": "array", "uniqueItems": true, "items": { "type": "integer", "minimum": 1 } },
-          "annotator": { "type": "string" },
-          "notes": { "type": "string" }
+          "forbiddenMemoryIds": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "annotator": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "codeCommit": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-fA-F0-9]{40}$"
+    },
+    "databaseSnapshotSha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "embeddingModel": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "runParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recallGateSemantic",
+        "recallGateKeyword",
+        "recallLimit",
+        "injectionMinSemantic",
+        "injectionMinKeywordOverlap",
+        "injectionMaxItems",
+        "injectionMaxChars"
+      ],
+      "properties": {
+        "recallGateSemantic": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "recallGateKeyword": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "recallLimit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "injectionMinSemantic": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "injectionMinKeywordOverlap": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "injectionMaxItems": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "injectionMaxChars": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000
         }
       }
     }

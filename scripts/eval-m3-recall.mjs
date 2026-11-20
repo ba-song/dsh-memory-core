@@ -11,6 +11,7 @@ import { buildQuotesBlock } from '../lib/inject/quotes.js'
 import { scopeForSession } from '../lib/scope.js'
 import { evaluateRankedResults, explainRrf } from '../lib/recall/eval-metrics.js'
 import { eventChainCandidates } from '../lib/recall/event-chain.js'
+import { validateAnnotationDataset } from '../lib/recall/eval-dataset.js'
 
 const args = process.argv.slice(2)
 const valueAfter = (flag) => {
@@ -37,7 +38,9 @@ const asOfOf = (value, queryId) => {
 const queryPath = new URL('./m3-eval-queries.json', import.meta.url)
 const queries = JSON.parse(readFileSync(queryPath, 'utf8'))
 const annotationDataset = JSON.parse(readFileSync(annotationsPath, 'utf8'))
+const annotationValidation = validateAnnotationDataset(annotationDataset, queries)
 const annotationsById = new Map((annotationDataset.queries ?? []).map((item) => [String(item.id), item]))
+const runParameters = annotationDataset.runParameters
 const db = new DatabaseSync(dbPath, { readOnly: true })
 let vectors = new Map()
 try { vectors = loadVectors(db) } catch {}
@@ -89,7 +92,7 @@ try {
     let armSnapshot = {}
     const monitor = { record(value) { armSnapshot = value?.arms ?? {} } }
     const found = await recall(db, item.query, {
-      vectors, gate: { semantic: 0.55, keyword: 0.35 }, limit: 5,
+      vectors, gate: { semantic: runParameters.recallGateSemantic, keyword: runParameters.recallGateKeyword }, limit: runParameters.recallLimit,
       scope: queryScope, asOf: asOfAt, monitor, trackAccess: false,
     })
     const graded = evaluateRankedResults(
@@ -131,9 +134,9 @@ try {
       scores: hit.scores ?? {},
       overlap: keywordOverlapRatio(item.query, hit.text),
     }))
-    const injectedHits = filterInjectionHits(found, item.query, { minSemantic: 0.55, minKeywordOverlap: 0.35 })
+    const injectedHits = filterInjectionHits(found, item.query, { minSemantic: runParameters.injectionMinSemantic, minKeywordOverlap: runParameters.injectionMinKeywordOverlap })
       .filter((hit) => relevanceOf(hit) >= 0.55)
-    const hitsBlock = buildHitsBlock(injectedHits, { maxItems: 3, maxChars: 200, minScore: 0.55 })
+    const hitsBlock = buildHitsBlock(injectedHits, { maxItems: runParameters.injectionMaxItems, maxChars: runParameters.injectionMaxChars, minScore: runParameters.injectionMinSemantic })
     const injectedCount = hitsBlock ? (hitsBlock.match(/^- \[/gm) ?? []).length : 0
     const quotesBlock = queryScope.raw === 'none' || asOfAt !== null ? '' : buildQuotesBlock(db, { cwd: queryCwd, hits: [], query: item.query, maxHits: 2 }).block
     if (String(item.id).startsWith('g')) generalizedInjectionCount += injectedCount
@@ -175,6 +178,11 @@ try {
     ok: true, dbPath, readOnly: true, trackAccess: false,
     queryCount: queries.length, eventChainDiagnosticEnabled: eventChainEnabled,
     annotationDatasetVersion: annotationDataset.datasetVersion ?? null,
+    annotationValidation,
+    codeCommit: annotationDataset.codeCommit ?? null,
+    databaseSnapshotSha256: annotationDataset.databaseSnapshotSha256 ?? null,
+    embeddingModel: annotationDataset.embeddingModel ?? null,
+    runParameters,
     gradedQueryCount: gradedRows.length,
     gradedMetrics: {
       judgedNoRelevantCount: gradedRows.filter((row) => row.relevantCount === 0).length,

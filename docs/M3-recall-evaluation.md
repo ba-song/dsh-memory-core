@@ -5,12 +5,13 @@ Status: evaluation infrastructure added; the annotation template is intentionall
 ## Dataset files
 
 - `scripts/m3-eval-annotations.schema.json`: JSON Schema for annotation records.
+- Positive labels are rejected unless the evaluated code commit, read-only DB snapshot SHA-256, embedding model identity, and run parameters are pinned. Every positive label also needs a provenance anchor.
 - `scripts/m3-eval-annotations.template.json`: template containing the current 15 queries. All `relevant` arrays are empty intentionally.
 - `scripts/m3-eval-queries.json`: legacy query list. Its `expectedContains` strings are heuristic hints, not human relevance ground truth.
 
 ## Annotation policy
 
-Each query records:
+Each dataset also records the exact code commit, database snapshot SHA-256, embedding model identity, and retrieval/injection run parameters. Each query records:
 
 - stable query ID and exact query text;
 - scope level and cwd used for the run;

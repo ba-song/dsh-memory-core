@@ -199,5 +199,17 @@
       "annotator": "",
       "notes": "待人工标注。"
     }
-  ]
+  ],
+  "codeCommit": null,
+  "databaseSnapshotSha256": null,
+  "embeddingModel": null,
+  "runParameters": {
+    "recallGateSemantic": 0.55,
+    "recallGateKeyword": 0.35,
+    "recallLimit": 5,
+    "injectionMinSemantic": 0.55,
+    "injectionMinKeywordOverlap": 0.35,
+    "injectionMaxItems": 3,
+    "injectionMaxChars": 200
+  }
 }
