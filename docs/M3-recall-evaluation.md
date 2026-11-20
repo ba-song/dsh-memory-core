@@ -50,7 +50,7 @@ The legacy `expectedContains` report is nested under `legacyStringHeuristic` and
 
 ## Reproducibility and safety
 
-Pin the dataset version, annotation policy version, code commit, database snapshot hash, embedding model/version, and run parameters. Use a separate consistent database snapshot opened with `readOnly: true`; keep `trackAccess: false`. Do not run recall evaluation against the production DB. Do not run consolidation, decay, vector recomputation, or any mutating maintenance routine as part of evaluation.
+Pin the dataset version, annotation policy version, code commit, database snapshot hash, embedding model/version, and run parameters. Pass `--db` explicitly to a separate, consistent database snapshot; the evaluator refuses to fall back to the production DB path and rejects a non-empty `-wal` sidecar. It opens SQLite with `readOnly: true`, keeps `trackAccess: false`, computes the actual DB file SHA-256, and rejects a mismatch with the annotation dataset's pinned `databaseSnapshotSha256`. Do not run recall evaluation against the production DB. Do not run consolidation, decay, vector recomputation, or any mutating maintenance routine as part of evaluation.
 
 The evaluator accepts `--annotations PATH` to select a pinned annotation dataset and `--event-chain` to emit evidence-gated event-chain candidates as a separate diagnostic. The annotated scope level must agree with the scope derived from cwd; optional contactId/groupId labels are checked against the derived identifiers. The embedding model path can be supplied with `DY_EMBED_MODEL` (default `/opt/qqai/models/bge-small-zh`). Event-chain diagnostics do not enter the ranked result list or automatic injection.
 

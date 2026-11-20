@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { recall } from '../lib/recall/recall.js'
@@ -11,14 +11,20 @@ import { buildQuotesBlock } from '../lib/inject/quotes.js'
 import { scopeForSession } from '../lib/scope.js'
 import { evaluateRankedResults, explainRrf } from '../lib/recall/eval-metrics.js'
 import { eventChainCandidates } from '../lib/recall/event-chain.js'
-import { validateAnnotationDataset } from '../lib/recall/eval-dataset.js'
+import { sha256File, validateAnnotationDataset, verifySnapshotFingerprint } from '../lib/recall/eval-dataset.js'
 
 const args = process.argv.slice(2)
 const valueAfter = (flag) => {
   const i = args.indexOf(flag)
   return i >= 0 ? args[i + 1] : ''
 }
-const dbPath = resolve(valueAfter('--db') || join(process.env.DY_MEMORY_DIR || '/sdcard/DSHA/记忆/数据', 'memory.db'))
+const dbArgument = valueAfter('--db')
+if (!dbArgument) throw new Error('必须显式提供 --db 指向独立、一致的离线数据库快照；禁止使用默认生产数据库路径')
+const dbPath = resolve(dbArgument)
+if (!existsSync(dbPath)) throw new Error(`数据库快照不存在：${dbPath}`)
+if (existsSync(`${dbPath}-wal`) && (await import('node:fs')).statSync(`${dbPath}-wal`).size > 0) {
+  throw new Error('数据库快照存在非空 WAL；请先在隔离副本上完成一致性快照/检查点，再运行评测')
+}
 const cwd = valueAfter('--cwd') || '/sdcard/DSHA/生活/数据/home'
 const factsPath = valueAfter('--facts') || '/sdcard/DSHA/记忆/数据/事实卡.md'
 const ownerQQ = valueAfter('--owner-qq') || ''
@@ -39,6 +45,8 @@ const queryPath = new URL('./m3-eval-queries.json', import.meta.url)
 const queries = JSON.parse(readFileSync(queryPath, 'utf8'))
 const annotationDataset = JSON.parse(readFileSync(annotationsPath, 'utf8'))
 const annotationValidation = validateAnnotationDataset(annotationDataset, queries)
+const actualDatabaseSnapshotSha256 = await sha256File(dbPath)
+const snapshotFingerprint = verifySnapshotFingerprint(annotationDataset.databaseSnapshotSha256, actualDatabaseSnapshotSha256)
 const annotationsById = new Map((annotationDataset.queries ?? []).map((item) => [String(item.id), item]))
 const runParameters = annotationDataset.runParameters
 const db = new DatabaseSync(dbPath, { readOnly: true })
@@ -181,6 +189,8 @@ try {
     annotationValidation,
     codeCommit: annotationDataset.codeCommit ?? null,
     databaseSnapshotSha256: annotationDataset.databaseSnapshotSha256 ?? null,
+    actualDatabaseSnapshotSha256,
+    snapshotFingerprint,
     embeddingModel: annotationDataset.embeddingModel ?? null,
     runParameters,
     gradedQueryCount: gradedRows.length,

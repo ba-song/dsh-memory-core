@@ -1,7 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { validateAnnotationDataset } from '../lib/recall/eval-dataset.js'
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { sha256File, validateAnnotationDataset, verifySnapshotFingerprint } from '../lib/recall/eval-dataset.js'
 
 const sourceQueries = [{ id: 'q1', query: '记得我们约定的事情吗' }]
 const base = {
@@ -75,4 +77,20 @@ test('forbidden-only safety labels do not count as relevance-labelled queries', 
   assert.deepEqual(validateAnnotationDataset(dataset, sourceQueries), {
     valid: true, queryAnnotations: 1, labelledQueries: 0, positiveLabels: 0,
   })
+})
+
+test('database snapshot fingerprint is verified against actual file bytes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-eval-snapshot-'))
+  const file = join(dir, 'memory.snapshot.db')
+  try {
+    writeFileSync(file, 'immutable-snapshot')
+    const actual = await sha256File(file)
+    assert.deepEqual(verifySnapshotFingerprint(actual, actual), {
+      pinned: true, expected: actual, actual, matches: true,
+    })
+    assert.throws(() => verifySnapshotFingerprint('a'.repeat(64), actual), /SHA-256 mismatch/)
+    assert.equal(verifySnapshotFingerprint(null, actual).pinned, false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
