@@ -45,3 +45,20 @@ test('searchArchive withContext never includes tombstoned neighboring dialogue',
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+
+test('searchArchive withContext=false keeps the plain search path', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-tombstone-context-off-'))
+  const { db } = openDb(dir)
+  const raw = new RawArchive({ db, dir: join(dir, 'raw'), cwdPrefixes: [HOME], log: { warn() {}, info() {} } })
+  try {
+    const at = Date.now()
+    raw.onEvent(session, event('user/message', 1, { content: [{ type: 'text', text: '不应出现在普通搜索结果里的相邻内容' }] }, at))
+    raw.onEvent(session, event('assistant/message', 2, { content: [{ type: 'text', text: '普通搜索目标内容仍然可用' }] }, at + 1))
+    const result = searchArchive(db, { question: '普通搜索目标内容', cwd: HOME, withContext: false })
+    assert.equal(result.ok, true)
+    assert.equal(result.withContext, undefined)
+    assert.match(result.text, /普通搜索目标内容/)
+    assert.doesNotMatch(result.text, /相邻内容/)
+  } finally { db.close(); rmSync(dir, { recursive: true, force: true }) }
+})
