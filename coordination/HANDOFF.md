@@ -3,8 +3,8 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0035`  
-> 更新时间：2026-11-20 20:18（Asia/Shanghai）  
+> 版本：`HANDOFF-0037`  
+> 更新时间：2026-11-20 20:30（Asia/Shanghai）  
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -1760,3 +1760,47 @@ P0 只有全部满足才可称“生产部署候选准备完成”：
 - DSH 每轮完成后必须向负责人交付一份**可直接转发给 GPT 的完整反馈**：任务标识、实际执行命令、原始输出、退出码、文件路径/hash、PASS/FAIL/BLOCKED/NOT RUN、生产副作用声明、HANDOFF 新旧 Blob SHA/commit/链接。不要只回复“完成”或只更新文件而不反馈。
 - DSH 必须明确提醒负责人把完整反馈转给 GPT；GPT 收到后会独立审查证据、更新计划并生成下一轮任务。
 - 不能把 GPT 生成的计划当作已执行结果；不能把未运行写成通过；不能因交接文档存在就省略直接反馈。
+
+
+---
+
+## 34. P0 staging 方案复核（HANDOFF-0037）
+
+> 复核对象：第 33 节 HANDOFF-0036（文件头此前仍写 0035；本节按实际内容编号 0037）。
+> 报告：`/sdcard/DSHA/插件优化/P0-STAGING-PLAN-REVIEW-01.md`
+> 反馈提示词：`/sdcard/DSHA/插件优化/94-给GPT的P0-staging方案复核反馈.md`
+> 本轮**未执行 staging**、未 `npm ci`、未调用 `dsha-plugin`、未连生产 DB、未部署/重启。
+
+### 34.1 结论
+方案的隔离原则基本正确，但**不能按现有命令直接执行**；存在 2 个会直接跑错的路径问题、1 个迁移安全阻塞、3 个待补验证。
+
+### 34.2 逐项状态
+| 项 | 状态 |
+|---|---|
+| staging `/tmp` 与生产隔离 | PASS（设计） |
+| 未调用生产插件导入器 | PASS |
+| `npm ci` 隔离 | PASS（条件；未执行） |
+| 解包后工作目录 | **FAIL**：tar 根是 `dsh-memory-core/`，方案 `cd $STAGE/plugin` 会找不到源码 |
+| autonomy exporter 路径 | **FAIL**：应为 `$STAGE/plugin/dsh-memory-core/scripts/...` |
+| ONNX 原生模块 | **BLOCKED/不足**：只 import，未建 InferenceSession |
+| schema 4→5 迁移 | **FAIL**：`openDb()` 无显式迁移事务、宽泛 catch、无条件写 version=5 |
+| schema 4 fixture | **BLOCKED**：未给构造/校验方法 |
+| exporter 输出隔离 | PASS（设计，但路径需修正） |
+| Cordis 隔离 host | **BLOCKED**：无具体路径/端口/断言 |
+| WAL/备份/回滚 | 部分：原则有，缺具体命令/校验 |
+| staging 实跑 | **NOT RUN** |
+
+### 34.3 迁移风险（源码确认）
+候选 `lib/store/db.js:9-45`：DDL/ALTER/UPDATE 分段执行，多个 `catch {}` 吞错，最后 `INSERT OR REPLACE meta.schema_version=5` 无条件执行；失败后可能“部分迁移 + 版本 5”。必须先修迁移或证明失败安全，再进 staging。
+
+### 34.4 交 GPT 的修订要求
+1. 修解包/autonomy 路径；
+2. schema 4 fixture 明确构造与验收；
+3. `openDb()` 显式事务/失败停止，或证明失败安全；
+4. ONNX 增加真实 `InferenceSession.create`;
+5. Cordis 隔离 host 具体化；
+6. WAL 一致快照/回滚命令；
+7. 更新 HANDOFF 后再由 DSH staging；本轮不执行。
+
+### 34.5 副作用
+- 只读源码/静态检查；未运行 staging、未 `npm ci`、未调用 `dsha-plugin`、未连生产 DB、未改 profile/config、未部署/重启；无生产副作用。
