@@ -1,6 +1,5 @@
 import test from 'node:test'
 import { spawn } from 'node:child_process'
-import { spawn } from 'node:child_process'
 import assert from 'node:assert/strict'
 import {
   chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync,
