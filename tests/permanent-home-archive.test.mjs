@@ -45,6 +45,29 @@ test('home raw rows are best-effort dual-written as append-only JSONL events', (
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }) }
 })
 
+test('tool call arguments and tool result text are preserved without archive-side truncation', () => {
+  const dir = mk('tools')
+  const { db } = openDb(dir)
+  const archiveDir = join(dir, 'permanent')
+  const raw = new RawArchive({
+    db, dir: join(dir, 'raw'), cwdPrefixes: [HOME],
+    permanentArchiveEnabled: true, permanentArchiveDir: archiveDir, permanentArchiveHomeCwd: HOME,
+    log: { warn() {}, info() {} },
+  })
+  try {
+    const at = Date.now()
+    const longArgs = '参数内容'.repeat(1200)
+    const longResult = '工具结果全文'.repeat(1200)
+    const s = session('home-tool-session', HOME)
+    raw.onEvent(s, event('tool/call', 1, at, { name: 'read_file', arguments: { path: '/tmp/a', detail: longArgs } }))
+    raw.onEvent(s, event('tool/result', 2, at + 1, { content: [{ type: 'text', text: longResult }] }))
+    const saved = [...readPermanentJournal(archiveDir).events.values()]
+    assert.equal(saved.length, 2)
+    assert.ok(saved.some((row) => row.role === '具' && row.text.includes(longArgs)))
+    assert.ok(saved.some((row) => row.role === '果' && row.text.includes(longResult)))
+  } finally { db.close(); rmSync(dir, { recursive: true, force: true }) }
+})
+
 test('permanent archive failure does not roll back successful raw file or raw_meta writes', () => {
   const dir = mk('failure')
   const { db } = openDb(dir)
