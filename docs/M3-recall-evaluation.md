@@ -51,4 +51,6 @@ The legacy `expectedContains` report is nested under `legacyStringHeuristic` and
 
 Pin the dataset version, annotation policy version, code commit, database snapshot hash, embedding model/version, and run parameters. Use a separate consistent database snapshot opened with `readOnly: true`; keep `trackAccess: false`. Do not run recall evaluation against the production DB. Do not run consolidation, decay, vector recomputation, or any mutating maintenance routine as part of evaluation.
 
+The evaluator accepts `--annotations PATH` to select a pinned annotation dataset and `--event-chain` to emit evidence-gated event-chain candidates as a separate diagnostic. Event-chain diagnostics do not enter the ranked result list or automatic injection.
+
 The current template contains zero relevance labels by design. Until manually labelled, formal Recall@K, Precision@K, MRR, and nDCG must remain null.

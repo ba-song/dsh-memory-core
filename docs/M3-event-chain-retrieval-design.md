@@ -1,6 +1,6 @@
 # M3 Event-chain Retrieval: Evidence-constrained Design
 
-Status: a read-only, evidence-gated selector prototype exists in `lib/recall/event-chain.js` with isolated tests in `tests/event-chain.test.mjs`. It is not connected to the main recall pipeline or automatic injection; this document remains the admission and rollout contract.
+Status: a read-only, evidence-gated selector prototype exists in `lib/recall/event-chain.js` with isolated tests in `tests/event-chain.test.mjs`. It is not connected to the main recall ranking or automatic injection; `scripts/eval-m3-recall.mjs --event-chain` can emit a separate diagnostic candidate list for offline review. This document remains the admission and rollout contract.
 
 ## Existing primitives
 
