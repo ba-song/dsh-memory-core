@@ -165,7 +165,7 @@ export async function exportHomeArchive({ dbPath = DEFAULT_DB, outDir = DEFAULT_
       }
     }
     journal = readPermanentJournal(archiveDir)
-    const all = [...journal.events.values()].filter((event) => !event.cwd || String(event.cwd).replace(/[/\\]+$/, '') === cwd)
+    const all = [...journal.events.values()].filter((event) => Boolean(event.cwd) && String(event.cwd).replace(/[/\\]+$/, '') === cwd)
     const byDay = new Map()
     for (const event of all) {
       const day = /^\d{4}-\d{2}-\d{2}$/.test(String(event.day ?? '')) ? String(event.day) : dayOf(Number(event.at))
