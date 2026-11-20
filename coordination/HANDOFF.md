@@ -3,8 +3,8 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0017`  
-> 更新时间：2026-11-20 14:02（Asia/Shanghai）  
+> 版本：`HANDOFF-0018`  
+> 更新时间：2026-11-20 13:47（Asia/Shanghai）  
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -326,10 +326,10 @@ DSH首次接入时：
 
 ## 14. 最新交接
 
-- 版本：`HANDOFF-0017`
+- 版本：`HANDOFF-0018`
 - 更新者：DSH
-- 时间：2026-11-20 14:02（Asia/Shanghai）
-- 基于旧文件 blob SHA：`60ffbc056d424e6a7ddcf7be352e8442d1e7472d`
+- 时间：2026-11-20 13:47（Asia/Shanghai）
+- 基于旧文件 blob SHA：`20fbe0da913c64c305c8da8cde1f470c79461e9c`
 - 开发分支 HEAD：`4b4b5f17a123533cceef7a0cd05f3a08ff5f2004`
 - 生产版本：`bb77de2`（永久档案新实现**未部署**；生产 schema 4）
 
@@ -375,6 +375,19 @@ DSH首次接入时：
 - M3-2B：负责人选 **先做快照 + dry-run**；DSH 已出提示词 `/sdcard/DSHA/插件优化/85-给GPT的M3-2B快照dryrun实现提示词-20261120.md`；**代码未实现**，在快照/回滚验证前不改任何 episode。
 - 本轮未写生产数据库、未改源码/配置、未部署/重启；只新增备份 tar 与两份提示词。
 
+### 待转发给 GPT 的提示词清单（负责人只需转发提示词）
+
+DSH 本地文件不在 GitHub；以下为需要负责人转给 GPT 的提示词，均自包含：
+
+1. `/sdcard/DSHA/插件优化/85-给GPT的M3-2B快照dryrun实现提示词-20261120.md`
+   - 要求：episode 快照表 + preview/apply/rollback；默认关闭、不自动、不批量；在快照/回滚验证前不改 episode。
+2. `/sdcard/DSHA/插件优化/86-给GPT的15天永久档案导出与备份调度提示词.md`
+   - 要求：autonomy 每 15 天导出一致性检查、失败重试、备份 tar、日志/哈希；不写 raw/不写记忆/不部署。
+3. `/sdcard/DSHA/插件优化/87-给GPT的M3-REF-06三项FAIL修复提示词.md`
+   - 要求：修 `searchArchive(withContext)` tombstone 泄漏、`tombstone()` cwd 边界、`updateMemory()` 派生数据不一致/删除孤儿；建议永久档案并发短重试。
+
+报告本身（M3-2A/M3-REF/HOME-ARCHIVE）不需要转发全文；GPT 可读本交接文件中的摘要与路径。负责人只负责转发以上 3 份提示词，以及后续 GPT 要求补充的信息。
+
 ### 生产安全与副作用
 - 未写生产数据库；未改 raw_meta/memories/FTS/vectors；
 - 未改生产源码/配置/profile；未部署、未重启；
@@ -385,6 +398,7 @@ DSH首次接入时：
 1. 审查并修复 M3-REF-06 的 3 个 FAIL：`hitWindow` tombstone、`tombstone()` cwd、`updateMemory` 关联一致性；
 2. 按 85 号提示词实现 M3-2B 快照 + dry-run（默认关闭，不自动改写）；
 3. 按 86 号提示词实现 autonomy 的 15 天导出 + 备份调度（需负责人授权后部署）；
+4. 按 87 号提示词修复 M3-REF-06 三项 FAIL，并补永久档案并发重试评估；
 2. 决定是否给永久档案双写增加短重试/退避，以缓解 12 并发下 10/12 失败；
 3. 审查 `HOME-ARCHIVE-ANDROID-VERIFY-01` 的 FUSE 权限差异与派生文件安全实现；
 4. M3-2B 仍应先做快照+dry-run，不得直接批量 `updateMemory()`；
