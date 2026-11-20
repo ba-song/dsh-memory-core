@@ -3,9 +3,9 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0040`  
-> 更新时间：2026-11-20 22:08（Asia/Shanghai）  
-> 更新者：GPT  
+> 版本：`HANDOFF-0041`  
+> 更新时间：2026-11-20 22:15（Asia/Shanghai）  
+> 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
 ---
@@ -2313,3 +2313,56 @@ sha256sum "$SNAP"
 8. 所有命令是否仅操作 /tmp staging 和 GitHub 公开源码，不触碰生产路径。
 
 完成后更新 HANDOFF（预计 HANDOFF-0041），并提供完整原始证据反馈给 GPT。**必须提醒负责人将完整反馈转交 GPT。** 本轮不得解包、npm ci、运行测试、创建 staging DB、启动 host、连接生产 DB、修改生产环境、部署或重启。
+
+
+---
+
+## 38. P0 staging plan v3 复核（HANDOFF-0041）
+
+> 报告：`/sdcard/DSHA/插件优化/P0-STAGING-PLAN-V3-REVIEW-01.md`
+> 反馈：`/sdcard/DSHA/插件优化/96-给GPT的P0-staging-plan-v3复核反馈.md`
+> 本轮只读；未解包、未 npm ci、未测试、未创建 staging/DB、未启动 host、未连生产 DB、未部署。
+
+### 38.1 版本与 CI
+- HANDOFF-0040：commit `354bac543d64fe194c7a9ec1ac37cecf59a35260`，blob `80ec6308c06de3ce4ed57fbc6aa47cbd369c2c0d`。
+- memory HEAD：`24bb511bb1e5f8cecda03def82ec76c5e9a6840e`。
+- CI #87/#88/#89 均 success；#89 head=`24bb511`，链接见 §37.2。CI 不代表 DSHA 实机。
+
+### 38.2 结论
+- 迁移事务/失败回滚/幂等/冻结 fixture/FTS5 回滚：**PASS（静态/CI）**。
+- 新候选包精确 commit 归档/`tar`/strip：**PASS（静态）**；未生成新包。
+- **Cordis profile：BLOCKED**。`dsh plugin --profile p0-staging add link:$PLUGIN` 会用 `DEFAULT_PROFILE_BUNDLES` 初始化，只有 base，没有 web；必须先在 staging 加 `@deepseek-ai/dsh-web-app` 再 link 候选，否则 profile 断言失败、host 无 web。
+- 精确启动命令语法：`env HOME=... DSH_HOME=... /root/dsh-bin/dsh --profile p0-staging --port 31873 --no-open`；语法 PASS，但 profile 未补前 BLOCKED。
+- Node 端口预检：PASS（IPv4 限定，需与实际 web host 对齐）；`ss` 不存在的问题已绕开。
+- 快照前停写/checkpoint/VACUUM/WAL 回滚：设计 PASS，NOT RUN。
+- 测试缺口：snapshot 列校验分支未被现有失败测试真正覆盖；失败注入变体不全；DSHA 未实跑。
+
+### 38.3 逐项状态
+| 项 | 状态 |
+|---|---|
+| schema4 冻结 DDL | PASS |
+| fixture raw_meta | PASS（主要列） |
+| ALTER 回滚 | PASS（CI） |
+| FTS5 回滚 | PASS（CI；DSHA NOT RUN） |
+| version>code/非法 version | PASS（CI） |
+| snapshot 结构检查 | PASS（代码）/测试缺口 |
+| CI #89 | PASS（success） |
+| 新候选包归档 | PASS（静态）/NOT RUN |
+| `dsh plugin add link` | 命令存在，流程缺 web |
+| staging profile/package.json | **BLOCKED** |
+| base/web bundles | **BLOCKED**（web 未加） |
+| node_modules symlink | 预期 PASS，未运行 |
+| Cordis 隔离 | **BLOCKED** |
+| 精确 host 命令 | 语法 PASS；profile 未补前 BLOCKED |
+| Node 端口预检 | PASS（IPv4） |
+| strace 审计 | 能力 PASS/NOT RUN |
+| 快照/回滚 | PASS（设计）/NOT RUN |
+| DSHA staging | **NOT RUN** |
+
+### 38.4 交 GPT
+1. staging profile 先加 `@deepseek-ai/dsh-web-app`，再 link 候选；补精确 bundles/symlink 断言；
+2. 补 snapshot 列校验测试缺口；
+3. 更新 HANDOFF 后再 staging；仍不部署。
+
+### 38.5 副作用
+未解包、未 npm ci、未运行测试、未创建 staging/DB、未启动 host、未调用 dsha-plugin、未连生产 DB、未改生产 profile/config、未部署/重启。
