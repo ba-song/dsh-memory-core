@@ -3,7 +3,7 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0010`  
+> 版本：`HANDOFF-0011`  
 > 更新时间：2026-11-20（Asia/Shanghai）  
 > 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
@@ -326,17 +326,16 @@ DSH首次接入时：
 
 ## 14. 最新交接
 
-- 版本：`HANDOFF-0010`
+- 版本：`HANDOFF-0011`
 - 更新者：GPT
 - 时间：2026-11-20（Asia/Shanghai）
-- 基于旧文件blob SHA：`67eba61e2c912ee8075540fc6e8f827fe6ed2b42`
-- 本次变更：增加归档JSONL版本指纹；导出器在完成DB补齐后、渲染前记录日志版本，渲染后再次比对。若导出期间发生并发追加，返回`consistent=false`、`journalStable=false`，在INDEX写入告警，CLI退出码2，提示重新运行导出刷新派生视图。原始JSONL仍是权威源，不持有长时间全局写锁。
+- 基于旧文件blob SHA：`cf1e4c52013b4245c5469a453b1f22e233786325`
+- 本次变更：记录home归档导出期间JSONL并发变化检测及CI成功证据。
 - 开发分支HEAD：`22fc787046dee54c178f7266cb97f848b89e0554`
-- 新增测试：外部追加后journal版本指纹变化；原有导出修复逻辑先完成自身补齐再捕获指纹，避免把本轮补齐误报为并发写入。
-- Actions #54：https://github.com/ba-song/dsh-memory-core/actions/runs/44678400560（当前查询时in_progress；尚未宣称通过）。
-- Actions #52/#53因连续push更新被自动取消；不作为测试通过/失败证据。
-- 最新源码已回读核验：`permanentJournalVersion()`基于文件名、size、mtime、ctime、inode生成指纹；导出前后比较；CLI遇到不稳定视图返回退出码2。
-- 仍需注意：这是乐观一致性检测，不是数据库与JSONL的跨系统原子快照；最终指纹比较之后仍存在极短的并发窗口。若报告不稳定，重新执行导出即可刷新派生视图。设备实际文件系统时间戳粒度仍需DSHA验证。
+- Actions #54：https://github.com/ba-song/dsh-memory-core/actions/runs/44678400560（success，235 tests / 233 pass / 0 fail / 2 skipped）。
+- 导出并发保护：完成DB缺失行/撤回标记补齐后，先捕获JSONL版本指纹，再读取渲染快照；Markdown/INDEX/README生成后重新捕获指纹。若不同，`consistent=false`、`journalStable=false`，INDEX记录告警，CLI退出码2。若稳定且无journal解析错误则consistent=true。
+- 版本指纹使用文件名、size、mtime、ctime、inode；该机制是乐观一致性检测，不是跨DB/JSONL原子事务，最终比较后仍有极短竞争窗口。设备时间戳粒度及并发进程行为仍需DSHA实测。
+- Actions #52/#53因后续push自动取消，不计为测试失败或通过。
 - 当前交接文件URL：https://github.com/ba-song/dsh-memory-core/blob/coordination/project-handoff/coordination/HANDOFF.md
-- 当前待办：M3-2A-REPORT-01、M3-REF-06仍待DSH；GPT继续评估并发测试覆盖和半行故障注入；DSHA验证O_NOFOLLOW、`/sdcard`别名和真实文件系统行为、正式离线评测仍待DSH。
+- 当前待办：M3-2A-REPORT-01、M3-REF-06仍待DSH；GPT继续检查异常中断/半行故障恢复和并发去重测试覆盖；DSHA验证O_NOFOLLOW、`/sdcard`别名、真实文件系统行为及正式离线评测仍待DSH。
 - 副作用：仅开发分支与交接分支GitHub提交；未修改生产环境、数据库、配置或部署。
