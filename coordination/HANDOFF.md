@@ -2401,7 +2401,7 @@ DSH 对 plan v3 的 BLOCKED 判断成立：
 - 精确断言错误为 `E_SCHEMA_MIGRATION_INCOMPLETE: episode_rewrite_snapshots missing revision...`，而不是此前的 SQLite `no such column: memory_id`；
 - 失败后断言 schema_version 仍为4、snapshot 表仍只有2列、ALTER 新增的 `valid_to` 已回滚、`idx_ers_memory` / `idx_mem_scope_key` / `idx_mem_valid` 均未残留、integrity_check=ok。
 
-该提交已推送开发分支，GitHub Actions 结果需在本节更新后补录；在 workflow run 尚未核实前不得称 CI PASS。此修正不改变生产 schema 或生产 DB。
+该提交已推送开发分支；GitHub Actions #90 已核实 success，run ID `44751203163`，head SHA=`7548e49ed0b8d8673818464325d8e72ec7704b27`，链接：https://github.com/ba-song/dsh-memory-core/actions/runs/44751203163。该 CI 只证明 GitHub runner 测试通过，不代表 DSHA SQLite 3.53.3 实机通过。此修正不改变生产 schema 或生产 DB。
 
 ### 39.3 Cordis profile v4：先 web，再候选 link
 
@@ -2477,7 +2477,7 @@ env HOME="$STAGE_HOME" DSH_HOME="$STAGE_DSH_HOME" \
 | 项目 | 状态 |
 |---|---|
 | HANDOFF-0041 plan v3 复核 | BLOCKED（结论有效） |
-| snapshotColumns 显式缺列测试 | 已提交修正；CI 待核实 |
+| snapshotColumns 显式缺列测试 | 已提交修正；GitHub Actions #90 PASS（head=7548e49） |
 | schema4 fixture / 事务 / FTS5 测试 | 既有 CI #87/#88/#89 PASS |
 | Cordis web bundle 初始化顺序 | plan v4 已修订；DSH 只读复核待进行 |
 | profile 精确 manifest/bundle/link/realpath 断言 | plan v4 已修订；DSH 只读复核待进行 |
