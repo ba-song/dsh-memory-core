@@ -454,6 +454,7 @@ test('export reports incomplete trailing journal records without rewriting the s
   const dir = mk('export-trailing-partial')
   const { db, file: dbPath } = openDb(dir)
   const archiveDir = join(dir, 'permanent')
+  new RawArchive({ db, dir: join(dir, 'raw'), cwdPrefixes: [HOME], log: { warn() {}, info() {} } })
   const eventsDir = join(archiveDir, '_events')
   const day = '2026-11-20'
   const journalFile = join(eventsDir, day + '.jsonl')
