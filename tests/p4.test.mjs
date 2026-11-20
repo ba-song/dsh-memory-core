@@ -7,7 +7,7 @@ import { extractPreference, extractRelation, extractSkill, isTooShortOrGreeting 
 import { decideConflict, hasOpposition } from '../lib/ingest/conflict.js'
 import { effectiveImportance, isStale } from '../lib/maintain/decay.js'
 import { aggregateDay } from '../lib/maintain/episode.js'
-import { ingestClassified } from '../lib/ingest/p4.js'
+import { ingestCandidate, ingestClassified } from '../lib/ingest/p4.js'
 import { loadEmbed, embedTexts } from '../lib/embed/onnx.mjs'
 import { rmSync } from 'node:fs'
 
@@ -88,3 +88,55 @@ assert.equal(hasOpposition('爱吃辣', '讨厌吃辣'), true)
 
 // 8) 两条“允许…”规则不是矛盾
 assert.equal(hasOpposition('主人允许汐自主修改，但要求先告知', '主人允许汐吐槽，条件是不要泄露隐私'), false)
+
+
+// 9) 已 supersede 的旧记忆即使仍有向量，也不得成为 P4 邻居。
+{
+  const dir = '/tmp/dy-p4-active-neighbor-' + process.pid
+  rmSync(dir, { recursive: true, force: true })
+  const { db } = openDb(dir)
+  try {
+    const staleId = await insertMemory(db, {
+      kind: 'preference', text: '主人喜欢带有语气词的句子',
+      status: 'active', confidence: 0.9, layer: 'manual',
+    })
+    const currentId = await insertMemory(db, {
+      kind: 'preference', text: '主人希望汐说话带语气词，活泼些，不要冷冰冰',
+      status: 'active', confidence: 0.9, layer: 'manual',
+    })
+    db.prepare('UPDATE memories SET superseded_by=?, valid_to=? WHERE id=?')
+      .run(currentId, Date.now(), staleId)
+    const vectors = new Map([
+      [staleId, new Float32Array([1, 0])],
+      [currentId, new Float32Array([0.9, 0.1])],
+    ])
+    const result = await ingestCandidate(db, {
+      cand: { kind: 'preference', text: '主人喜欢带有语气词的句子', confidence: 0.9 },
+      text: '主人喜欢带有语气词的句子',
+      sourceKey: 'regression:active-neighbor',
+      speaker: 'owner',
+      embed: async () => [new Float32Array([1, 0])],
+      vectors,
+    })
+    assert.equal(result.action, 'merge')
+    assert.equal(result.targetId, currentId)
+    assert.notEqual(result.targetId, staleId)
+    assert.equal(db.prepare('SELECT status FROM memories WHERE id=?').get(staleId).status, 'active',
+      '测试只验证候选过滤，不在此处修复历史数据状态')
+  } finally {
+    db.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+// 10) 不同语义对象的否定不能拼接成 opposition。
+assert.equal(hasOpposition(
+  '主人喜欢带有语气词的句子',
+  '主人希望汐说话带语气词，活泼些，不要冷冰冰',
+), false)
+assert.equal(decideConflict(
+  '主人喜欢带有语气词的句子',
+  '主人希望汐说话带语气词，活泼些，不要冷冰冰',
+  0.95,
+  { mergeLine: 0.78, queueLine: 0.45 },
+).action, 'merge')
