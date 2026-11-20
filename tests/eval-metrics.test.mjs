@@ -17,7 +17,10 @@ test('human graded metrics distinguish unlabelled queries from zero-recall label
   assert.equal(labelled.precision[3], 1 / 3)
   assert.equal(labelled.mrr, 1 / 2)
   assert.ok(labelled.ndcgAt5 > 0 && labelled.ndcgAt5 <= 1)
-  assert.equal(labelled.evidenceCoverage, 0)\n\n  const forbidden = evaluateRankedResults([7, 8], [{ memoryId: 7, grade: 1 }], { forbiddenMemoryIds: [7] })\n  assert.deepEqual(forbidden.forbiddenReturnedIds, [7])
+  assert.equal(labelled.evidenceCoverage, 0)
+
+  const forbidden = evaluateRankedResults([7, 8], [{ memoryId: 7, grade: 1 }], { forbiddenMemoryIds: [7] })
+  assert.deepEqual(forbidden.forbiddenReturnedIds, [7])
 })
 
 test('RRF explanation exposes per-arm rank and contribution without mutating inputs', () => {
