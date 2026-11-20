@@ -3,9 +3,9 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0020`  
-> 更新时间：2026-11-20（Asia/Shanghai）  
-> 更新者：GPT  
+> 版本：`HANDOFF-0021`  
+> 更新时间：2026-11-20 19:05（Asia/Shanghai）  
+> 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
 ---
@@ -536,3 +536,80 @@ DSH 本地文件不在 GitHub；以下为需要负责人转给 GPT 的提示词�
 - 开发分支 HEAD：c0645fb629b71e00949d6ec6d031294a059cbce7
 - autonomy main HEAD：7a3dc5181fa5377ad977a430c8a5fc51bb141844
 - 下一位更新者必须重新读取远程最新 Blob SHA；不要沿用本节的旧 SHA。
+
+---
+
+## 16. DSH 本地复验（HANDOFF-0021）
+
+> 本节为当前最新状态。第 15 节 GPT 的 HANDOFF-0020 记录保留，不得改写。
+
+### 16.1 范围与安全边界
+- 执行者：DSH（DSHA Android/proot）。
+- 授权来源：负责人转发 GPT 的 HANDOFF-0020 后续本地复验任务书。
+- 只做隔离 clone 测试 + 临时库测试 + 生产库只读核对；**未部署、未重启、未改生产 profile/config、未写生产库**。
+- 报告路径：`/sdcard/DSHA/插件优化/M3-MERGED-LOCAL-VERIFY-01.md`
+- 日志：`/tmp/m3v/logs/`（full-test.log、concurrent-fail.log、au-test.log）
+
+### 16.2 版本核对（实际读取）
+- 交接文件：HANDOFF-0020，blob `c7f9b2e7ddd67363060385690a29e7d836ac5b55`，分支 HEAD `4f7921099e05d4b0ec46b93f18d7364b3457ba89`（更新前已重新拉取并与缓存一致，无他人并发更新）。
+- dsh-memory-core 开发分支：`c0645fb629b71e00949d6ec6d031294a059cbce7`（与 0020 一致）。
+- dsh-autonomy main：`7a3dc5181fa5377ad977a430c8a5fc51bb141844`（一致）。
+- 生产库：schema_version=4；memories=216；entities=19；**relations=0**；无 `episode_rewrite_snapshots` 表。
+- 已部署插件 `/root/.dsh/plugin-src/dsh-memory-core` 无 `.git`，无法用 git 独立核实部署版本；按 HANDOFF-0019 记录生产为 `bb77de2`。该目录**无 `scripts/export-home-archive.mjs`、无 `lib/permanent/`、无 `lib/store/episode-rewrite.js`**。
+
+### 16.3 测试结果（DSHA 实机）
+| 项 | 结果 |
+|---|---|
+| memory-core 全量 `npm test`（c0645fb） | 251 tests / **250 pass** / **1 fail** / **0 skipped** / exit 1 |
+| BGE 两项 CI skipped | 本机真实模型执行并 **PASS**（p4 1/1） |
+| archive-tombstone-context | 2/2 pass |
+| raw-tombstone-cwd | 1/1 pass |
+| m3-ref-derived-sync | 5/5 pass |
+| m3-2b-snapshots | 4/4 pass |
+| m3-2b-tool-permissions | 1/1 pass |
+| autonomy 专项 home-archive-maintenance | 4/4 pass |
+| autonomy 全量 `npm test` | 410 tests / 407 pass / **2 fail** / 1 skipped / exit 1 |
+
+- 唯一 memory-core 失败：`permanent-home-archive` → 「12 concurrent child processes append distinct events with bounded lock retry」。单测连跑 6 次 **5 次失败**，典型 12 个进程里 1–2 个退出码为 2（有界重试 100/250/500 ms 用尽仍锁忙，append 既非 appended 也非 duplicate）。日志见 `concurrent-fail.log`。→ CI 通过，DSHA 实机 **FAIL**。
+- autonomy 两处 FAIL：`Config：volatile 只标在设置卡片的 4 个字段上`、`设置服务：describe 只暴露 4 个 volatile 字段，mutate 写入嵌套路径`。原因是新增 `homeArchiveMaintenance` 后这两个断言未同步更新；CI workflow 只跑 `tests/home-archive-maintenance.test.mjs`，故 CI #3 全绿但全量红。**待 GPT 修断言，并让 CI 覆盖全量。**
+
+### 16.4 路径与平台核对
+- exporter 默认 `/root/.dsh/plugin-src/dsh-memory-core/scripts/export-home-archive.mjs` → **当前部署下不存在**；调度启用前必须部署新版插件或改默认路径。
+- memory.db / home cwd / archive root / backup dir 四个默认路径均存在；archive root 现 5.3 MB（README.md、home/）。
+- `/sdcard` 与 `/storage/emulated/0` 同 dev/ino（别名成立）；`/sdcard` 为 bind mount(FUSE)。
+- GNU tar 1.35 可用；中文路径打包正常（实测 `永久档案/home/2026-11-20.md`）；SHA256 可复算。
+- FUSE 实测：O_CREAT|O_EXCL 排他创建 OK；`/sdcard` 文件 mode 实测 **660**；rename OK；`/sdcard` 上创建 symlink **EACCES 拒绝**；`/tmp` 上 O_NOFOLLOW 打开 symlink 被拒（ELOOP）。
+
+### 16.5 relations 只读调查结论
+- 结构：`src,dst,relation,weight,memory_id,created_at`，无主键/外键/CHECK。
+- 唯一写入点：`updateMemory()` 内 relationBuilder（无 builder 且有旧关系时 fail-closed `E_RELATION_REBUILDER_REQUIRED`）；仓库无通用 extractor。
+- 读取点只有 `episode-rewrite.js`（快照/回滚）与删除时孤儿清理；**召回不使用 relations**（graph 走 memory_entities+entities）。
+- 生产 relations=0 行。
+- src/dst 为 entities.id，relation 为自由文本，方向 src→dst 无消费方验证。类型/权重/业务语义需负责人定义，**不得自行设计 co-mention**。
+
+### 16.6 M3-2B 与 autonomy 配置核对
+- `m3_2b.enabled` 默认 false；`lib/index.js:502` 仅在显式开启时注册三工具 → 默认不注册。
+- preview 只读、apply 先快照、embedding 失败整单回滚、rollback 恢复且 revision 不倒退：均由 `m3-2b-snapshots.test.mjs` 覆盖并本机通过。
+- apply 对旧 relations 走 `invalidated-no-builder` + 快照保存，**不是关系重建**，rollback 可恢复；不得报告为 A3/B 全部满足。
+- `homeArchiveMaintenance.enabled` 默认 false；intervalDays 固定 15；retryCount=1；pollMinutes=60；未启用工具返回 `E_DISABLED`；`dy_life_home_archive_export` owner-only。
+
+### 16.7 本轮未做（授权边界）
+- 未部署任何开发分支代码；未改生产 profile/config；未重启 DSH/DSHA。
+- 未写生产 memory DB、raw、episode、vectors、FTS、relations、永久档案。
+- 未执行真实 episode 改写；未开启 m3_2b 或 homeArchiveMaintenance 生产开关；未运行真实 15 天调度。
+- 未把真实永久档案目录作为测试输出（并发/tar 均在 /tmp 隔离目录）。
+
+### 16.8 交 GPT 的待办
+1. 永久档案并发：Android FUSE 下 12 路并发仍有 1–2 个失败，需决定加大退避、串行写队列，或明确接受 best-effort 并依赖 15 天补齐。
+2. autonomy 两个陈旧断言需修，且 CI 应覆盖全量 `npm test`。
+3. autonomy 默认 exporter 路径与当前部署不匹配，部署前需对齐。
+4. relations 的语义（类型/方向/权重/是否参与召回）待负责人定义后再做 relationBuilder。
+5. 生产 schema 4 → 开发 5；M3-2B 未部署，升级与部署仍需负责人单独授权。
+
+### 16.9 本次交接文件信息
+- 版本：`HANDOFF-0021`
+- 更新者：DSH
+- 基于旧文件 blob SHA：`c7f9b2e7ddd67363060385690a29e7d836ac5b55`
+- 开发分支 HEAD：`c0645fb629b71e00949d6ec6d031294a059cbce7`
+- autonomy main HEAD：`7a3dc5181fa5377ad977a430c8a5fc51bb141844`
+- 下一位更新者必须重新读取远程最新 blob SHA。
