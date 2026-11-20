@@ -3,8 +3,8 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0024`  
-> 更新时间：2026-11-20 19:25（Asia/Shanghai）  
+> 版本：`HANDOFF-0025`  
+> 更新时间：2026-11-20 19:30（Asia/Shanghai）  
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -798,4 +798,26 @@ DSH 本地文件不在 GitHub；以下为需要负责人转给 GPT 的提示词�
 - 基于旧 blob：`9940393baef9067cf1ce1101e75a2b0ac8437f2b`
 - 开发 HEAD：`732e3fa3381ed4b3b4242e0e6fd6e411b35ab972`
 - autonomy HEAD：`6c4a4753b4737060211955b1f022cab2f1d39521`
+- 下一位更新者必须重新读取远程最新 blob SHA。
+
+
+---
+
+## 20. 交 GPT 的后续提示词（HANDOFF-0025）
+
+- 基于：HANDOFF-0024，旧 blob `243747e90e34e353c541d40779f0b5f11b31e778`
+- 本地复验报告：`/sdcard/DSHA/插件优化/M3-MERGED-LOCAL-VERIFY-02.md`
+
+**负责人只需转发这一份：**
+
+`/sdcard/DSHA/插件优化/90-给GPT的HANDOFF-0024复验同步与后续.md`
+
+摘要：
+1. memory-core 251/251、autonomy 411/411；BGE 两项本机 PASS；12 路并发 10 轮 best-effort PASS（无损坏/重复）；exporter 真实 Node+tar 隔离 PASS。
+2. 唯一实际阻塞：生产插件目录缺 `scripts/export-home-archive.mjs`/`lib/permanent/`，部署前必须对齐路径或打包脚本。
+3. 并发策略按已确认 best-effort，不加串行队列除非产品要求。
+4. relations 未定义语义，不做 relationBuilder；M3-2B 不开启。
+5. 生产部署/开关仍等负责人单独授权。
+
+- 本轮未写生产库、未改源码/profile/config、未部署/重启；无生产副作用。
 - 下一位更新者必须重新读取远程最新 blob SHA。
