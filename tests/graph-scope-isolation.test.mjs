@@ -53,10 +53,10 @@ test('graph traversal cannot use out-of-scope memories as seeds or hops', async 
     assert.equal(restricted.direct.includes(futureId), false)
     assert.equal(restricted.direct.includes(inactiveId), false)
 
-    const historical = graphCandidates(db, '鲸鱼', { scope: external, asOf: now - 5000 })
+    const historical = graphCandidates(db, '鲸鱼', { scope: external, asOf: now - 5000, strictAsOf: true })
     assert.ok(historical.direct.includes(expiredId), '历史 as-of 应包含当时有效的经历')
     assert.equal(historical.direct.includes(futureId), false)
-    const future = graphCandidates(db, '鲸鱼', { scope: external, asOf: now + 5000 })
+    const future = graphCandidates(db, '鲸鱼', { scope: external, asOf: now + 5000, strictAsOf: true })
     assert.ok(future.direct.includes(futureId), '未来 as-of 应包含未来有效记录')
 
     let graphArms = null
