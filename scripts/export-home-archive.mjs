@@ -130,13 +130,17 @@ function writeBackupExclusive(file, content) {
 function atomicWrite(file, content, { preserveHistory = false } = {}) {
   assertNoSymlink(file, 'home archive derived file')
   let current = null
+  let existing = false
   try {
     current = readRegularFileNoFollow(file)
+    existing = true
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
+  if (existing) {
     try { chmodSync(file, 0o600) } catch {}
     if (current === content) return false
     if (preserveHistory) writeBackupExclusive(file, current)
-  } catch (error) {
-    if (error?.code !== 'ENOENT') throw error
   }
   assertNoSymlinkAncestors(file, 'home archive derived file')
   assertNoSymlink(file, 'home archive derived file')
