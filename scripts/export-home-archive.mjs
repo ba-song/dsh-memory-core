@@ -208,7 +208,6 @@ export async function exportHomeArchive({ dbPath = DEFAULT_DB, outDir = DEFAULT_
     const tombstoneExpr = cols.has('tombstone') ? 'tombstone' : '0 AS tombstone'
     rows = db.prepare(`SELECT id,day,seq,role,raw_text,at,cwd,${extraExpr},${tombstoneExpr} FROM raw_meta WHERE cwd=? ORDER BY day,at,id`).all(cwd)
     emotionById = emotionMapOf(db, rows.map((row) => Number(row.id)))
-    const journalVersionAtStart = permanentJournalVersion(archiveDir)
     journal = readPermanentJournal(archiveDir)
 
     let repaired = 0
@@ -233,6 +232,8 @@ export async function exportHomeArchive({ dbPath = DEFAULT_DB, outDir = DEFAULT_
       }
     }
     journal = readPermanentJournal(archiveDir)
+    // 先完成DB缺失行/撤回标记补齐，再记录渲染起点；否则本轮自身修复会被误判为并发写入。
+    const journalVersionAtStart = permanentJournalVersion(archiveDir)
     const all = [...journal.events.values()].filter((event) => Boolean(event.cwd) && String(event.cwd).replace(/[/\\]+$/, '') === cwd)
     const byDay = new Map()
     for (const event of all) {
