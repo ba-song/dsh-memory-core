@@ -2890,3 +2890,61 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - 基于旧 blob：`d86db7e96fbbc1e2dfeff2c128e135089a90d58f`
 - REPORT-0003：`coordination/REPORT.md`
 - 下一位更新者必须重新读取最新 blob SHA。
+
+
+---
+
+## 45. Emotion Intelligence 第二轮源码审查与 EI-0 契约草案（HANDOFF-0047）
+
+> 完整报告：`coordination/REPORT.md`（REPORT-0004）
+> REPORT-0004 commit：`0907229b3412a173f05511f504ca8778359598e6`
+> REPORT blob：`9d3ec42b26b58a032b490b8a397e15a0d4aa2a11`
+> 基于 HANDOFF-0046 blob：`13d7dd8b3ab1087499f8704d4e87f8115b1c657a`
+> 本轮只读源码审查与文档更新；未改插件源码、未运行测试、未连接/修改生产 DB、未启动 staging、未部署/重启。
+
+### 45.1 DSH 结果复核
+- Persona 本地 71/71 文件 SHA256 与 GitHub 基线 a84c7ba 完全一致；安装目录无 .git，因此不声称 Git clean。
+- Memory raw 情绪快照 1,957 条；69 个 episode 的 meta emotion=0。
+- 情绪当前用于上下文展示，不参与主召回；assistant-only 快照及 24h 近似时间关联是已确认缺口。
+
+### 45.2 Persona / Memory 第二轮源码结论
+- Persona 已有 valence/arousal/certainty/intensity、mood 慢层、dominance、energy/social、timeline、event、appraisal、episodes、关系轴。
+- `composeEmotionView()`（emotion.js:774-812）只取最强 active episode 输出单一 label；完整多情绪集合尚未暴露。
+- `appraisal.js` prompt/parser 仍是单 emotion + 单 intensity/valence/arousal。
+- Persona DB schema v2 已有 emotion_state/timeline/points/episodes/event/appraisal；应在既有基础上增量扩展，不推翻重做。
+- Memory `snapshotEmotion()` 写 raw_emotion_archive；仅 assistant/message 触发；`addEpisode` meta 无 emotion；`emotionFactorOf` 读取 emotionIntensity，但现有 episode meta 缺值；历史情绪时间关联需标明精度。
+- 证据、文件行段和限制详见 REPORT-0004。
+
+### 45.3 EI-0 契约原则
+- 分离不可变 EmotionEvent、短期 EmotionEpisode、当前 EmotionState 投影、EmotionMemoryLink、可选 EmotionRecallSignal。
+- 新增 `emotions[]` 为多情绪权威视图；旧单值 label/emotion 保留兼容。
+- 体验者与目标对象分离；不把用户情绪误写为汐的情绪。
+- 事件时间与记录时间分开；历史快照不可被当前状态覆盖。
+- 六基础情绪和组合只是参考 ontology，不设封闭上限。
+- 安全区/消散区仅表示保留/激活/检索状态；衰减不删除 raw、永久档案或历史事件。
+- 情绪召回先 shadow，不改变排序/注入；以后仅可作为低权重可解释信号，事实相关性和硬权限门槛优先。
+- 关系成长先 suggest-only，低置信 appraisal 不得直接修改长期人格。
+
+### 45.4 后续计划
+1. GPT 完成 EI-0 兼容矩阵、字段/时序/错误处理和契约定稿。
+2. DSH 只读核对本地 Memory 调用点及运行版本已完成；后续如需实测，必须隔离 fixture。
+3. EI-1 纯函数复合情绪合成，EI-2 appraisal 多标签 shadow，EI-3 Memory 情绪关联，EI-4 关系/成长 suggest-only，EI-5 隔离测试与渐进启用。
+4. P0 staging plan v5 设计 PASS，但 staging 仍待负责人单独决定；与 EI 专题并行管理。
+
+### 45.5 状态
+| 项目 | 状态 |
+|---|---|
+| DSH Persona 本地文件一致性 | 已完成（71/71 SHA256） |
+| Persona 第二轮源码审查 | 已完成（静态） |
+| Memory 情绪数据流审查 | 已完成（静态+DSH只读计数） |
+| EI-0 契约草案 | 已完成（待复核定稿） |
+| EI-1..EI-5 实施 | 未开始 |
+| Persona/Memory 测试 | NOT RUN |
+| DSHA E2E | NOT RUN |
+| P0 staging | NOT RUN，待负责人决定 |
+| 生产变更/部署 | 未授权、未执行 |
+
+### 45.6 下一轮
+- GPT：定稿 EI-0 契约与开发任务拆解；所有开发修改在开发分支完成。
+- DSH：收到 GPT 提示词后只读复核契约与本地兼容风险，不自行改源码或启动 staging。
+- 更新 HANDOFF/REPORT 时遵守 SHA 并发保护。
