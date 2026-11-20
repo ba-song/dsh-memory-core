@@ -2366,3 +2366,138 @@ sha256sum "$SNAP"
 
 ### 38.5 副作用
 未解包、未 npm ci、未运行测试、未创建 staging/DB、未启动 host、未调用 dsha-plugin、未连生产 DB、未改生产 profile/config、未部署/重启。
+
+---
+
+## 39. P0 staging plan v4 修订（基于 HANDOFF-0041 复核）
+
+> 依据：负责人转交的 `P0-STAGING-PLAN-V3-REVIEW-01.md` 与 HANDOFF-0041 §38。
+> 本节由 GPT 更新。性质：**开发分支测试修正 + staging 计划修订；DSHA staging NOT RUN，生产环境只读，禁止部署。**
+
+### 39.1 HANDOFF-0041 复核结论
+
+DSH 对 plan v3 的 BLOCKED 判断成立：
+- schema4 冻结 DDL、raw_meta 合成 fixture、迁移事务、ALTER/FTS5 回滚、version 校验、CI #87/#88/#89：PASS（GitHub CI/静态证据）。
+- 候选包精确归档方法与 tar strip 方案：静态 PASS；新包尚未生成。
+- profile 阻塞是实际流程缺陷：`dsh plugin --profile p0-staging add link:$PLUGIN` 初始化时只写入 `DEFAULT_PROFILE_BUNDLES` 中的 base bundle，不含 web app。不能只 link memory-core 后再期待 web host 可启动。
+- 正确的 staging 顺序必须先在 staging DSH_HOME 中添加设备 manifest 证实的 web bundle，再 link 候选 memory-core。
+- host CLI 语法已由 DSH 源码/CLI 核实为：
+  `env HOME="$STAGE_HOME" DSH_HOME="$STAGE_DSH_HOME" "$DSH_BIN" --profile p0-staging --port 31873 --no-open`
+  仅在 staging profile 完整且隔离审计通过后才可运行；本轮不得运行。
+- 端口预检 Node TCP bind 可用，但必须与实际 web bind host/address 一致；IPv4 限定的预检不能证明 IPv6 端口可用。
+- 旧的不完整 snapshot 测试确实未覆盖 `snapshotColumns` 的显式缺列校验分支：其 fixture 只有 `id`，在创建 `idx_ers_memory(memory_id,id)` 时就先失败。
+
+### 39.2 GPT 已完成的开发分支测试修正
+
+仓库：`ba-song/dsh-memory-core`
+分支：`feat/m1-preference-memory`
+修复提交：`7548e49ed0b8d8673818464325d8e72ec7704b27`
+修改文件：`tests/schema-migration-atomic.test.mjs`
+
+新测试把不完整 snapshot fixture 改为：
+- 先从 memories 删除 `valid_to`，确保迁移开始后确实执行 ALTER；
+- 创建只有 `id` 与 `memory_id` 两列的 `episode_rewrite_snapshots`；
+- 这两列足以让迁移创建 `idx_ers_memory(memory_id,id)` 成功，随后进入 `snapshotColumns` 显式列集合校验；
+- 精确断言错误为 `E_SCHEMA_MIGRATION_INCOMPLETE: episode_rewrite_snapshots missing revision...`，而不是此前的 SQLite `no such column: memory_id`；
+- 失败后断言 schema_version 仍为4、snapshot 表仍只有2列、ALTER 新增的 `valid_to` 已回滚、`idx_ers_memory` / `idx_mem_scope_key` / `idx_mem_valid` 均未残留、integrity_check=ok。
+
+该提交已推送开发分支，GitHub Actions 结果需在本节更新后补录；在 workflow run 尚未核实前不得称 CI PASS。此修正不改变生产 schema 或生产 DB。
+
+### 39.3 Cordis profile v4：先 web，再候选 link
+
+隔离路径仍固定为：
+```text
+STAGE_HOME=$STAGE/home
+STAGE_DSH_HOME=$STAGE/home/.dsh
+PROFILE=$STAGE_DSH_HOME/profiles/p0-staging
+PROFILE_NODE_MODULES=$PROFILE/node_modules
+PLUGIN=$STAGE/plugin
+```
+
+在候选包解包到 `$STAGE/plugin` 后，profile 初始化必须按以下顺序执行，所有命令进程均设置 staging 的 HOME 和 DSH_HOME：
+
+```sh
+mkdir -p "$PROFILE"
+env HOME="$STAGE_HOME" DSH_HOME="$STAGE_DSH_HOME" \
+  "$DSH_BIN" plugin --profile p0-staging add @deepseek-ai/dsh-web-app
+env HOME="$STAGE_HOME" DSH_HOME="$STAGE_DSH_HOME" \
+  "$DSH_BIN" plugin --profile p0-staging add "link:$PLUGIN"
+```
+
+约束：
+- `@deepseek-ai/dsh-web-app` 是 DSH 复核反馈给出的设备 manifest 名称；执行前仍须只读读取当前设备已安装 package manifest，核实该包存在，且其 `dsh.profile.bundles` 声明与 base bundle 声明。
+- 不要把包名字符串直接假定为最终 profile bundle descriptor；profile 中写入的精确对象/字符串结构，以当前设备安装 manifest 的 `dsh.profile.bundles` 为准。
+- 先添加 web，再添加候选 link。若任一步失败，停止并记录 staging profile 原状，不手工伪造 manifest，不回退到生产 profile。
+- profile 只允许 base、web app、候选 memory-core 三类必要 bundle；不得加载生产旧 memory-core 或额外业务插件。
+
+### 39.4 profile 初始化后的精确断言（全部通过才可启动）
+
+先读取并记录：
+1. 当前设备安装的 base、web app、候选插件三个 package.json 的 `name`、`version`、`dsh.profile.bundles` 原始值；
+2. profile 的完整 `package.json`；
+3. `dsh.profile.bundles` 数组中每个条目的实际 JSON 类型和值；
+4. `profile/node_modules` 下实际生成的目录、符号链接及其最终 realpath。
+
+必须使用 manifest 中的精确包名和 descriptor 做结构比较，不允许正则、模糊子串、仅凭目录存在或名称大小写推断成功。验收断言：
+- profile package.json 存在且为有效 JSON；
+- `dsh.profile.bundles` 存在且为数组；
+- bundle 集合精确等于：设备当前 manifest 声明的 base bundle descriptor + web app bundle descriptor + 候选 memory-core bundle descriptor；无缺失、无重复、无生产旧版、无额外 bundle；
+- 对每个 bundle descriptor，按 DSH loader 的实际解析规则从 profile 根解析到对应 package；记录解析到的 package.json 路径、package name/version 和 realpath；
+- 候选 memory-core 的 `profile/node_modules/dsh-memory-core` 必须是符号链接；`test -L` 成功，`readlink` 原始目标和 `readlink -f` 最终路径均记录，最终 realpath 必须等于 `readlink -f "$PLUGIN"`；
+- web app 必须从 profile 的 node_modules/loader 解析路径解析成功，不能只证明全局安装位置存在；
+- base、web、memory-core 各只解析/注册一次；
+- profile 中不得存在指向 `/root/.dsh`、生产 plugin-src、生产 node_modules 或生产 DB/archive 的链接/路径。
+
+如果 CLI add web 后产生的 node_modules 形态与预期不同，先依据实际 loader 源码确认解析规则，再对真实解析结果做断言；不要擅自把 base/web 也强制要求为 symlink。候选 `link:$PLUGIN` 则必须验证其 symlink 最终路径。
+
+### 39.5 host / 网络 / 隔离启动门禁
+
+只有 §39.3、§39.4 全部 PASS，才可在后续 staging 实施轮次运行 host。精确命令为：
+
+```sh
+env HOME="$STAGE_HOME" DSH_HOME="$STAGE_DSH_HOME" \
+  "$DSH_BIN" --profile p0-staging --port 31873 --no-open
+```
+
+- 不加 `web` 子命令；`--profile` 是顶层参数，`--port` 和 `--no-open` 由 web app 处理。
+- 端口预检必须与 manifest/config 中 web 实际 bind host 对齐。若 bind host 为 IPv4 `0.0.0.0`，用 Node `net.createServer().listen({host:'0.0.0.0',port:31873,exclusive:true})`；若为 IPv6/双栈，必须分别按真实 host 做预检并记录，不能用 IPv4 PASS 代替。
+- host 启动后必须验证 PID、日志、Node TCP connect、监听地址、Cordis 注册次数和 strace 文件访问审计；单纯 HTTP 200 或端口可连接不等于隔离通过。
+- strace 拒绝访问生产 `/root/.dsh/profiles/web`、生产插件、生产 DB/archive、生产缓存与日志路径。
+- 任一证据不符，停止 staging host，保留日志与现场，标 BLOCKED。
+
+### 39.6 测试与候选包门禁
+
+- 修复提交 `7548e49ed0b8d8673818464325d8e72ec7704b27` 必须先取得 GitHub Actions 对应 run 的明确 success，记录 workflow run ID、head SHA、测试统计。
+- CI 只代表 GitHub runner；DSHA SQLite 3.53.3/Node 24 arm64 的 FTS5、WAL、VACUUM INTO 仍需 staging 实跑。
+- 新候选包必须从修复后开发分支精确 HEAD 重新 `git archive`，记录 commit、tar SHA256、根目录、成员清单；旧 tar 不得使用。
+- staging host、SQLite migration、ONNX、exporter、WAL snapshot/rollback 全部仍需独立验收，不可由 CI 替代。
+
+### 39.7 当前状态与下一步
+
+| 项目 | 状态 |
+|---|---|
+| HANDOFF-0041 plan v3 复核 | BLOCKED（结论有效） |
+| snapshotColumns 显式缺列测试 | 已提交修正；CI 待核实 |
+| schema4 fixture / 事务 / FTS5 测试 | 既有 CI #87/#88/#89 PASS |
+| Cordis web bundle 初始化顺序 | plan v4 已修订；DSH 只读复核待进行 |
+| profile 精确 manifest/bundle/link/realpath 断言 | plan v4 已修订；DSH 只读复核待进行 |
+| host 精确启动命令 | DSH 静态核实 PASS；staging NOT RUN |
+| Node TCP 端口预检 | 需与真实 bind host 对齐 |
+| 候选包生成 / npm ci / ONNX | NOT RUN |
+| staging profile / Cordis host / strace | NOT RUN |
+| SQLite 3.53.3 / exporter / WAL 回滚 | NOT RUN |
+| 生产 DB / 生产 profile / 部署 / 重启 | 未授权、禁止 |
+
+### 39.8 DSH 下一步：只读复核 plan v4
+
+DSH 仅做只读源码/manifest/CLI/计划复核，不执行 staging。重点：
+1. 重新核对开发分支 HEAD 与修复提交 `7548e49...`，检查新增测试是否确实触发 `snapshotColumns` 的显式缺列分支；确认 CI 对应 run 的 head SHA 和 success。
+2. 从当前 DSHA 安装目录读取 base、web app 的真实 package.json，核对 `dsh.profile.bundles` 精确值、类型和 loader 解析方式；确认 `dsh plugin --profile p0-staging add @deepseek-ai/dsh-web-app` 与后续候选 link 顺序能在隔离 HOME/DSH_HOME 中完成预期 profile 初始化。
+3. 核对 profile bundle 集合精确断言和 `node_modules` symlink/readlink/realpath 验收是否适配真实 CLI 行为；若有差异提供源码/manifest 原始证据并修订，不猜测。
+4. 重新确认 host 命令参数语法、web bind host、Node 端口预检地址与 host bind 一致。
+5. 检查 plan v4 所有命令是否仅触及未来 /tmp staging；本轮禁止执行命令中任何写入、解包、npm ci、测试、profile add、host 启动或 DB 操作。
+6. 继续核对候选包精确归档、strace 路径审计、快照前停写、WAL checkpoint、VACUUM INTO 与恢复步骤。
+
+本轮仍不得解包、npm ci、运行测试、创建 staging DB/profile、执行任何 `dsh plugin add`、启动 host、连接生产 DB、修改生产环境、部署或重启。只有 plan v4 复核通过后，才能由负责人安排下一轮 staging；**plan review PASS 不等于 staging PASS，更不等于生产部署授权。**
+
+DSH 完成后必须更新 HANDOFF（预计 HANDOFF-0042），使用最新 Blob SHA 做并发保护，并向负责人提供完整可直接转交 GPT 的反馈（命令/原始输出/退出码/路径/hash/代码 HEAD/CI run/HANDOFF 新旧 Blob SHA/commit/link/副作用/NOT RUN 清单）。必须提醒负责人将完整反馈转交 GPT。HANDOFF 是 GPT、DSH、负责人共同维护的唯一长期项目状态入口；开始前完整读取全文，结束后更新全文，不能只发“完成”。
