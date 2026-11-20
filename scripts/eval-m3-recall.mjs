@@ -11,7 +11,7 @@ import { buildQuotesBlock } from '../lib/inject/quotes.js'
 import { scopeForSession } from '../lib/scope.js'
 import { evaluateRankedResults, explainRrf } from '../lib/recall/eval-metrics.js'
 import { eventChainCandidates } from '../lib/recall/event-chain.js'
-import { assertOfflineSnapshotPath, sha256File, validateAnnotationDataset, verifySnapshotFingerprint } from '../lib/recall/eval-dataset.js'
+import { assertOfflineSnapshotPath, sha256File, validateAnnotationDataset, verifySnapshotFingerprint, verifyCodeCommit } from '../lib/recall/eval-dataset.js'
 
 const args = process.argv.slice(2)
 const valueAfter = (flag) => {
@@ -19,6 +19,7 @@ const valueAfter = (flag) => {
   return i >= 0 ? args[i + 1] : ''
 }
 const dbArgument = valueAfter('--db')
+const actualCodeCommit = valueAfter('--code-commit')
 if (!dbArgument) throw new Error('必须显式提供 --db 指向独立、一致的离线数据库快照；禁止使用默认生产数据库路径')
 const dbPath = resolve(dbArgument)
 if (!existsSync(dbPath)) throw new Error(`数据库快照不存在：${dbPath}`)
@@ -47,6 +48,7 @@ const queryPath = new URL('./m3-eval-queries.json', import.meta.url)
 const queries = JSON.parse(readFileSync(queryPath, 'utf8'))
 const annotationDataset = JSON.parse(readFileSync(annotationsPath, 'utf8'))
 const annotationValidation = validateAnnotationDataset(annotationDataset, queries)
+const codeCommitVerification = verifyCodeCommit(annotationDataset.codeCommit, actualCodeCommit, { required: annotationValidation.positiveLabels > 0 })
 const actualDatabaseSnapshotSha256 = await sha256File(dbPath)
 const snapshotFingerprint = verifySnapshotFingerprint(annotationDataset.databaseSnapshotSha256, actualDatabaseSnapshotSha256)
 const annotationsById = new Map((annotationDataset.queries ?? []).map((item) => [String(item.id), item]))
@@ -190,6 +192,8 @@ try {
     annotationDatasetVersion: annotationDataset.datasetVersion ?? null,
     annotationValidation,
     codeCommit: annotationDataset.codeCommit ?? null,
+    actualCodeCommit: codeCommitVerification.actual,
+    codeCommitVerification,
     databaseSnapshotSha256: annotationDataset.databaseSnapshotSha256 ?? null,
     actualDatabaseSnapshotSha256,
     snapshotFingerprint,

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { assertOfflineSnapshotPath, sha256File, validateAnnotationDataset, verifySnapshotFingerprint } from '../lib/recall/eval-dataset.js'
+import { assertOfflineSnapshotPath, sha256File, validateAnnotationDataset, verifySnapshotFingerprint, verifyCodeCommit } from '../lib/recall/eval-dataset.js'
 
 const sourceQueries = [{ id: 'q1', query: '记得我们约定的事情吗' }]
 const base = {
@@ -109,4 +109,25 @@ test('evaluator refuses the production database path, including a symlink alias'
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+
+test('formal graded evaluation requires the actual runtime commit and exact annotation match', () => {
+  const pinned = 'a'.repeat(40)
+  assert.throws(() => verifyCodeCommit(pinned, null, { required: true }), /必须通过 --code-commit/)
+  assert.throws(() => verifyCodeCommit(pinned, 'b'.repeat(40), { required: true }), /源码 commit 不匹配/)
+  assert.throws(() => verifyCodeCommit(pinned, 'not-a-sha', { required: true }), /40 位 Git commit SHA/)
+  assert.deepEqual(verifyCodeCommit(pinned, pinned, { required: true }), {
+    verified: true, expected: pinned, actual: pinned,
+  })
+})
+
+test('ungraded exploratory evaluation may omit runtime commit but cannot claim verification', () => {
+  const pinned = 'c'.repeat(40)
+  assert.deepEqual(verifyCodeCommit(null, null), {
+    verified: false, expected: null, actual: null,
+  })
+  assert.deepEqual(verifyCodeCommit(pinned, null), {
+    verified: false, expected: pinned, actual: null,
+  })
 })
