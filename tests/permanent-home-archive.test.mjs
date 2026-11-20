@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
+  copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -118,6 +118,28 @@ test('new permanent archive journal uses owner-only POSIX permissions', () => {
     const file = join(eventsDir, '2026-11-20.jsonl')
     assert.equal(statSync(eventsDir).mode & 0o077, 0)
     assert.equal(statSync(file).mode & 0o077, 0)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('stale lock recovery checks owner process before deleting an old lock', () => {
+  const dir = mk('stale-lock')
+  const archiveDir = join(dir, 'permanent')
+  const eventsDir = join(archiveDir, '_events')
+  const lockPath = join(eventsDir, '.home-archive.lock')
+  const item = { raw_id: 991, day: '2026-11-20', seq: 1, role: 'user', at: Date.now(), text: '锁恢复测试' }
+  try {
+    mkdirSync(eventsDir, { recursive: true })
+    writeFileSync(lockPath, JSON.stringify({ pid: Number.MAX_SAFE_INTEGER, at: 1 }))
+    const old = new Date(Date.now() - 20 * 60 * 1000)
+    utimesSync(lockPath, old, old)
+    assert.equal(appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: item }).appended, true)
+
+    writeFileSync(lockPath, JSON.stringify({ pid: process.pid, at: 1 }))
+    utimesSync(lockPath, old, old)
+    assert.throws(
+      () => appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: { ...item, raw_id: 992 } }),
+      (error) => error?.code === 'ELOCKED',
+    )
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
