@@ -2550,3 +2550,188 @@ DSH 完成后必须更新 HANDOFF（预计 HANDOFF-0042），使用最新 Blob S
 
 ### 40.5 副作用
 未解包、未 npm ci、未运行测试、未创建 staging/profile、未执行 dsh plugin add、未启动 host、未连生产 DB、未改生产环境、未部署/重启。
+
+---
+
+## 41. P0 staging plan v5 修订（基于 HANDOFF-0042 复核）
+
+> 依据：负责人转交的 `P0-STAGING-PLAN-V4-REVIEW-01.md`。
+> 本节由 GPT 根据 HANDOFF-0042 复核反馈修订。性质：**仅修订 staging 计划与验收文档；不执行 staging，不修改生产环境，不部署。**
+
+### 41.1 复核结论
+
+DSH 对 plan v4 的 BLOCKED 结论成立，且反馈给出的三项修正均已纳入本版：
+1. profile 的 `dsh.profile.bundles` 是 **字符串数组**，不是 descriptor 对象数组；
+2. web app 默认 bind host 是 **`127.0.0.1`**，端口预检必须对齐；
+3. 候选包源 commit 必须固定为 **`7548e49ed0b8d8673818464325d8e72ec7704b27`**，禁止使用浮动 HEAD 或旧 tar。
+
+已经核实的环境事实（来源：DSH HANDOFF-0042 只读检查）：
+- base package：`/usr/local/lib/node_modules/@deepseek-ai/dsh-base/package.json`，version `0.2.1-rc.2`，声明 `dsh.bundle.patch: ./cordis.patch.yml`；
+- web package：`/usr/local/lib/node_modules/@deepseek-ai/dsh-web-app/package.json`，version `0.2.1-rc.2`，声明 `dsh.bundle.patch` 为数组；
+- 生产旧 memory package：`/root/.dsh/plugin-src/dsh-memory-core/package.json`，version `0.1.0`，声明 `dsh.bundle.patch: ./cordis.patch.yml`；
+- 上述插件 package manifest 均不含 `dsh.profile.bundles`；
+- `dsh.profile.bundles` 位于 profile 的 package.json，类型为字符串数组；loader 按 bundle 名称解析 package，再读取包自身的 `dsh.bundle.patch`；
+- web 默认 bind host：`127.0.0.1`（DSH 报告定位 `dsh-web-app/cordis.patch.yml:183`）；
+- host CLI 语法：`dsh --profile p0-staging --port 31873 --no-open`，无需 `web` 子命令。
+
+以上是 DSH 只读报告中的设备证据；本轮 GPT 未直接访问 DSHA 文件系统，也未执行任何本地命令。
+
+### 41.2 profile bundles 的正确精确断言
+
+profile package.json 的预期字段结构：
+
+```json
+{
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "dsh-memory-core"
+      ]
+    }
+  }
+}
+```
+
+上面是期望结构示意；实际验收必须读取 staging profile 生成的 package.json，不得直接写入或伪造该文件。
+
+验收规则：
+- `dsh.profile.bundles` 必须是 JSON array；
+- 数组每个元素必须是字符串；
+- 规范化后精确集合必须等于：
+  - `@deepseek-ai/dsh-base`
+  - `@deepseek-ai/dsh-web-app`
+  - `dsh-memory-core`
+- 必须同时检查数组长度为3、去重后长度为3、三个名称各出现一次；不得只用集合比较而忽略重复；
+- 不得存在生产旧 memory-core、其他业务插件或额外 bundle；
+- 不要从插件 package.json 读取 `dsh.profile.bundles`；该字段属于 profile manifest；
+- 对上述每个字符串 bundle name，按 DSH loader 的真实解析规则解析 package，记录解析到的 package.json 绝对路径、package name、version 和 realpath；
+- base/web 包的实际加载来源必须是当前安装的受信任 DSH bundle；候选 memory-core 必须解析到本轮 staging 候选目录；
+- 候选插件的 `profile/node_modules/dsh-memory-core` 必须是 symlink，`test -L` 成功；记录 `readlink` 原始目标和 `readlink -f` 最终路径，最终 realpath 必须等于 `readlink -f "$PLUGIN"`；
+- 不能因为生产旧插件也叫 `dsh-memory-core` 就允许 loader 解析到生产目录；
+- profile 及其所有解析路径不得引用生产 profile、生产 plugin-src、生产 node_modules、生产 DB/archive/cache/log。
+
+若 CLI 的 reconcile 最终排序不同，可以不要求数组顺序固定，但必须要求精确名称多重集相同（长度3且各出现一次）；同时记录原始数组顺序。不得以“排序差异”为由容忍额外或缺失项。
+
+### 41.3 Cordis profile 初始化顺序（保持不变）
+
+在未来 staging 实施阶段，候选包解包到 `$STAGE/plugin` 后，依次执行：
+
+```sh
+mkdir -p "$PROFILE"
+
+env HOME="$STAGE_HOME" DSH_HOME="$STAGE_DSH_HOME" \
+  "$DSH_BIN" plugin --profile p0-staging add @deepseek-ai/dsh-web-app
+
+env HOME="$STAGE_HOME" DSH_HOME="$STAGE_DSH_HOME" \
+  "$DSH_BIN" plugin --profile p0-staging add "link:$PLUGIN"
+```
+
+- 先加 web，再 link 候选；
+- 每条命令均显式隔离 HOME 和 DSH_HOME；
+- 两条命令的静态源码行为已由 DSH 复核：profile 缺失时初始化 base；添加 web 后 reconcile 写入 web bundle；再 link 候选时保留 web 并加入候选 bundle；
+- 此行为仅为源码静态核实，**未实际执行**；
+- 任一命令失败，立即停止，保留 staging profile 现场，不手工改写 package.json，不回退到生产 profile。
+
+### 41.4 端口预检与 host 命令
+
+web 默认 bind host 经 DSH 只读核实为 `127.0.0.1`。因此 Node TCP 端口预检必须使用同一 host：
+
+```sh
+node - <<'NODE'
+const net = require('node:net')
+const server = net.createServer()
+server.once('error', error => {
+  console.error(error)
+  process.exitCode = 1
+})
+server.listen({ host: '127.0.0.1', port: 31873, exclusive: true }, () => {
+  console.log(JSON.stringify(server.address()))
+  server.close()
+})
+NODE
+```
+
+注意：
+- 该预检只证明检查瞬间 `127.0.0.1:31873` 可 bind；不证明 host 已启动或后续仍可用。
+- 如果未来 staging 明确通过 CLI/config 改为其他 bind host，必须先核实最终生效配置，再同步修改预检地址；不能保留 host/预检不一致。
+- 由于默认 bind 是 loopback，本阶段只验证本机访问，不得把 LAN 可访问性列为验收要求。
+- 只有 profile bundles、包解析、symlink/realpath、隔离路径审计全部 PASS 后，才允许在后续 staging 实施轮次运行 host。
+- 精确启动命令：
+
+```sh
+env HOME="$STAGE_HOME" DSH_HOME="$STAGE_DSH_HOME" \
+  /root/dsh-bin/dsh --profile p0-staging --port 31873 --no-open
+```
+
+`--profile` 是顶层参数，`--port` / `--no-open` 传递给 web app；不需要 `web` 子命令。启动后还必须验证 PID、日志、监听地址、Node TCP connect、Cordis 注册次数及 strace 文件访问审计。
+
+### 41.5 候选包源 commit 固定
+
+本轮可用于 staging 的候选源码 commit 固定为：
+
+```sh
+COMMIT='7548e49ed0b8d8673818464325d8e72ec7704b27'
+```
+
+未来生成候选包时必须使用该精确 commit，不允许使用 `HEAD`、分支当前最新值或之前的 `24bb511` 代替：
+
+```sh
+REPO="$STAGE/source"
+COMMIT='7548e49ed0b8d8673818464325d8e72ec7704b27'
+
+git clone --filter=blob:none --no-checkout \
+  https://github.com/ba-song/dsh-memory-core.git "$REPO"
+git -C "$REPO" fetch origin "$COMMIT"
+test "$(git -C "$REPO" rev-parse FETCH_HEAD)" = "$COMMIT"
+git -C "$REPO" archive --format=tar.gz --prefix=dsh-memory-core/ "$COMMIT" \
+  > "$STAGE/candidate-v4.tar.gz"
+
+sha256sum "$STAGE/candidate-v4.tar.gz"
+tar -tzf "$STAGE/candidate-v4.tar.gz" | sed -n '1,12p'
+```
+
+解包时目标必须是全新的 `$STAGE/plugin`，使用：
+
+```sh
+mkdir -p "$STAGE/plugin"
+tar -xzf "$STAGE/candidate-v4.tar.gz" \
+  --strip-components=1 -C "$STAGE/plugin"
+```
+
+生成后必须记录 commit、tar SHA256、归档根目录、完整成员清单、解包后 package.json version/name 和源码 commit 对应关系。旧候选 tar 不得用于本轮代码验证。
+
+### 41.6 当前门禁状态
+
+| 项目 | 状态 |
+|---|---|
+| plan v4 核心初始化顺序 | PASS（DSH 源码静态核实） |
+| profile bundles 类型 | PASS（字符串数组，DSH 设备证据） |
+| profile 精确 bundle 断言 | 已修订为三个精确名称；待下一轮复核 |
+| 候选 memory-core symlink/realpath 断言 | 计划明确；未执行 |
+| web 默认 bind host | PASS（127.0.0.1，DSH 设备证据） |
+| Node TCP 预检 host | 已修订为 127.0.0.1；未运行 |
+| host CLI | PASS（静态语法核实） |
+| 候选源码 commit | 固定为 7548e49；候选包未生成 |
+| snapshotColumns 测试 | PASS（GitHub CI #90） |
+| GitHub Actions #90 | PASS，run 44751203163，head 7548e49 |
+| DSHA SQLite 3.53.3 实跑 | NOT RUN |
+| 候选包生成 / 解包 / npm ci | NOT RUN |
+| staging profile / plugin add / symlink | NOT RUN |
+| Cordis host / strace | NOT RUN |
+| ONNX / exporter / WAL snapshot / rollback | NOT RUN |
+| 生产 DB / 生产 profile / 部署 / 重启 | 未授权、禁止 |
+
+### 41.7 下一步
+
+本次反馈只要求 GPT 修正文档和计划。上述修正已完成，**不代表 plan v5 已由 DSH 复核通过**。下一步应由 DSH 对 plan v5 做只读复核，重点确认：
+1. 三个 bundle 精确名称与 profile 实际 reconcile 行为一致；
+2. 候选 symlink 的路径检查与 loader 解析行为一致；
+3. 127.0.0.1 Node bind 预检与实际默认 web bind 一致；
+4. 固定 commit 7548e49 的 archive/fetch/strip 命令无误；
+5. staging 计划仍保持完全隔离，所有写操作仅作用于未来 staging 路径。
+
+本轮以及 plan v5 只读复核阶段，均不得解包、npm ci、运行测试、创建 staging profile/DB、执行 `dsh plugin add`、创建 symlink、启动 host、连接生产 DB、修改生产 profile/config、部署或重启。
+
+只有 plan v5 review PASS 后，才可以讨论下一轮 staging。即使 plan review PASS，也只代表允许进入 staging 验证，不代表 staging PASS，更不代表生产部署授权。
