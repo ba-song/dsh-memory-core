@@ -3,7 +3,7 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0004`  
+> 版本：`HANDOFF-0005`  
 > 更新时间：2026-11-20（Asia/Shanghai）  
 > 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
@@ -224,8 +224,12 @@ GitHub Actions #35结果225通过、0失败、2跳过；两个跳过项为 `p4-v
 最近已知提交：
 - `ffa7a351a5107b6c686845e77d728a68ab764a50`：home永久档案第一版，新增 `lib/permanent/home-archive.js`、`scripts/export-home-archive.mjs`、`tests/permanent-home-archive.test.mjs`，并修改 `lib/ingest/archive.js`、`lib/config.js`、`lib/index.js`、`package.json`。
 - 目标行为：raw成功后best-effort双写；raw_id去重；撤回追加事件；精确home路径限制；DB只读补齐和Markdown生成。
-- `2ecb329538dd659af70a2c2af898705cc76c9237`：增加归档root、`_events`目录、JSONL文件符号链接拒绝；读取/追加日志使用`O_NOFOLLOW`；导出器拒绝符号链接输出目录和派生文件；新增符号链接边界测试。
-- `fc5537b...`是首次符号链接保护提交，但CI因生成代码多余右括号失败（Actions #38）；`2ecb329...`修正语法并通过CI（Actions #39：230 tests / 228 pass / 0 fail / 2 skipped）。
+- `2ecb329538dd659af70a2c2af898705cc76c9237`：增加归档root、`_events`目录、JSONL文件符号链接拒绝；读取/追加日志使用`O_NOFOLLOW`。
+- `630cfb1d571ec5252b5ff5e7c88a2bfd47bed3ec`：补导出器输出root、`_events`及派生`INDEX.json`符号链接拒绝测试；Actions #42成功（231 tests / 229 pass / 0 fail / 2 skipped）。
+- `d96b11bed6edeb70e23ce2facef2fcaa343211d2`：导出器情绪读取改为仅按home raw_id集合分批查询，不再全表扫描其他cwd的`raw_emotion_archive`；Actions #43成功（231 tests / 229 pass / 0 fail / 2 skipped）。
+- `27d0806fdeb788c2f2e9dae204bfeb8ac402602c`：永久档案home cwd固定为`/sdcard/DSHA/生活/数据/home`，阻止配置/CLI把范围改成group/email；新增回归测试；Actions #45成功（232 tests / 230 pass / 0 fail / 2 skipped）。
+- `fc5537b...`首次符号链接保护提交因多余右括号导致Actions #38失败；`2ecb329...`修正语法后Actions #39成功（230 tests / 228 pass / 0 fail / 2 skipped）。
+- Actions #40因GitHub Runner npm访问超时（ETIMEDOUT）未进入测试；#41暴露导出器测试夹具未初始化raw_meta，随后#42修复测试夹具并通过。#44因后续push被自动取消。
 - 保护范围是归档root、`_events`目录、journal文件及派生文件的最终路径组件；父目录链的真实路径/符号链接祖先尚未在DSHA上验证，不能声称已彻底解决所有路径别名风险。
 - 尚未取得DSH本地测试报告或生产运行验收；不能称已部署或已在手机端持续写入。
 
@@ -251,7 +255,10 @@ GitHub Actions #35结果225通过、0失败、2跳过；两个跳过项为 `p4-v
 - `ecad69d...`：修复事件链测试fixture顺序（先按seq时间顺序写消息，避免后续撤回事件因序号倒退被忽略）。
 - `10a514317566794e5f627f74dcd7bc9023ad7e80`：正式人工标注评测增加实际运行commit校验；缺失/不匹配拒绝，报告标明实际commit与校验状态；新增回归测试。Actions #36成功。
 - `22003dbc1cb99eedf911c3e4fbf1ee6de1d9b924`：README补充离线评测`--code-commit`命令；Actions #37成功。
-- `2ecb329538dd659af70a2c2af898705cc76c9237`：home永久档案拒绝符号链接root/events/journal leaf，O_NOFOLLOW保护文件打开；Actions #39成功（230 tests / 228 pass / 0 fail / 2 skipped）。
+- `2ecb329538dd659af70a2c2af898705cc76c9237`：home永久档案拒绝符号链接root/events/journal leaf，O_NOFOLLOW保护文件打开；Actions #39成功。
+- `630cfb1d571ec5252b5ff5e7c88a2bfd47bed3ec`：补导出器符号链接边界测试；Actions #42成功。
+- `d96b11bed6edeb70e23ce2facef2fcaa343211d2`：限制情绪数据读取范围为home raw_id；Actions #43成功。
+- `27d0806fdeb788c2f2e9dae204bfeb8ac402602c`：固定home cwd范围，拒绝将归档目标重定向至群聊/email；Actions #45成功。
 - Actions #34失败原因：fixture先写seq=9再发seq=8 tombstone，系统将旧seq撤回作为过期事件忽略；修复fixture顺序后#35通过。
 - 历史run #21因CI权限测试mode差异失败，后续已修复。多个旧run cancelled是push更新取消旧run。
 
@@ -294,7 +301,7 @@ GitHub Actions #35结果225通过、0失败、2跳过；两个跳过项为 `p4-v
 ## 12. GPT下一步执行顺序
 
 1. **继续多路召回融合与注入边界只读审查**；除非发现明确缺陷并有回归测试，不改变生产排序策略。
-2. **继续home永久档案剩余验证**：审查多进程并发写入行为、异常恢复/半行、跨日时区、导出器派生文件symlink保护测试；补足能在GitHub隔离CI完成的测试。
+2. **继续home永久档案剩余验证**：审查多进程并发写入行为、异常恢复/半行；检查是否需要更严格的祖先目录canonical path约束。Asia/Shanghai时间逻辑已在`lib/adapter/timefmt.js`固定，但仍需DSHA本地核对实际文件时间与设备时区。
 3. **评测脚本安全边界复核**：`--code-commit`由调用方显式提供，正式人工标注时强制匹配；后续评测必须由DSH提供真实模型/设备证据。
 4. DSH本地需验证Android/Termux/DSHA环境支持`O_NOFOLLOW`，并检查归档路径祖先目录是否存在symlink别名；当前CI只证明Ubuntu Runner。
 5. GPT侧能完成的工作先完成，再更新交接文件，避免过早要求DSH重复转发大段任务书。
@@ -313,15 +320,17 @@ DSH首次接入时：
 
 ## 14. 最新交接
 
-- 版本：`HANDOFF-0004`
+- 版本：`HANDOFF-0005`
 - 更新者：GPT
 - 时间：2026-11-20（Asia/Shanghai）
-- 基于旧文件blob SHA：`e0b065ee948c94ff2c614a98443d2568306cdf6b`
-- 本次变更：记录home永久档案符号链接边界修复及CI结果；同步开发分支HEAD；明确DSHA本地兼容性和父路径链仍待验证。
-- 开发分支HEAD：`2ecb329538dd659af70a2c2af898705cc76c9237`
-- 符号链接保护修复commit：`2ecb329538dd659af70a2c2af898705cc76c9237`
-- 首次保护提交CI失败：Actions #38 https://github.com/ba-song/dsh-memory-core/actions/runs/44675359950（由GPT生成代码多余右括号导致，已在下一提交修复）。
-- 修正后Actions #39：https://github.com/ba-song/dsh-memory-core/actions/runs/44675484833（success：230 tests / 228 pass / 0 fail / 2 skipped）。
+- 基于旧文件blob SHA：`fc3107790ba7c46ac829289e2ee5ca4f53dfb5ce`
+- 本次变更：记录home归档符号链接保护、home cwd固定范围、情绪数据按home raw_id读取及相应CI证据；更新最新开发HEAD。
+- 开发分支HEAD：`27d0806fdeb788c2f2e9dae204bfeb8ac402602c`
+- 关键新增提交：`2ecb329538dd659af70a2c2af898705cc76c9237`、`630cfb1d571ec5252b5ff5e7c88a2bfd47bed3ec`、`d96b11bed6edeb70e23ce2facef2fcaa343211d2`、`27d0806fdeb788c2f2e9dae204bfeb8ac402602c`。
+- Actions #39：https://github.com/ba-song/dsh-memory-core/actions/runs/44675484833（success，230 tests / 228 pass / 0 fail / 2 skipped）。
+- Actions #42：https://github.com/ba-song/dsh-memory-core/actions/runs/44675863577（success，231 tests / 229 pass / 0 fail / 2 skipped）。
+- Actions #43：https://github.com/ba-song/dsh-memory-core/actions/runs/44675998344（success，231 tests / 229 pass / 0 fail / 2 skipped）。
+- Actions #45：https://github.com/ba-song/dsh-memory-core/actions/runs/44676189743（success，232 tests / 230 pass / 0 fail / 2 skipped）。
 - 当前交接文件URL：https://github.com/ba-song/dsh-memory-core/blob/coordination/project-handoff/coordination/HANDOFF.md
-- 当前待办：M3-2A-REPORT-01、M3-REF-06仍待DSH；多路召回/注入边界审查、home永久档案并发/时区/导出symlink测试仍待GPT；DSHA验证O_NOFOLLOW和父目录路径链仍待DSH。
+- 当前待办：M3-2A-REPORT-01、M3-REF-06仍待DSH；多路召回/注入边界审查与home归档并发/路径祖先验证仍待GPT；DSHA验证O_NOFOLLOW和真实路径链仍待DSH。
 - 副作用：仅开发分支与交接分支GitHub提交；未修改生产环境、数据库、配置或部署。
