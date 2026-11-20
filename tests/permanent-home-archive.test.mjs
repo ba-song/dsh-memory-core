@@ -65,6 +65,7 @@ test('exporter refuses symlinked output root, _events directory and derived INDE
   const rootLink = join(dir, 'root-link')
   const eventsLink = join(dir, 'events-link')
   const indexLink = join(dir, 'index-link')
+  const ancestorLink = join(dir, 'ancestor-link')
   mkdirSync(outside, { recursive: true })
   const target = join(outside, 'target.txt')
   writeFileSync(target, 'must remain unchanged')
@@ -88,6 +89,12 @@ test('exporter refuses symlinked output root, _events directory and derived INDE
       () => exportHomeArchive({ dbPath, outDir: indexLink, homeCwd: HOME }),
       /must not be a symbolic link/,
     )
+    symlinkSync(outside, ancestorLink, 'dir')
+    await assert.rejects(
+      () => exportHomeArchive({ dbPath, outDir: join(ancestorLink, 'redirected'), homeCwd: HOME }),
+      /ancestor must not be a symbolic link/,
+    )
+    assert.equal(existsSync(join(outside, 'redirected')), false)
     assert.equal(readFileSync(target, 'utf8'), 'must remain unchanged')
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
