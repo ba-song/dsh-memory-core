@@ -61,7 +61,7 @@ test('event chain only returns same-session, same-scope, anchored shared-entity 
     const sameSessionOtherCwd = await add(7, '主人和鲸鱼继续讨论海边旅行')
 
     // 撤回 seq=4；它必须从链中消失。
-    raw.onEvent({ header: { id: sid, cwd: HOME } }, event('message/recall', 6, '', at + 6000, { seq: 4 }))
+    raw.onEvent({ header: { id: sid, cwd: HOME } }, event('message/recall', 8, '', at + 8000, { seq: 4 }))
     const missingRaw = db.prepare("SELECT id FROM raw_meta WHERE seq=5 AND cwd=? AND tombstone=0").get(HOME)
     db.prepare('DELETE FROM raw_meta WHERE id=?').run(Number(missingRaw.id))
 
