@@ -3,7 +3,7 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0002`  
+> 版本：`HANDOFF-0003`  
 > 更新时间：2026-11-20（Asia/Shanghai）  
 > 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
@@ -49,7 +49,7 @@ GPT 与 DSH 每次开始工作前，必须完整阅读本文件，不得只看�
 - 开发分支：https://github.com/ba-song/dsh-memory-core/tree/feat/m1-preference-memory
 - 交接分支：https://github.com/ba-song/dsh-memory-core/tree/coordination/project-handoff
 
-**开始源码工作前必须重新读取开发分支HEAD并记录实际SHA。** 上述ecad69...仅是最后已知值，不可未经核对就当作当前HEAD。
+**开始源码工作前仍须重新读取开发分支HEAD并记录实际SHA。** 本次HEAD已核实，但后续可能变化。
 
 ## 3. 文件维护协议（覆盖式更新）
 
@@ -172,8 +172,15 @@ DSH原报告/交付应按任务书要求提供实际路径、命令、原始统�
 状态：**待DSHA真实运行时证据**。不得把已有部署验收误当作该专项证据。
 
 ### D. 评测工具可信度
-状态：**待GPT开发**。
-已发现的改进点：评测数据集正向人工标注绑定 `codeCommit`，但脚本仅报告数据集记录的commit，没有验证实际运行源码版本。应要求显式提供/检测实际源码commit；有正向人工标注时严格比较；不一致拒绝生成正式评测结果；报告同时记录标注绑定版本和实际运行版本。实现前需重新检查当前源码和测试，避免重复已有修复。
+状态：**已完成（有证据，GitHub CI通过）；DSHA本地/真实数据评测仍未验证**。
+- `10a514317566794e5f627f74dcd7bc9023ad7e80`（`fix(eval): verify runtime commit for graded recall runs`）新增 `verifyCodeCommit()`。
+- 正式人工标注评测（存在正向grade标签）必须显式提供 `--code-commit`；校验数据集 `codeCommit` 与实际运行commit均为40位SHA且完全一致；缺失或不匹配时拒绝继续评测。
+- 报告新增 `actualCodeCommit` 与 `codeCommitVerification`；未标注探索性评测可省略，但必须明确显示未验证，不能冒充已验证。
+- 新增回归测试覆盖缺少参数、commit不匹配、格式错误、匹配成功及未标注探索性评测不宣称verified。
+- README已补充运行命令：`--code-commit "$(git rev-parse HEAD)"`。
+- `10a514...` 对应Actions run #36成功（job `test` / `Run test suite` 均success）：https://github.com/ba-song/dsh-memory-core/actions/runs/44672947093
+- 随后的文档提交 `22003dbc1cb99eedf911c3e4fbf1ee6de1d9b924` 对应Actions run #37成功：https://github.com/ba-song/dsh-memory-core/actions/runs/44673062260
+- CI成功不等于DSHA设备端模型评测或生产运行时验收。
 
 ### E. 多路召回与注入边界
 状态：**待GPT继续源码审查**。
@@ -239,6 +246,8 @@ GitHub Actions #35结果225通过、0失败、2跳过；两个跳过项为 `p4-v
 - `1929c129...`：评测证据覆盖率从实际召回memory行来源锚点字段计算，避免指标虚高。
 - `0a7b2f...`：事件链召回支持p4/explicit两种source_msg_id前缀在相同session内联结。
 - `ecad69d...`：修复事件链测试fixture顺序（先按seq时间顺序写消息，避免后续撤回事件因序号倒退被忽略）。
+- `10a514317566794e5f627f74dcd7bc9023ad7e80`：正式人工标注评测增加实际运行commit校验；缺失/不匹配拒绝，报告标明实际commit与校验状态；新增回归测试。Actions #36成功。
+- `22003dbc1cb99eedf911c3e4fbf1ee6de1d9b924`：README补充离线评测`--code-commit`命令；Actions #37成功。
 - Actions #34失败原因：fixture先写seq=9再发seq=8 tombstone，系统将旧seq撤回作为过期事件忽略；修复fixture顺序后#35通过。
 - 历史run #21因CI权限测试mode差异失败，后续已修复。多个旧run cancelled是push更新取消旧run。
 
@@ -280,12 +289,11 @@ GitHub Actions #35结果225通过、0失败、2跳过；两个跳过项为 `p4-v
 
 ## 12. GPT下一步执行顺序
 
-1. 重新核验 `feat/m1-preference-memory` 最新HEAD、文件差异和Actions；更新真实基线，不沿用未经核实的SHA。
-2. 继续评测源码commit绑定修复：先审查当前实现与测试，若问题仍存在，在开发分支实现并加回归测试；CI验证后记录真实commit和结果。
-3. 继续多路召回融合与注入边界只读审查；除非有明确缺陷与回归测试，不改变生产排序策略。
-4. 继续审查home永久档案代码和测试：锁并发、异常恢复、半行、时区、派生Markdown备份/覆盖行为、symlink边界。
-5. GPT侧能完成的工作先完成，再更新交接文件，避免过早要求DSH重复转发大段任务书。
-6. 之后由用户将交接文件链接交给DSH，要求DSH读取最新文件、按待DSH任务执行并更新同一文件。旧任务若内容仍完整且未完成，可引用本文件任务章节，不得擅自扩大范围。
+1. **继续多路召回融合与注入边界只读审查**；除非发现明确缺陷并有回归测试，不改变生产排序策略。
+2. **继续审查home永久档案代码和测试**：锁并发、异常恢复、半行、时区、派生Markdown备份/覆盖行为、symlink边界。
+3. **复核评测脚本剩余安全边界**：`--code-commit`当前由调用方显式提供；确认脚本是否能在不依赖Git shell的情况下进一步降低误报风险，并审查annotation版本绑定语义。当前实现已通过CI，不重复实现。
+4. GPT侧能完成的工作先完成，再更新交接文件，避免过早要求DSH重复转发大段任务书。
+5. 之后由用户将交接文件链接交给DSH，要求DSH读取最新文件、按待DSH任务执行并更新同一文件。旧任务若内容仍完整且未完成，可引用本文件任务章节，不得擅自扩大范围。
 
 ## 13. DSH读取后的执行规则
 
@@ -300,12 +308,16 @@ DSH首次接入时：
 
 ## 14. 最新交接
 
-- 版本：`HANDOFF-0002`
+- 版本：`HANDOFF-0003`
 - 更新者：GPT
 - 时间：2026-11-20（Asia/Shanghai）
-- 本次变更：补录首版文件创建提交与blob SHA，并确认文件可从交接分支读取。
-- 交接文件创建commit：`322e088e498e02f83a18fc348b3ad652fa7c3f02`
-- 当前文件blob SHA：`9edd98322afc8de6046fb53d39d0dffb50a2da33`
-- 文件URL：https://github.com/ba-song/dsh-memory-core/blob/coordination/project-handoff/coordination/HANDOFF.md
-- 开发分支HEAD：沿用上一轮已知值 `ecad69d9386e731b86d6dd4306d2d5379581d47f`，**待下一轮从GitHub重新核验**。
-- 当前阻塞：M3-2A-REPORT-01、M3-REF-06等待DSH结果；其他待办按第12节推进。
+- 基于旧文件blob SHA：`c3f38392b82bb291e368d9a15a8b729e7dd8e25e`
+- 本次变更：核实开发分支HEAD；复核并确认评测源码commit绑定缺陷已由项目新提交修复；记录Actions #36/#37成功；将评测工具可信度从待开发改为CI层面已完成。
+- 开发分支HEAD：`22003dbc1cb99eedf911c3e4fbf1ee6de1d9b924`
+- 修复commit：`10a514317566794e5f627f74dcd7bc9023ad7e80`
+- 文档commit：`22003dbc1cb99eedf911c3e4fbf1ee6de1d9b924`
+- Actions #36：https://github.com/ba-song/dsh-memory-core/actions/runs/44672947093 （success）
+- Actions #37：https://github.com/ba-song/dsh-memory-core/actions/runs/44673062260 （success）
+- 当前交接文件URL：https://github.com/ba-song/dsh-memory-core/blob/coordination/project-handoff/coordination/HANDOFF.md
+- 当前待办：M3-2A-REPORT-01、M3-REF-06仍待DSH；多路召回/注入边界审查与home永久档案代码安全审查仍待GPT。
+- 副作用：本次仅更新GitHub交接分支文件；未修改生产环境、数据库、配置或部署。
