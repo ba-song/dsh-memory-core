@@ -3,7 +3,7 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0009`  
+> 版本：`HANDOFF-0010`  
 > 更新时间：2026-11-20（Asia/Shanghai）  
 > 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
@@ -326,16 +326,17 @@ DSH首次接入时：
 
 ## 14. 最新交接
 
-- 版本：`HANDOFF-0009`
+- 版本：`HANDOFF-0010`
 - 更新者：GPT
 - 时间：2026-11-20（Asia/Shanghai）
-- 基于旧文件blob SHA：`7ba5f91277e8724f96a9e5529e8b4a40230e41c2`
-- 本次变更：补记home归档路径防护、离线评测DB硬链接防护和最新CI结果；继续只读审查归档锁与并发行为。
-- 开发分支HEAD：`8d5943443d4951046c9f3cf1ba421dee03d4decd`
-- Actions #51：https://github.com/ba-song/dsh-memory-core/actions/runs/44677614819（success，234 tests / 232 pass / 0 fail / 2 skipped）。
-- 最新代码审查：`acquireLock()`使用`wx`排他创建；锁记录PID；活PID不回收；死PID锁回收通过`.home-archive.recovery`串行化并以dev/ino复核，防止并发回收误删新锁。`journalIndex()`在锁内以文件size/mtime/ctime/ino签名识别跨进程追加并重建索引，raw_id去重跨日期文件。
-- 尚未有多进程真实并发测试。导出器逐条补写调用同一写锁，但整个导出/Markdown派生过程没有持有全局锁；若导出期间同时发生新写入，JSONL事件日志仍是权威源，Markdown/INDEX可能暂时落后一轮，下一次导出可重建。需要决定是否为导出整体增加一致性锁或明确接受最终一致视图，并补隔离并发测试。
-- 尾部半行策略：追加前检测末字节并补换行，不破坏/截断历史半行；读取器把无法解析行报告为journalErrors。异常中断后的半行保留并暴露错误，不会静默修复或删除，需补故障注入测试。
+- 基于旧文件blob SHA：`67eba61e2c912ee8075540fc6e8f827fe6ed2b42`
+- 本次变更：增加归档JSONL版本指纹；导出器在完成DB补齐后、渲染前记录日志版本，渲染后再次比对。若导出期间发生并发追加，返回`consistent=false`、`journalStable=false`，在INDEX写入告警，CLI退出码2，提示重新运行导出刷新派生视图。原始JSONL仍是权威源，不持有长时间全局写锁。
+- 开发分支HEAD：`22fc787046dee54c178f7266cb97f848b89e0554`
+- 新增测试：外部追加后journal版本指纹变化；原有导出修复逻辑先完成自身补齐再捕获指纹，避免把本轮补齐误报为并发写入。
+- Actions #54：https://github.com/ba-song/dsh-memory-core/actions/runs/44678400560（当前查询时in_progress；尚未宣称通过）。
+- Actions #52/#53因连续push更新被自动取消；不作为测试通过/失败证据。
+- 最新源码已回读核验：`permanentJournalVersion()`基于文件名、size、mtime、ctime、inode生成指纹；导出前后比较；CLI遇到不稳定视图返回退出码2。
+- 仍需注意：这是乐观一致性检测，不是数据库与JSONL的跨系统原子快照；最终指纹比较之后仍存在极短的并发窗口。若报告不稳定，重新执行导出即可刷新派生视图。设备实际文件系统时间戳粒度仍需DSHA验证。
 - 当前交接文件URL：https://github.com/ba-song/dsh-memory-core/blob/coordination/project-handoff/coordination/HANDOFF.md
-- 当前待办：M3-2A-REPORT-01、M3-REF-06仍待DSH；GPT继续评估导出并发一致性、尾部半行故障恢复测试和多进程去重；DSHA验证O_NOFOLLOW、`/sdcard`别名和真实文件系统行为、正式离线评测仍待DSH。
+- 当前待办：M3-2A-REPORT-01、M3-REF-06仍待DSH；GPT继续评估并发测试覆盖和半行故障注入；DSHA验证O_NOFOLLOW、`/sdcard`别名和真实文件系统行为、正式离线评测仍待DSH。
 - 副作用：仅开发分支与交接分支GitHub提交；未修改生产环境、数据库、配置或部署。
