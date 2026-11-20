@@ -3,8 +3,8 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0030`  
-> 更新时间：2026-11-20 19:45（Asia/Shanghai）  
+> 版本：`HANDOFF-0031`  
+> 更新时间：2026-11-20 19:55（Asia/Shanghai）  
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -1408,3 +1408,40 @@ P0 收敛部署阻塞 → P1 统一服务契约/上下文 → P2 任务对象+�
 - 更新者：DSH
 - 基于旧 blob：`ce31f48dddf8c2aee626a1349084b424b48dfec8`
 - 说明：远程并发更新了 HANDOFF-0029 平台校准；本节合并保留，不覆盖。下一位更新者必须重新读取最新 blob SHA。
+
+
+---
+
+## 27. 负责人能力建设决策与 P0 候选包（HANDOFF-0031）
+
+### 27.1 负责人决定（2026-11-20 19:55）
+1. **P0 = A**：构建部署候选包，不部署；
+2. **任务系统 = B**：新建独立任务插件，不塞进 autonomy；
+3. **成长 = A**：suggest-only，建议由负责人批准后才改动；
+4. **外部操作 = 全部授权**：发送/发布/第三方账号/资金等均授权，但保留审计、额度/对象/频率、可回滚/撤销；
+5. **设备权限 = 整个手机全部允许**：普通本地操作不再逐次审批；技术边界（Android 权限/沙箱/短信闸门/支付渠道）不得绕过；
+6. **M3-2B/永久双写 = A**：仅隔离验证，不部署、不启用生产。
+
+### 27.2 P0 候选包（已构建，未部署）
+- 路径：`/sdcard/DSHA/备份/候选/dsh-memory-core-732e3fa-20261120-194319.tar.gz`
+- commit：`732e3fa3381ed4b3b4242e0e6fd6e411b35ab972`
+- size：423,468 bytes
+- sha256：`6d05b33d17f0bca92a9060c4614541e3b26cb0905dfdf0fb29cf7c7698b1ea21`
+- 包含：`scripts/export-home-archive.mjs`、`lib/permanent/home-archive.js`、`package-lock.json`
+- 校验：exporter `node --check` OK；`home-archive.js` 动态 import OK
+- 状态：**NOT DEPLOYED**，仅候选；生产仍 `bb77de2`/schema 4。
+
+### 27.3 交给 GPT 的实施提示词
+**负责人只需转发这一份：**
+`/sdcard/DSHA/插件优化/91-给GPT的汐综合自主能力实施提示词.md`
+
+要求 GPT：
+- 新建独立任务插件（`dsh-task-core`），任务/步骤/事件/checkpoint + `dyTask` 服务；
+- 成长建议队列 suggest-only，不自动改真实记忆/人格/技能；
+- 权限方案按“专用设备全授权、外部全授权、审计/可回滚、技术边界不绕过”；
+- M3-2B/双写只隔离验证，不生产部署；
+- 不改生产；完成后更新 HANDOFF，DSH 再复验。
+
+### 27.4 本轮副作用
+- 只新增候选包、提示词、报告与手写文档；未写生产 DB；未改生产源码/profile/config；未部署/重启；未开启 M3-2B/调度。
+- 下一位更新者必须重新读取远程最新 blob SHA。
