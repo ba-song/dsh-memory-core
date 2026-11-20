@@ -27,7 +27,8 @@ test('raw group and person archive tools never return tombstoned messages', asyn
   let db
   try {
     const mod = await import('../lib/index.js')
-    mod.apply(ctx, { ownerQQ: '1000000001' })
+    const ownerHome = '/sdcard/DSHA/生活/数据/home'
+    mod.apply(ctx, { ownerQQ: '1000000001', trustedDirs: [ownerHome] })
     ;({ db } = openDb(dir))
     new RawArchive({ db, dir: join(dir, 'raw'), cwdPrefixes: ['/sdcard/DSHA/渠道'], log: { info() {}, warn() {} } })
     const { ensureContactsSchema, seedOwner } = await import('../lib/store/contacts.js')
@@ -47,7 +48,7 @@ test('raw group and person archive tools never return tombstoned messages', asyn
     add(3, groupCwd, 'person-2', '另一个人的有效消息')
     add(4, groupCwd, 'person-2', '另一个人的撤回消息', 1)
 
-    const ownerExec = { agent: { session: { header: { cwd: '/root/qq-agent/QQ会话/私聊_1000000001', id: 'raw-tools-owner' } } } }
+    const ownerExec = { agent: { session: { header: { cwd: ownerHome, id: 'raw-tools-owner' } } } }
     const group = JSON.parse((await registered.dy_memory_group_archive.execute({ groupId: 'g-test' }, ownerExec)).detail)
     assert.equal(group.denied, undefined, 'owner 私聊调用不应被拒绝')
     assert.equal(group.count, 1)
