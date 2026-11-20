@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { DatabaseSync } from 'node:sqlite'
 import {
-  constants as fsConstants, chmodSync, closeSync, existsSync, fstatSync, lstatSync, mkdirSync,
+  constants as fsConstants, chmodSync, closeSync, existsSync, fchmodSync, fstatSync, lstatSync, mkdirSync,
   openSync, readFileSync, readdirSync, unlinkSync, renameSync, writeFileSync,
 } from 'node:fs'
 import { join, resolve, parse, sep } from 'node:path'
@@ -103,6 +103,7 @@ function readRegularFileNoFollow(file) {
     if (!fdStat.isFile() || fdStat.dev !== pathStat.dev || fdStat.ino !== pathStat.ino) {
       throw new Error(`home archive derived file changed during open: ${file}`)
     }
+    try { fchmodSync(fd, 0o600) } catch {}
     return readFileSync(fd, 'utf8')
   } finally { closeSync(fd) }
 }
@@ -118,7 +119,6 @@ function writeBackupExclusive(file, content) {
     }
     try {
       writeFileSync(backup, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
-      try { chmodSync(backup, 0o600) } catch {}
       return backup
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error
@@ -138,7 +138,6 @@ function atomicWrite(file, content, { preserveHistory = false } = {}) {
     if (error?.code !== 'ENOENT') throw error
   }
   if (existing) {
-    try { chmodSync(file, 0o600) } catch {}
     if (current === content) return false
     if (preserveHistory) writeBackupExclusive(file, current)
   }
