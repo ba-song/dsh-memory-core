@@ -3,9 +3,9 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0039`  
-> 更新时间：2026-11-20 21:55（Asia/Shanghai）  
-> 更新者：DSH  
+> 版本：`HANDOFF-0040`  
+> 更新时间：2026-11-20 22:08（Asia/Shanghai）  
+> 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
 ---
@@ -2068,3 +2068,248 @@ DSH 必须完整读取 HANDOFF 全文并核对最新 Blob SHA/commit；完成后
 
 ### 36.5 副作用
 未解包、未 npm ci、未运行测试、未创建 staging/DB、未启动 host、未调用 dsha-plugin、未连生产 DB、未改生产 profile/config、未部署/重启。
+
+
+---
+
+## 37. P0 staging plan v3 与 schema fixture 加固（HANDOFF-0040）
+
+> 依据：负责人转交的 `P0-STAGING-PLAN-V2-REVIEW-01.md`；旧 HANDOFF-0039 §36。
+> 本节性质：GPT 已完成开发分支测试加固与 plan v3；**DSHA staging 仍 NOT RUN，Cordis host 不得启动，生产部署不允许。**
+
+### 37.1 当前结论
+
+DSH 对 plan v2 的复核有效：
+- Cordis 自定义 profile 必须有 `package.json`，且插件通过 profile 的 bundles/node_modules 解析；`plugin-src` 不是 loader 自动加载目录。
+- DSH 启动器支持 `DSH_HOME`、`--profile <name>`，profile 根为 `$DSH_HOME/profiles/<name>`；web 端口支持 `--port`。精确 host CLI 调用仍需在执行前按设备源码/CLI输出确认，禁止猜参数顺序。
+- `ss` 不存在；`netstat` 不支持 AF_INET。改用 Node TCP bind 预检。
+- plan v2 快照前未明确停止所有 staging 写者，现已补充。
+- v2 的 schema 4 fixture 不是完全独立的冻结旧版 DDL；GPT 已修正为从 `bb77de2` 复制冻结 DDL，避免测试随当前 schema 漂移。
+
+### 37.2 开发分支最新代码与测试
+
+仓库：`ba-song/dsh-memory-core`
+分支：`feat/m1-preference-memory`
+当前 HEAD：`24bb511bb1e5f8cecda03def82ec76c5e9a6840e`
+
+本轮提交链：
+- `f1b0e202efbd34da7988fab57e289383a790d2dc`：扩展 raw_meta 合成行字段并增加迁移失败场景。
+- `6d045d50e67bb9ea9dba467fdc4611ddccb4e50b`：修正不完整 snapshot 表失败断言（实际错误先由创建索引时的 SQLite 报错触发）。
+- `6956ba86753f93a10f4c7062ee48afbb4736ea03`：新增冻结 schema4 DDL fixture 文件。
+- `a31255b77d024f6889a7043a186ddf6a95ccad2b`：迁移测试改用冻结的 schema4 DDL，而不是当前 schema.js。
+- `8d8cabe17e943a8294cacab71629bd36ec18c4b1`：增加 ALTER TABLE 实际发生后，再遇到后续迁移错误时的事务回滚测试。
+- `24bb511bb1e5f8cecda03def82ec76c5e9a6840e`：增加 FTS5 虚拟表在迁移事务内创建后，后续失败时随事务回滚的测试。
+
+新增/加强测试：
+- `tests/fixtures/schema-v4-ddl.mjs`：冻结自 `bb77de2/lib/store/schema.js` 的 schema 4 DDL，与当前 schema 模块解耦。
+- `tests/schema-migration-atomic.test.mjs`：
+  - 使用真实 schema4 DDL 创建 fixture；
+  - raw_meta 具备 file、line_no、speaker、channel、chars、raw_text、extra、cwd、person_id 等 archive 字段，使用合成值；
+  - 成功迁移、数据 ID/计数保持、重复打开幂等；
+  - schema_version 写入失败回滚；
+  - 通过删除 valid_to 强制触发 ALTER，再注入错误索引结构，检查 ALTER 和先前 DDL 一并回滚；
+  - version 高于代码时拒绝迁移并回滚；
+  - 非法 version marker 拒绝迁移并回滚；
+  - 不完整 snapshot 表导致建索引失败，检查其他 DDL 回滚；
+  - FTS5 trigram 虚拟表在事务中重建后遇到后续失败，检查虚拟表及 shadow tables 一并回滚。
+- GitHub Actions：
+  - #87：冻结 schema4 DDL 后测试成功：https://github.com/ba-song/dsh-memory-core/actions/runs/44748886294
+  - #88：ALTER 回滚测试成功：https://github.com/ba-song/dsh-memory-core/actions/runs/44748990409
+  - #89：FTS5 DDL 回滚测试成功：https://github.com/ba-song/dsh-memory-core/actions/runs/44749261659
+- 上述 CI 为 GitHub Ubuntu runner + Node 24 的证据，不是 DSHA Ubuntu 24.04 arm64 运行证据。DSHA 上 FTS5/WAL/SQLite 行为仍需 staging 实跑。
+
+### 37.3 重要：旧候选包不可用于验证新修复
+
+原候选 tar：
+- commit：`732e3fa3381ed4b3b4242e0e6fd6e411b35ab972`
+- SHA：`6d05b33d17f0bca92a9060c4614541e3b26cb0905dfdf0fb29cf7c7698b1ea21`
+
+该包不包含上述事务迁移修复与新增 fixture 测试，**不得作为 plan v3 staging 的实际运行包**。它只用于确认旧包目录结构/旧路径修正，不得用它验证新代码。
+
+下一阶段 staging 必须从开发分支精确 commit `24bb511bb1e5f8cecda03def82ec76c5e9a6840e` 重新生成候选包：
+```sh
+REPO="$STAGE/source"
+COMMIT='24bb511bb1e5f8cecda03def82ec76c5e9a6840e'
+git clone --filter=blob:none --no-checkout https://github.com/ba-song/dsh-memory-core.git "$REPO"
+git -C "$REPO" fetch origin "$COMMIT"
+git -C "$REPO" archive --format=tar.gz --prefix=dsh-memory-core/ "$COMMIT" > "$STAGE/candidate-v3.tar.gz"
+sha256sum "$STAGE/candidate-v3.tar.gz"
+tar -tzf "$STAGE/candidate-v3.tar.gz" | sed -n '1,8p'
+```
+必须确认归档 commit 与目标 commit 完全一致、SHA 记录完整、tar 根目录为 `dsh-memory-core/`。然后再用 `--strip-components=1` 解包到 `$STAGE/plugin`。若设备无法取得该 commit 或 hash/commit 不匹配，BLOCKED，不得退回旧 tar。
+
+### 37.4 Cordis profile v3：必须由 profile loader 正式加载
+
+已知 DSH 本地源码复核事实：
+- `DSH_HOME` 被支持；
+- `--profile <name>` 被支持；
+- profile 目录为 `$DSH_HOME/profiles/<name>`；
+- 自定义 profile 缺少 `package.json` 会被拒绝；
+- loader 从 profile 的 bundles / `node_modules` 解析插件；
+- `$DSH_HOME/plugin-src` 是 DSHA 管理器源码目录，不会自动成为 Cordis 插件加载来源；
+- staging profile 只能通过其自身 manifest 与 node_modules link 注册候选插件。
+
+staging 路径：
+```text
+STAGE_HOME=$STAGE/home
+STAGE_DSH_HOME=$STAGE/home/.dsh
+PROFILE=$STAGE_DSH_HOME/profiles/p0-staging
+PROFILE_NODE_MODULES=$PROFILE/node_modules
+PLUGIN=$STAGE/plugin
+```
+
+profile 初始化必须在 staging DSH_HOME 下执行。先创建 profile 目录，再用 DSH 实际支持的插件管理 CLI 建立 link（该命令由 DSH v2 复核报告确认；不是生产 `dsha-plugin import`）：
+
+```sh
+mkdir -p "$PROFILE"
+env HOME="$STAGE_HOME" DSH_HOME="$STAGE_DSH_HOME" \
+  dsh plugin --profile p0-staging add "link:$PLUGIN"
+```
+
+执行后必须逐项断言：
+```sh
+test -s "$PROFILE/package.json"
+node - "$PROFILE/package.json" <<'NODE'
+const fs = require('node:fs')
+const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'))
+const bundles = p?.dsh?.profile?.bundles
+if (!Array.isArray(bundles)) throw new Error('profile bundles missing')
+console.log(JSON.stringify({ name: p.name, bundles }, null, 2))
+if (!bundles.some(x => JSON.stringify(x).includes('dsh-memory-core'))) {
+  throw new Error('candidate bundle not registered')
+}
+if (!bundles.some(x => /base/i.test(JSON.stringify(x))) ||
+    !bundles.some(x => /web/i.test(JSON.stringify(x)))) {
+  throw new Error('base/web bundle missing; inspect actual profile manifest and add exact source-confirmed bundle entries')
+}
+NODE
+test -L "$PROFILE/node_modules/dsh-memory-core"
+readlink -f "$PROFILE/node_modules/dsh-memory-core"
+test "$(readlink -f "$PROFILE/node_modules/dsh-memory-core")" = "$(readlink -f "$PLUGIN")"
+```
+
+注意：
+- 上述 `dsh plugin ... add link:` 命令必须在 `HOME` 和 `DSH_HOME` 都指向 staging 的进程环境下运行。
+- 若命令无法创建 package.json、bundles 或 symlink，停止并 BLOCKED；不得手工猜 bundle 名称。
+- 若 base/web bundle 缺失，先只读查看当前设备的真实 bundle 标识和 profile manifest 结构，再在 staging profile 中写入准确的 base/web 条目；不得复制生产 profile 的全部 package.json、配置或依赖。
+- profile 只允许包含必要 base/web bundles 与唯一候选 memory-core；不得同时包含生产旧 memory-core。
+- 不能把 `plugin-src` 路径存在当成加载成功；必须检查 profile manifest、symlink 最终路径和 Cordis 实际注册日志。
+- 若 DSH CLI 的实际命令与上方不同，先提供源码位置/帮助输出作为证据，再修订命令；不得猜测。
+
+### 37.5 端口预检：Node TCP bind，不依赖 ss/netstat
+
+固定 staging 端口：31873。启动前执行：
+
+```sh
+node - 31873 <<'NODE'
+const net = require('node:net')
+const port = Number(process.argv[2])
+const server = net.createServer()
+server.once('error', error => {
+  console.error(JSON.stringify({ ok: false, port, code: error.code, message: error.message }))
+  process.exit(1)
+})
+server.listen({ host: '0.0.0.0', port, exclusive: true }, () => {
+  console.log(JSON.stringify({ ok: true, port, state: 'free' }))
+  server.close(error => { if (error) process.exitCode = 1 })
+})
+NODE
+```
+
+- bind 失败（尤其 EADDRINUSE）即 BLOCKED；不得换成未经记录的生产端口。
+- bind 成功后立即关闭探测 socket，再启动 staging host；这只是启动前可用性预检，不能单独证明启动后的监听者身份。
+- host 启动后用 Node TCP connect 到 `127.0.0.1:31873`，记录连接成功、PID、host 日志；再结合 strace 文件访问审计确认启动的是隔离实例。
+- 若 host 的实际 web CLI 参数顺序不确定，DSH 必须先用本地 CLI help/源码确认精确命令。只允许使用已确认的 `--profile p0-staging` 与 web `--port 31873` 语法，不得猜参数位置。
+
+### 37.6 staging 启动和生产路径访问审计
+
+启动前确认：
+- `HOME="$STAGE_HOME"`
+- `DSH_HOME="$STAGE_DSH_HOME"`
+- profile = `p0-staging`
+- profile package.json 有必要 base/web + 唯一候选 memory-core
+- profile node_modules/dsh-memory-core 是指向 `$STAGE/plugin` 的 symlink
+- DY_MEMORY_DIR、DB、archive、backup、cache、logs 全部位于 `$STAGE`
+- memoryRecordEnabled、memoryInjectEnabled、permanentArchiveEnabled、m3_2b.enabled 及所有维护/调度关闭
+- ownerQQ/ownerPrivateDir 置空；trustedDirs/archiveDirs/archiveCwdPrefixes 置空
+- 无生产旧 memory-core bundle
+
+使用 strace（DSH 已确认设备可用）启动，命令的 host CLI 参数必须先经源码/help 确认后填入：
+```sh
+strace -f -qq -e trace=openat,openat2,newfstatat -o "$STAGE/logs/host-files.trace" \
+  env HOME="$STAGE_HOME" DSH_HOME="$STAGE_DSH_HOME" DY_MEMORY_DIR="$STAGE/data" \
+  "$DSH_BIN" <source-confirmed profile and web-port arguments>
+```
+尖括号不是字面参数，必须替换为已证实的精确 CLI 参数。启动后：
+- grep trace，拒绝任何对 `/root/.dsh/profiles/web`、生产 `/root/.dsh/plugin-src/dsh-memory-core`、生产 DB/archive 的访问；
+- 监听端口必须为 31873；
+- Cordis 注册日志中 memory-core 只能出现一次；
+- profile 解析路径与 node_modules symlink 必须指向 staging；
+- 任一条件不满足，立即停止 staging host 并 BLOCKED。
+
+### 37.7 快照前停写、快照与回滚
+
+快照只针对 staging fixture DB。快照前必须：
+1. 不启动 Cordis host，或先停止本轮 staging host 并确认进程退出；
+2. 停止 exporter、脚本及其他 DB writer；
+3. 关闭 fixture 创建/验证脚本持有的所有 SQLite 连接；
+4. 确认没有本轮遗留的 DB 连接/写者后，才执行 checkpoint 和 VACUUM INTO。
+
+```sh
+DB="$STAGE/data/memory.db"
+SNAP="$STAGE/snapshot/memory.pre-migration.sqlite"
+mkdir -p "$STAGE/snapshot"
+node - "$DB" "$SNAP" <<'NODE'
+const { DatabaseSync } = require('node:sqlite')
+const [dbPath, snapshotPath] = process.argv.slice(2)
+const db = new DatabaseSync(dbPath)
+const escaped = snapshotPath.replaceAll("'", "''")
+const checkpoint = db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get()
+if (checkpoint.busy !== 0) throw new Error('WAL checkpoint busy; stop and inspect all writers')
+db.exec("VACUUM INTO '" + escaped + "'")
+db.close()
+const snap = new DatabaseSync(snapshotPath, { readOnly: true })
+const check = snap.prepare('PRAGMA integrity_check').get().integrity_check
+snap.close()
+if (check !== 'ok') throw new Error('snapshot integrity_check failed: ' + check)
+console.log(JSON.stringify({ ok: true, checkpoint, integrity: check }))
+NODE
+sha256sum "$SNAP"
+```
+
+- 若 checkpoint busy 非 0，立即停止，不得继续快照。
+- 快照后记录 schema_version=4、全部表/索引/列清单、表行数、关键 ID 集、FTS/vector/entity/relation/revision/tombstone 计数、integrity_check 和 SHA。
+- 迁移失败时先停 staging host/writer，保存失败 DB/WAL/SHM 现场；再删除目标 DB 旧 sidecar，复制 snapshot 到临时文件并原子 rename。
+- 恢复后核对快照 SHA、schema_version=4、ID/行数、integrity_check；旧 schema4 代码绝不能写 schema5 DB。
+- 只允许恢复 staging 数据，绝不对生产 DB 执行上述操作。
+
+### 37.8 当前状态与门禁
+
+| 项目 | 状态 |
+|---|---|
+| schema 4 fixture 改为冻结旧 DDL | GitHub CI #87 PASS |
+| ALTER 回滚测试 | GitHub CI #88 PASS |
+| FTS5 虚拟表 DDL 回滚测试 | GitHub CI #89 PASS |
+| schema version / snapshot / index 错误测试 | GitHub CI #89 PASS（含既有测试） |
+| tar 旧包目录结构 | DSH 只读核验 PASS；旧包不含修复 |
+| 新候选包 commit 24bb511 | 待 DSH 在 staging 准备阶段生成 |
+| profile manifest / link 方案 | 已明确命令与断言；DSH 复核 PASS 待确认 |
+| Node 端口预检 | plan v3 已修正，DSH 复核待确认 |
+| clean npm ci / ONNX session | DSHA NOT RUN |
+| Cordis 隔离 host / strace | NOT RUN |
+| exporter / tar / WAL snapshot / rollback | NOT RUN |
+| 生产部署 / 生产 DB 迁移 | 未授权、禁止 |
+
+### 37.9 DSH 下一步：只读复核 plan v3
+
+本轮只复核，不执行 staging。请核对：
+1. `dsh plugin --profile p0-staging add link:$PLUGIN` 是否会在 staging DSH_HOME 下生成/更新 profile package.json、bundles 和 node_modules symlink；确认失败时的阻塞路径。
+2. base/web bundles 的实际 manifest 结构及精确条目如何验证；不得凭名称猜测。
+3. 启动器实际 profile/web port CLI 参数顺序，并给出可直接运行的准确命令；如果不确定则 BLOCKED。
+4. Node TCP bind 预检是否覆盖当前 web bind host/address。
+5. 新 schema4 frozen fixture 是否真实来自 bb77de2；新增 ALTER/FTS5 失败测试是否合理。
+6. 快照前停写、checkpoint busy 检查、VACUUM INTO 与恢复校验是否安全。
+7. 新候选包必须从精确 commit 24bb511 生成，旧 tar 不得再用于验证修复。
+8. 所有命令是否仅操作 /tmp staging 和 GitHub 公开源码，不触碰生产路径。
+
+完成后更新 HANDOFF（预计 HANDOFF-0041），并提供完整原始证据反馈给 GPT。**必须提醒负责人将完整反馈转交 GPT。** 本轮不得解包、npm ci、运行测试、创建 staging DB、启动 host、连接生产 DB、修改生产环境、部署或重启。
