@@ -151,6 +151,8 @@ test('schema migration rolls back when a pre-existing migration index has wrong 
   const fixture = makeSchema4Fixture()
   try {
     const inject = new DatabaseSync(fixture.file)
+    // Force the migration to execute ALTER TABLE, then fail structural validation.
+    inject.exec('ALTER TABLE memories DROP COLUMN valid_to')
     inject.exec('CREATE INDEX idx_mem_scope_key ON memories(id)')
     inject.close()
     assert.throws(() => openDb(fixture.dir), /index idx_mem_scope_key expected/)
@@ -158,6 +160,7 @@ test('schema migration rolls back when a pre-existing migration index has wrong 
     assert.equal(after.prepare("SELECT v FROM meta WHERE k='schema_version'").get().v, '4')
     assert.equal(tableExists(after, 'episode_rewrite_snapshots'), false)
     assert.equal(indexExists(after, 'idx_mem_valid'), false)
+    assert.equal(after.prepare("SELECT count(*) AS n FROM pragma_table_info('memories') WHERE name='valid_to'").get().n, 0)
     assert.equal(after.prepare('PRAGMA integrity_check').get().integrity_check, 'ok')
     after.close()
   } finally { rmSync(fixture.dir, { recursive: true, force: true }) }
