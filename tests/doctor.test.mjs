@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert'
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 
@@ -28,7 +28,8 @@ const run = (dbPath = DB) => {
   return { status: r.status, json, stdout: r.stdout, stderr: r.stderr }
 }
 const sha = (p) => createHash('sha256').update(readFileSync(p)).digest('hex')
-const out = { ok: true, test: 'doctor', healthyWarns: ['embedding'] }
+const modelAvailable = existsSync('/opt/qqai/models/bge-small-zh/tokenizer.json')
+const out = { ok: true, test: 'doctor', healthyWarns: modelAvailable ? [] : ['embedding'] }
 
 // 造一个健康库：1 条记忆 + 向量 + FTS；1 行原话 + 文件
 const { db } = openDb(DIR)
@@ -43,8 +44,8 @@ archive.onEvent(
 const before = sha(DB)
 const healthy = run()
 // embedding 现在真可用 → 健康库应 0
-assert.equal(healthy.status, 0, `健康库应 exit 0，实际 ${healthy.status}`)
-assert.equal(healthy.json.verdict, 'PASS')
+assert.equal(healthy.status, modelAvailable ? 0 : 1, `健康库状态应与模型可用性一致，实际 ${healthy.status}`)
+assert.equal(healthy.json.verdict, modelAvailable ? 'PASS' : 'WARN')
 assert.equal(sha(DB), before, '体检不得改库（字节不变）')
 out.healthy = 'ok'
 

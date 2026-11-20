@@ -4,7 +4,7 @@
  *       group 只 core+public / 语义向量只对允许 id 算 / 便签+事实卡 scope / 写入 scope。
  */
 import assert from 'node:assert'
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 const DIR = '/tmp/dy-scope-' + process.pid
@@ -72,6 +72,7 @@ for (const q of ['鲸落私藏', '海王公开', '本会独有', '别人专属',
 }
 out.recall = 'ok'
 
+if (existsSync('/opt/qqai/models/bge-small-zh/tokenizer.json')) {
 // 4) 语义臂：只对 scope 内 id 算 cosine（owner 高相似也不给 external）
 {
   await loadEmbed('/opt/qqai/models/bge-small-zh')
@@ -90,6 +91,9 @@ out.recall = 'ok'
   out.semantic = { scoped: scoped.map((r) => r.id), all: all.map((r) => r.id) }
 }
 
+} else {
+  out.semantic = 'skipped-no-model'
+}
 // 5) 便签/事实卡按 scope 过滤
 {
   await insertMemory(db, { kind: 'relation', text: '主人喜欢喝冰美式' })
