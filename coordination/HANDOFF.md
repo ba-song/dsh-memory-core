@@ -3,8 +3,8 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0026`  
-> 更新时间：2026-11-20（Asia/Shanghai）  
+> 版本：`HANDOFF-0030`  
+> 更新时间：2026-11-20 19:45（Asia/Shanghai）  
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -1364,3 +1364,47 @@ Linux内部可直接完成的任务与必须经DSHA原生层完成的任务要�
 - 未执行DSHA设备操作，未部署、未重启。
 - 负责人已说明旧版提示词正在由DSH执行；本节用于指导其后续正确解释和补充调查，不要求撤回或重启整项任务。
 - 后续更新者必须重新读取HANDOFF全文和最新Blob SHA。
+
+
+---
+
+## 26. 汐综合自主能力只读审查（HANDOFF-0030）
+
+> 基于远程最新 HANDOFF-0029（blob `ce31f48d…`，平台校准章节），保留其全部内容；本节追加六份审查报告。未修改生产环境。
+
+### 26.1 报告
+| 报告 | 路径 |
+|---|---|
+| 人格核心 | `/sdcard/DSHA/插件优化/PERSONA-CORE-AUDIT-01.md` |
+| 记忆核心 | `/sdcard/DSHA/插件优化/MEMORY-CORE-AUDIT-01.md` |
+| autonomy | `/sdcard/DSHA/插件优化/AUTONOMY-CAPABILITY-AUDIT-01.md` |
+| 综合能力缺口 | `/sdcard/DSHA/插件优化/FISH-COMPREHENSIVE-AUTONOMY-GAP-01.md` |
+| 专用设备权限 | `/sdcard/DSHA/插件优化/FISH-DEDICATED-DEVICE-PERMISSIONS-01.md` |
+| 路线图 | `/sdcard/DSHA/插件优化/FISH-COMPREHENSIVE-AUTONOMY-ROADMAP-01.md` |
+
+### 26.2 版本与测试
+- persona `a84c7ba`：303/303 pass；
+- memory `732e3fa`：251/251 pass（本机 BGE）；
+- autonomy `6c4a475`：411/411 pass（sibling 后 0 skip）；
+- DSHA 源码 `36d89b7`：README/Manifest 只读；内置 Ubuntu 24.04 + proot/proroot，非 Termux。
+
+### 26.3 关键结论
+- persona：身份/人格/情绪/关系/注入完整；缺结构化自我模型、长期目标、成长闭环、与 memory 强关联。
+- memory：raw/episode/fact/vector/FTS/revision 底座完整；生产 schema 4、旧版一致性修复未部署；relations=0 且语义未定义；成长/技能系统未实现。
+- autonomy：单步主动行动器（tick/驱动/目标/反思/日记），不是通用多步骤任务系统；缺任务图、工具组合、验证、恢复、能力注册。
+- 设备：容器 root、共享存储、终端、Chrome、无障碍、通知、Shizuku 可用；Android shell uid2000；短信未授权；后台仍受系统限制。
+- 核心缺口：统一任务系统、能力/工具编排、成长闭环；其次是上下文契约、任务恢复、自我模型。
+
+### 26.4 生产状态
+- 生产 schema 4；memories 216；episode 69；relations 0；无 episode_rewrite_snapshots；永久档案 16 天/1902 轮/约 5.3MB，静态导出，未持续双写。
+- 生产插件目录缺 exporter 与 `lib/permanent/`；部署前必须对齐。
+- 未发生生产写入/部署/重启/权限变更。
+
+### 26.5 下一阶段
+P0 收敛部署阻塞 → P1 统一服务契约/上下文 → P2 任务对象+能力注册 → P3 执行/验证/恢复 → P4 成长建议/技能 → P5 专用设备权限 → P6 长期运行 → P7 自我模型 → P8 持续自主。
+
+### 26.6 交接信息
+- 版本：`HANDOFF-0030`
+- 更新者：DSH
+- 基于旧 blob：`ce31f48dddf8c2aee626a1349084b424b48dfec8`
+- 说明：远程并发更新了 HANDOFF-0029 平台校准；本节合并保留，不覆盖。下一位更新者必须重新读取最新 blob SHA。
