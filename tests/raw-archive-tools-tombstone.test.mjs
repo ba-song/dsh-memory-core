@@ -8,6 +8,7 @@ import { RawArchive } from '../lib/ingest/archive.js'
 
 test('raw group and person archive tools never return tombstoned messages', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-raw-tools-tombstone-'))
+  const previousMemoryDir = process.env.DY_MEMORY_DIR
   process.env.DY_MEMORY_DIR = dir
   const registered = {}
   const ctx = {
@@ -56,5 +57,7 @@ test('raw group and person archive tools never return tombstoned messages', asyn
   } finally {
     try { db?.close() } catch {}
     rmSync(dir, { recursive: true, force: true })
+    if (previousMemoryDir === undefined) delete process.env.DY_MEMORY_DIR
+    else process.env.DY_MEMORY_DIR = previousMemoryDir
   }
 })

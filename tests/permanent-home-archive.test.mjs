@@ -129,7 +129,7 @@ test('stale lock recovery checks owner process before deleting an old lock', () 
   const item = { raw_id: 991, day: '2026-11-20', seq: 1, role: 'user', at: Date.now(), text: '锁恢复测试' }
   try {
     mkdirSync(eventsDir, { recursive: true })
-    writeFileSync(lockPath, JSON.stringify({ pid: Number.MAX_SAFE_INTEGER, at: 1 }))
+    writeFileSync(lockPath, JSON.stringify({ pid: 2147483647, at: 1 }))
     const old = new Date(Date.now() - 20 * 60 * 1000)
     utimesSync(lockPath, old, old)
     assert.equal(appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: item }).appended, true)
