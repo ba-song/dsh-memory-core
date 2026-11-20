@@ -38,9 +38,9 @@ assert.ok(prov2.block.includes('心情：')||prov2.block.includes('想：'),'去
 assert.ok(prov.block.split('\n').filter(l=>l.startsWith('- ')).length<=5)
 // 撤回原话及其邻近思考不得通过旧版独立块回流
 const revokedSeq=999; const revokedLine=ins('user','这条原话已经撤回',now+1000)
-db.prepare('UPDATE raw_meta SET seq=?,tombstone=1 WHERE line_no=?').run(revokedSeq,revokedLine)
+db.prepare('UPDATE raw_meta SET seq=?,tombstone=1,extra=? WHERE line_no=?').run(revokedSeq,JSON.stringify({sessionId:'revoked-session'}),revokedLine)
 const revokedThoughtLine=ins('self-thought','这条思考也已撤回',now+1001)
-db.prepare('UPDATE raw_meta SET tombstone=1 WHERE line_no=?').run(revokedThoughtLine)
+db.prepare('UPDATE raw_meta SET tombstone=1,extra=? WHERE line_no=?').run(JSON.stringify({sessionId:'revoked-session'}),revokedThoughtLine)
 const revokedHit={source_msg_id:'p4:revoked-session:'+revokedSeq,source_ts:now+1000}
 const revokedThoughts=buildThoughtsBlock(db,{cwd,hits:[revokedHit]})
 assert.equal(revokedThoughts.block,'','撤回原话附近的思考不得被注入')
