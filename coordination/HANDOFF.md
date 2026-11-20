@@ -3,9 +3,9 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0037`  
-> 更新时间：2026-11-20 20:30（Asia/Shanghai）  
-> 更新者：DSH  
+> 版本：`HANDOFF-0038`  
+> 更新时间：2026-11-20 21:22（Asia/Shanghai）  
+> 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
 ---
@@ -1804,3 +1804,229 @@ P0 只有全部满足才可称“生产部署候选准备完成”：
 
 ### 34.5 副作用
 - 只读源码/静态检查；未运行 staging、未 `npm ci`、未调用 `dsha-plugin`、未连生产 DB、未改 profile/config、未部署/重启；无生产副作用。
+
+
+---
+
+## 35. P0 staging plan v2 与 schema 迁移修复（HANDOFF-0038）
+
+> 依据：负责人转交的 `P0-STAGING-PLAN-REVIEW-01.md`；旧 HANDOFF-0037 §34。
+> 复核报告：`/sdcard/DSHA/插件优化/P0-STAGING-PLAN-REVIEW-01.md`
+> 本节状态：**只完成 GitHub 开发分支代码修复、CI 和 staging plan v2；DSHA staging 仍 NOT RUN。**
+
+### 35.1 当前结论与边界
+
+- DSH 对 HANDOFF-0036 的复核结论成立：原 staging 命令路径错误，schema 迁移失败安全性不合格，ONNX/fixture/Cordis/WAL 验收细节不足。
+- 原 staging plan v1 不得执行；以本节 v2 替代。
+- 本轮 GPT 没有运行 DSHA staging、没有在 DSHA 执行 `npm ci`、没有解包候选包、没有调用 `dsha-plugin`、没有连接生产 DB、没有修改生产 profile/config、没有部署或重启。
+- GitHub Actions 在 Ubuntu runner 成功不等于 DSHA Ubuntu 24.04 arm64 本地通过。
+
+### 35.2 schema 4→5 迁移：已修代码，待 DSHA 实机复验
+
+#### 已核实的旧 schema 事实
+
+- 生产基线记录为 schema 4；旧代码 `bb77de2` 的 `lib/store/schema.js` 明确声明 `SCHEMA_VERSION=4`。
+- 对照旧 schema 4 与候选 schema 5 的 DDL：schema 5 新增 `episode_rewrite_snapshots` 表及 `idx_ers_memory` 索引；memory 表既有列和其他 DDL 与 schema 4 基线对应。
+- 候选旧 `lib/store/db.js` 在事务外逐条执行 DDL/ALTER/UPDATE，多个宽泛 catch 吞错，最后无条件写版本 5。风险属实。
+
+#### GPT 已完成的开发分支修复
+
+- 仓库：`ba-song/dsh-memory-core`
+- 分支：`feat/m1-preference-memory`
+- 新 HEAD：`0af569ac33b006d49c96d896094d77f5c75b6ede`
+- 提交链：
+  - `b711e66fe000bac64ef443546eecf3b1050d01db`：将 DDL、补列、索引、回填、结构检查和 schema version 更新放入同一个 `BEGIN IMMEDIATE` 事务；失败回滚并关闭 DB；移除迁移路径上的宽泛 catch。
+  - `dd939cc74c7d406c7b5fe4dd9f8309e6f7a711b5`：增加 schema 4→5 失败注入测试。
+  - `432c7cf7746872fbf575834109314c98d870dc1e`：增加迁移幂等性和索引检查。
+  - `46d9dd171f1ff745d1f097930dda8337afdd39f7`：增加 schema version 合法性、snapshot 表列和关键索引列验证；版本标记仅在校验通过后提交。
+  - `0af569ac33b006d49c96d896094d77f5c75b6ede`：把 raw_meta/raw_fts/raw_vectors fixture 调整为接近当前 archive.js 的真实结构。
+- 新测试：`tests/schema-migration-atomic.test.mjs`。
+  - fixture 以旧 schema 4 DDL 为基线，排除 schema 5 新增的 snapshot 表和索引；不包含真实正文。
+  - 含合成 memories、bigram/trigram FTS、vectors、entities、memory_entities、relations、memory_revisions。
+  - 另含合成 raw_meta user/self/tool/tombstone 行、raw_fts、raw_vectors，检查迁移不改变 raw 侧数据。
+  - 成功路径检查 schema_version=5、snapshot 表/关键索引/列存在、计数和 ID 保持、integrity_check=ok；再次 openDb 检查幂等。
+  - 失败路径在 schema_version 更新时用 SQLite trigger 注入异常，检查事务回滚后 version 仍为 4、schema 5 表/索引未留下、数据计数与 ID 不变、integrity_check=ok。
+- GitHub Actions：
+  - #80：`dd939cc...`，success：https://github.com/ba-song/dsh-memory-core/actions/runs/44742342782
+  - #81：`432c7cf...`，success：https://github.com/ba-song/dsh-memory-core/actions/runs/44743204757
+  - #82：`46d9dd1...`，success：https://github.com/ba-song/dsh-memory-core/actions/runs/44743336615
+  - #83：`0af569a...`，success：https://github.com/ba-song/dsh-memory-core/actions/runs/44743493363
+- 以上仅是 GitHub CI 证据。DSHA Node 24.19/24.x 与 SQLite 运行时、实际 schema 4 fixture 及失败回滚仍需 DSH 在隔离环境复验。
+
+### 35.3 staging plan v2：候选包解包、依赖与 ONNX
+
+候选包（以负责人转交的本地报告为依据；GPT未直接读取手机 tar 文件）：
+- 路径：`/sdcard/DSHA/备份/候选/dsh-memory-core-732e3fa-20261120-194319.tar.gz`
+- SHA-256：`6d05b33d17f0bca92a9060c4614541e3b26cb0905dfdf0fb29cf7c7698b1ea21`
+- tar 根目录：`dsh-memory-core/`。
+
+隔离目录创建与包校验：
+
+```sh
+set -euo pipefail
+PKG='/sdcard/DSHA/备份/候选/dsh-memory-core-732e3fa-20261120-194319.tar.gz'
+EXPECTED='6d05b33d17f0bca92a9060c4614541e3b26cb0905dfdf0fb29cf7c7698b1ea21'
+RUN_ID="$(date +%Y%m%d-%H%M%S)"
+STAGE="/tmp/dsha-p0-staging-$RUN_ID"
+mkdir -m 700 -p "$STAGE"/{plugin,data,cache,logs,fixture,archive,backup,snapshot,evidence,home}
+chmod 700 "$STAGE"
+ACTUAL="$(sha256sum "$PKG" | awk '{print $1}')"
+test "$ACTUAL" = "$EXPECTED"
+tar -tzf "$PKG" | sed -n '1,8p'
+```
+
+修正后的解包方式（二选一；推荐 strip-components）：
+
+```sh
+mkdir -p "$STAGE/plugin"
+tar -xzf "$PKG" --strip-components=1 -C "$STAGE/plugin"
+test -f "$STAGE/plugin/package.json"
+test -f "$STAGE/plugin/lib/store/db.js"
+test -f "$STAGE/plugin/scripts/export-home-archive.mjs"
+test -f "$STAGE/plugin/lib/permanent/home-archive.js"
+cd "$STAGE/plugin"
+```
+
+因此 exporter 的唯一 staging 路径为：
+`$STAGE/plugin/scripts/export-home-archive.mjs`。
+不得再使用 `$STAGE/plugin/dsh-memory-core/...`（仅当不 strip-components 时才会有该子目录）。
+
+Clean install 与静态检查：
+
+```sh
+cd "$STAGE/plugin"
+node -v
+node -p "process.platform + '/' + process.arch + ' sqlite=' + process.versions.sqlite"
+npm ci --cache "$STAGE/cache" --no-audit --no-fund
+node --check lib/store/db.js
+node --check scripts/export-home-archive.mjs
+```
+
+ONNX 必须在 DSHA Ubuntu 24.04 arm64 上执行真实 session 创建，不能只 import：
+
+```sh
+MODEL='/opt/qqai/models/bge-small-zh/model_quantized.onnx'
+test -s "$MODEL"
+node - "$MODEL" <<'NODE'
+const ort = require('onnxruntime-node')
+const model = process.argv[2]
+ort.InferenceSession.create(model, { executionProviders: ['cpu'] })
+  .then(async (session) => {
+    console.log(JSON.stringify({ ok: true, inputNames: session.inputNames, outputNames: session.outputNames }))
+    await session.release()
+  })
+  .catch((error) => { console.error(error); process.exit(1) })
+NODE
+```
+
+必须记录 Node/npm/SQLite 版本、arm64、npm ci 退出码、ONNX session 成功与否、模型文件 SHA/大小、session 输入输出名称及日志。模型不存在、原生模块加载失败、ABI 不匹配或 session 创建失败均为 BLOCKED/FAIL，不得跳过后报告 PASS。
+
+### 35.4 schema 4 fixture 与迁移验收
+
+- 先运行候选包自带回归测试：`node --test tests/schema-migration-atomic.test.mjs`；再运行全量 `npm test`。
+- fixture 只能由 schema 4 DDL/脱敏结构副本构造；不复制真实 raw_text、memory 正文、embedding 内容或凭据。代表性内容均为合成占位文本。
+- fixture 必须包含：raw_meta 的 user/self/tool/tombstone 行；memories；FTS；vectors；entities/memory_entities；relations；memory_revisions。raw 侧结构以当前 `lib/ingest/archive.js` 为参照，迁移不应改动 raw 侧数据。
+- 迁移前后记录：`sqlite_master` 表/索引清单、`PRAGMA table_info` 列清单、schema_version、各表行数、主键/ID 集、FTS/vector/entity/relation/revision 计数、tombstone 计数、`PRAGMA integrity_check`。
+- 迁移成功后再 openDb 一次，验证幂等；再次打开不得重复新增/丢失数据。
+- 失败注入至少覆盖 schema version 写入失败；要求失败后 version 仍 4、迁移新增的表/索引/列均回滚、所有原有 ID/计数不变、integrity_check=ok。不得仅检查 version 而忽略部分 DDL。
+- 若本地真实 schema 4 与 fixture DDL 有任何差异，先记录差异并补 fixture，不得直接对生产 DB 做迁移试验。
+
+### 35.5 exporter 与 staging Node+tar
+
+- 创建独立 staging DB；只插入合成 raw_meta 行，cwd 字段使用固定逻辑字符串 `/sdcard/DSHA/生活/数据/home`，不访问该真实目录。
+- 输出目录必须是全新的 `$STAGE/archive`；DB 使用 `$STAGE/data/memory.db`；backup 使用 `$STAGE/backup`。
+- autonomy staging 配置中的 exporter 路径必须为 `$STAGE/plugin/scripts/export-home-archive.mjs`；memoryDbPath、archiveRoot、backupDir 分别指向 staging DB/archive/backup；homeCwd 只保留逻辑路径；`enabled=false`。
+- 实际执行 exporter：
+  `node "$STAGE/plugin/scripts/export-home-archive.mjs" --db "$STAGE/data/memory.db" --out "$STAGE/archive" --home-cwd '/sdcard/DSHA/生活/数据/home'`
+- 检查 JSONL、每日 Markdown、INDEX、README、tombstone 标记、重复执行幂等性、中文路径、异常退出码与 journalErrors；exporter 对 DB 只读，但会写 archive，因此严禁使用生产 archiveRoot。
+- 实际执行 `tar -czf "$STAGE/backup/home-archive.tar.gz" -C "$STAGE/archive" .`，复算 `sha256sum` 并记录 size/hash。不得触碰真实永久档案或生产备份目录。
+
+### 35.6 Cordis 隔离 host：明确路径、端口和拒绝条件
+
+隔离根目录建议：
+- `STAGE_HOME="$STAGE/home"`
+- `STAGE_DSH_HOME="$STAGE/home/.dsh"`
+- profile：`$STAGE_DSH_HOME/profiles/p0-staging/`
+- 插件源码：`$STAGE_DSH_HOME/plugin-src/dsh-memory-core/`（从 `$STAGE/plugin` 复制完整候选目录，包含其 staging node_modules；不得混入生产插件目录）
+- profile patch：`$STAGE_DSH_HOME/profiles/p0-staging/cordis.patch.yml`，仅包含候选 `memory-core` 插件条目；不复制生产 web profile。
+- 插件数据：`DY_MEMORY_DIR="$STAGE/data"`；该目录下 config.json 必须把 archiveDir、permanentArchiveDir、factsPath、chatlogDir 等路径全部改为 staging；`memoryRecordEnabled=false`、`memoryInjectEnabled=false`、`permanentArchiveEnabled=false`、`m3_2b.enabled=false)，ownerQQ/ownerPrivateDir 置空，trustedDirs/archiveDirs/archiveCwdPrefixes 置空，所有维护/调度功能关闭。
+- 监听端口：固定选择未占用的 staging 专用端口 `31873`；启动前用 `ss -ltn` 确认空闲，启动后确认只有 staging host 监听。若 DSH 的端口配置键不是该值，必须按实际 schema 设置，不得假设环境变量名。
+
+启动前必须从 DSHA 实际 DSH 启动器源码/CLI 确认其 home/profile 参数与环境变量。不得猜测 `--profile`、`DSH_PROFILE` 或 `DSH_HOME` 一定受支持。启动环境至少隔离 `HOME="$STAGE_HOME"`、`DSH_HOME="$STAGE_DSH_HOME"`、`DY_MEMORY_DIR="$STAGE/data"`；使用 DSH 实际支持的 profile 选择方式加载 `p0-staging`。如果启动器不能将 DSH_HOME/profile 完整重定向到 staging，立即 BLOCKED，不得退回生产 `/root/.dsh/profiles/web`。
+
+若设备具备 strace，必须用它记录文件访问并断言没有访问生产路径：
+
+```sh
+strace -f -qq -e trace=openat,openat2,newfstatat -o "$STAGE/logs/host-files.trace" \
+  env HOME="$STAGE_HOME" DSH_HOME="$STAGE_DSH_HOME" DY_MEMORY_DIR="$STAGE/data" \
+  "$DSH_BIN" <经源码/CLI确认的隔离 profile 参数>
+! grep -E '/root/\.dsh(/profiles/web|/plugin-src/dsh-memory-core)' "$STAGE/logs/host-files.trace"
+```
+
+尖括号内容不是可直接执行的参数；必须先由 DSH 根据实际启动器确认并替换。如果 strace 不可用、文件访问无法审计、host 仍读取生产 profile/plugin/data，均 BLOCKED，不启动或立即停止。验收还需确认 Cordis 日志中 memory-core 只注册一次、没有旧版+候选重复注册、监听端口是 31873、插件数据路径全部位于 staging。不得调用生产 `dsha-plugin import`；候选源码直接放入 staging DSH_HOME 的 plugin-src。
+
+### 35.7 一致性快照与回滚命令
+
+快照只针对 staging fixture DB，不对生产 DB 操作。SQLite `VACUUM INTO` 生成包含当前已提交 WAL 状态的一致独立数据库快照；不要只复制处于 WAL 模式的主 DB 文件：
+
+```sh
+DB="$STAGE/data/memory.db"
+SNAP="$STAGE/snapshot/memory.pre-migration.sqlite"
+node - "$DB" "$SNAP" <<'NODE'
+const { DatabaseSync } = require('node:sqlite')
+const [dbPath, snapshotPath] = process.argv.slice(2)
+const db = new DatabaseSync(dbPath)
+const escaped = snapshotPath.replaceAll("'", "''")
+db.exec("VACUUM INTO '" + escaped + "'")
+db.close()
+const snap = new DatabaseSync(snapshotPath, { readOnly: true })
+const check = snap.prepare('PRAGMA integrity_check').get().integrity_check
+snap.close()
+if (check !== 'ok') { console.error(check); process.exit(1) }
+NODE
+sha256sum "$SNAP"
+```
+
+失败回滚（仅 staging）：
+1. 用本轮记录的 staging host PID 发 SIGTERM 并等待退出；禁止使用可能匹配生产 DSH 的宽泛 pkill。
+2. 确认所有 staging DB 写者已退出/连接已关闭；保留失败现场的 `memory.db`、`memory.db-wal`、`memory.db-shm` 到 `$STAGE/evidence/`，不得在进程仍运行时删除 sidecar。
+3. 确认失败迁移事务已回滚后，先把失败 DB 与 sidecar 留证；再删除目标 DB 的旧 `-wal/-shm`，将 `$SNAP` 复制为临时恢复文件并原子 rename 为 `memory.db`。
+4. 对恢复 DB 复算 SHA，与快照一致；执行 `PRAGMA integrity_check` 并核对 schema_version=4、原始 ID/计数。
+5. 回滚代码时恢复 staging 旧插件目录和旧 profile 副本；不得把 schema 5 DB 交给 schema 4 代码写入。
+6. 记录每条命令、退出码、恢复前后 hash、integrity_check 和目录清单。
+
+示例恢复命令（先确认所有 staging 写者已停止，并已复制失败现场）：
+
+```sh
+cp -a "$DB" "$STAGE/evidence/memory.db.failed"
+for suffix in -wal -shm; do
+  [ ! -e "$DB$suffix" ] || cp -a "$DB$suffix" "$STAGE/evidence/"
+done
+rm -f "$DB-wal" "$DB-shm"
+cp "$SNAP" "$DB.restore"
+mv "$DB.restore" "$DB"
+sha256sum "$DB" "$SNAP"
+```
+
+### 35.8 当前状态与下一步门禁
+
+- schema 迁移修复：**GitHub CI 已完成（有证据）**；DSHA 实机仍待复验。
+- 解包路径/Exporter 路径：**计划已修正**；尚未在 DSHA 解包。
+- clean npm ci / ONNX session：**NOT RUN（DSHA）**。
+- schema 4 fixture / 失败注入 / 幂等：**GitHub CI 成功；DSHA 复验 NOT RUN**。
+- Cordis 隔离 host：**计划已具体化；启动器环境变量/profile 参数仍需 DSH 源码核对；host NOT RUN**。
+- exporter Node+tar：**DSHA staging NOT RUN**。
+- WAL 快照/回滚演练：**DSHA staging NOT RUN**。
+- 只有 DSH 对本节 plan v2 复核 PASS 后，才进入 staging 实施阶段；实施阶段仍仅限 /tmp 隔离环境。生产部署、生产 DB 迁移、profile/config 修改、重启仍需负责人当前对话另行明确授权。
+
+### 35.9 DSH 下一步任务与反馈协议
+
+DSH 先只读复核本节 v2，不运行 staging、不解包、不 npm ci、不运行 exporter、不启动 Cordis host。重点核对：
+1. 解包 strip-components 与 exporter 路径是否完全匹配候选 tar 实际结构；
+2. 新迁移事务/fixture/失败注入/幂等测试是否与 schema 4 实际结构吻合；
+3. ONNX 命令是否适用于 DSHA Node 24 + Ubuntu 24.04 arm64 及当前模型；
+4. DSH 启动器能否真实隔离 HOME/DSH_HOME/profile/端口；若不能，给出证据和 BLOCKED 原因，不得猜测；
+5. VACUUM INTO 快照与 WAL sidecar 恢复步骤是否正确；
+6. 每条命令是否可能触碰生产目录/数据库/配置。
+
+DSH 必须完整读取 HANDOFF 全文并核对最新 Blob SHA/commit；完成后更新 HANDOFF，采用 SHA 并发保护，并提交完整可直接转发 GPT 的反馈（命令/原始输出/退出码/路径/hash/状态/副作用/HANDOFF 新旧 SHA/commit/link）。**必须提醒负责人把完整反馈转交 GPT**，不能只回复完成或只更新 HANDOFF。HANDOFF 是 GPT、DSH、负责人共同维护的唯一长期项目状态入口，DSH 不得遗忘或绕过该协议。
