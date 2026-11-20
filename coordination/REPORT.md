@@ -116,3 +116,51 @@ sourceIds: [episode.id ?? episode.episodeId ?? episode.appraisalId ?? episode.ap
 
 ## 7. 副作用
 只读/隔离工作树；未改生产源码/DB/profile；未启动 staging/host；未部署/重启。
+
+
+---
+
+# REPORT-0010 · EI-1 首轮 BLOCKED 问题修复（GPT 开发分支）
+
+## 依据与裁定
+- 输入：DSH 的 HANDOFF-0052 / REPORT-0009 反馈。
+- 接受结论：EI-1 首轮 IMPLEMENTATION REVIEW BLOCKED。P1 来源标识丢失是真实缺陷；P2 localeCompare 与异常输入覆盖需修复；非有限 expires_at 不应被视为永不过期。
+- 本轮只修改 Persona 独立开发分支；未修改 main、生产插件、DB、profile/config、Memory 或部署环境。
+
+## 修改
+仓库：ba-song/dsh-persona-core
+分支：feat/ei1-emotion-composition
+基线：a84c7badd1e6c971a66b6c39dd4f7ab795df4b90
+最新修复 commit：ad809910801983be61165ff037a2e138676854aa
+
+1. lib/emotion-compose.js
+- sourceIds 现在分别收集 id、episodeId、appraisalId、appraisal_id，并合并 episode.sourceIds 数组；去重后保留。
+- 所有字符串排序统一为显式 codepoint comparator，不依赖 locale/ICU。
+- intensity 必须处于 [0,1]，越界不再静默 clamp 成合法值。
+- 显式提供 expires_at/expiresAt 时，NaN、Infinity、非正时间戳均拒绝；已过期记录仍退出 active projection。
+- confidence 缺失/非有限/越界时分类为 unknown，不会因 clamp 而被伪装成高置信。
+- future occurred timestamp 仍按 age=0 计算，并受 expiry 约束。
+
+2. tests/emotion-compose.test.mjs
+新增覆盖：
+- 同时含 id + appraisal_id + appraisalId + episodeId + sourceIds 的来源保留；
+- null/缺 emotion/target/half_life_s；
+- NaN/Infinity expiry、intensity 越界；
+- confidence 越界与缺失；
+- future timestamp；
+- 非 ASCII key 与输入顺序稳定；
+- displayLimit 大于实际数量不丢记录。
+原有 8 项测试保留。
+
+## 当前文件 blob
+- lib/emotion-compose.js：547ff177a02bd80152ccb3914d54f287f775befa
+- tests/emotion-compose.test.mjs：a92aacf1e04bcb5852eb7308ce3d0a7a2892580b
+
+## 验证状态
+- GitHub 更新成功，已 fetch 核对最新文件。
+- GPT 未在本轮成功运行 Node 测试；必须由 DSH 在 DSHA worktree 复验。
+- 新增测试、Persona 全量测试、CI：NOT RUN。
+- 生产集成、EI-2/EI-3、DB migration、P0 staging、部署/重启：NOT RUN。
+
+## 下一步
+请 DSH 对最新修复 commit ad809910801983be61165ff037a2e138676854aa 运行新增测试与完整 Persona 测试，并针对 sourceIds 双 ID、codepoint 比较、异常输入和 expires_at 边界做只读复核。不要修改开发分支，不要接入生产路径。
