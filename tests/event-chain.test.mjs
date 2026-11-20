@@ -63,6 +63,7 @@ test('event chain only returns same-session, same-scope, anchored shared-entity 
     const rows = eventChainCandidates(db, seed, { cwd: HOME })
     assert.deepEqual(rows.map((row) => row.id), [neighbor.id])
     assert.equal(rows[0].relation, 'same-session+shared-entity')
+    assert.ok(rows[0].sharedEntities.length > 0)
     assert.notEqual(rows[0].anchorRawId, 0)
     assert.ok(!rows.some((row) => [wrongScope.id, otherSession.id, missing.id].includes(row.id)))
   } finally {
