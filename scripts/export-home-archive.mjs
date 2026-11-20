@@ -43,19 +43,28 @@ function parseRawText(rawText, at) {
   return { time: match?.[1] ?? clockOf(at), text: match?.[2] ?? value }
 }
 
-function emotionMapOf(db) {
+function emotionMapOf(db, rawIds = []) {
   const columns = columnsOf(db, 'raw_emotion_archive')
   if (!columns.has('raw_id')) return new Map()
+  const ids = [...new Set((Array.isArray(rawIds) ? rawIds : [])
+    .map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))]
+  if (!ids.length) return new Map()
   const fields = ['raw_id', 'label', 'valence', 'arousal', 'certainty', 'intensity', 'source']
     .filter((field) => columns.has(field))
   if (!fields.includes('raw_id')) return new Map()
   const out = new Map()
-  try {
-    for (const row of db.prepare(`SELECT ${fields.join(',')} FROM raw_emotion_archive`).all()) {
-      const { raw_id: id, ...emotion } = row
-      out.set(Number(id), emotion)
-    }
-  } catch {}
+  // Limit emotion reads to the selected home raw_id set; chunk below SQLite's
+  // common bind-parameter ceiling rather than scanning other cwd histories.
+  for (let offset = 0; offset < ids.length; offset += 500) {
+    const batch = ids.slice(offset, offset + 500)
+    const placeholders = batch.map(() => '?').join(',')
+    try {
+      for (const row of db.prepare(`SELECT ${fields.join(',')} FROM raw_emotion_archive WHERE raw_id IN (${placeholders})`).all(...batch)) {
+        const { raw_id: id, ...emotion } = row
+        out.set(Number(id), emotion)
+      }
+    } catch {}
+  }
   return out
 }
 
@@ -177,7 +186,7 @@ export async function exportHomeArchive({ dbPath = DEFAULT_DB, outDir = DEFAULT_
     const extraExpr = cols.has('extra') ? 'extra' : "'{}' AS extra"
     const tombstoneExpr = cols.has('tombstone') ? 'tombstone' : '0 AS tombstone'
     rows = db.prepare(`SELECT id,day,seq,role,raw_text,at,cwd,${extraExpr},${tombstoneExpr} FROM raw_meta WHERE cwd=? ORDER BY day,at,id`).all(cwd)
-    emotionById = emotionMapOf(db)
+    emotionById = emotionMapOf(db, rows.map((row) => Number(row.id)))
     journal = readPermanentJournal(archiveDir)
 
     let repaired = 0
