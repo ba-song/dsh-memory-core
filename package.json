@@ -18,7 +18,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "export:home-archive": "node scripts/export-home-archive.mjs"
   },
   "license": "MIT",
   "dependencies": {
