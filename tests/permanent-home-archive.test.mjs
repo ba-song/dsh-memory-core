@@ -111,11 +111,17 @@ test('non-home cwd never writes to the home permanent journal', () => {
 test('new permanent archive journal uses owner-only POSIX permissions', () => {
   const dir = mk('permissions')
   const archiveDir = join(dir, 'permanent')
+  const eventsDir = join(archiveDir, '_events')
+  const file = join(eventsDir, '2026-11-20.jsonl')
   const item = { raw_id: 990, day: '2026-11-20', seq: 1, role: 'user', at: Date.now(), text: '权限测试' }
   try {
+    mkdirSync(eventsDir, { recursive: true, mode: 0o777 })
+    writeFileSync(file, 'legacy\\n', { mode: 0o666 })
+    chmodSync(archiveDir, 0o777)
+    chmodSync(eventsDir, 0o777)
+    chmodSync(file, 0o666)
     appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: item })
-    const eventsDir = join(archiveDir, '_events')
-    const file = join(eventsDir, '2026-11-20.jsonl')
+    assert.equal(statSync(archiveDir).mode & 0o077, 0)
     assert.equal(statSync(eventsDir).mode & 0o077, 0)
     assert.equal(statSync(file).mode & 0o077, 0)
   } finally { rmSync(dir, { recursive: true, force: true }) }
