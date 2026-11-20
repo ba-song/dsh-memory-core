@@ -28,7 +28,8 @@ const run = (dbPath = DB) => {
   return { status: r.status, json, stdout: r.stdout, stderr: r.stderr }
 }
 const sha = (p) => createHash('sha256').update(readFileSync(p)).digest('hex')
-const modelAvailable = existsSync('/opt/qqai/models/bge-small-zh/tokenizer.json')
+const modelDir = process.env.DY_EMBED_MODEL || '/opt/qqai/models/bge-small-zh'
+const modelAvailable = existsSync(join(modelDir, 'tokenizer.json'))
 const out = { ok: true, test: 'doctor', healthyWarns: modelAvailable ? [] : ['embedding'] }
 
 // 造一个健康库：1 条记忆 + 向量 + FTS；1 行原话 + 文件
@@ -89,7 +90,7 @@ out.orphan = 'ok'
 const runArgs = (args) => { const r = spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8' }); let j = null; try { j = JSON.parse(r.stdout) } catch {}; return { status: r.status, json: j, stdout: r.stdout } }
 const j1 = runArgs(['--db', DB, '--json'])
 assert.equal(j1.stdout.trim().split('\n').length, 1, '--json 应单行')
-assert.equal(j1.json.verdict, 'PASS')
+assert.equal(j1.json.verdict, modelAvailable ? 'PASS' : 'WARN')
 const insLegacy = (d, day, file, role, speaker, extra) => d.prepare(
   `INSERT INTO raw_meta(day,file,line_no,seq,role,speaker,channel,tombstone,chars,raw_text,at,extra,cwd,speaker_id)
    VALUES(?,?,1,1,?,?,'qq',0,1,'x',?,?,'','')`).run(day, file, role, speaker, Date.now(), extra)

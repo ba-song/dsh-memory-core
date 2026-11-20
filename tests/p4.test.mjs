@@ -21,7 +21,7 @@ assert.deepEqual(extractPreference('主人喜欢吃海鲜')?.kind, 'preference')
 assert.ok(extractRelation('主人叫我大肥鱼')?.text.includes('叫我'))
 assert.ok(extractSkill('以后就按这个格式发')?.text.includes('以后'))
 
-const modelAvailable = existsSync('/opt/qqai/models/bge-small-zh/tokenizer.json')
+const modelAvailable = existsSync(join(process.env.DY_EMBED_MODEL || '/opt/qqai/models/bge-small-zh', 'tokenizer.json'))
 let pairCount = 0
 if (modelAvailable) {
   // 3) 20 对冲突语料（真实 bge 向量）

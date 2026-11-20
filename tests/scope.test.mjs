@@ -72,7 +72,7 @@ for (const q of ['鲸落私藏', '海王公开', '本会独有', '别人专属',
 }
 out.recall = 'ok'
 
-if (existsSync('/opt/qqai/models/bge-small-zh/tokenizer.json')) {
+if (existsSync(join(process.env.DY_EMBED_MODEL || '/opt/qqai/models/bge-small-zh', 'tokenizer.json'))) {
 // 4) 语义臂：只对 scope 内 id 算 cosine（owner 高相似也不给 external）
 {
   await loadEmbed('/opt/qqai/models/bge-small-zh')
