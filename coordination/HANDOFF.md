@@ -1608,3 +1608,155 @@ HANDOFF-0032 要求独立仓库，但当前已连接 GitHub 工具集合没有�
 
 - 本轮未写生产库、未改生产配置、未部署；候选包与报告均为本地证据。
 - 下一位更新者必须重新读取远程最新 blob SHA。
+
+
+---
+
+## 33. HANDOFF-0036：P0 候选包验收与 staging 方案（GPT）
+
+> 2026-11-20。依据负责人转交的 HANDOFF-0034 / HANDOFF-0035 摘要及候选包本地验证数据；本轮仅做远程源码复核和 staging 方案，不运行 DSHA staging，不部署、不重启、不写生产数据。
+
+### 33.1 本轮证据基线
+
+- memory-core 候选 commit：`732e3fa3381ed4b3b4242e0e6fd6e411b35ab972`。
+- 生产基线：`bb77de2`，schema 4。
+- 候选包：`/sdcard/DSHA/备份/候选/dsh-memory-core-732e3fa-20261120-194319.tar.gz`。
+- DSH 报告的 SHA-256：`6d05b33d17f0bca92a9060c4614541e3b26cb0905dfdf0fb29cf7c7698b1ea21`；大小 423,468 bytes。
+- DSH 报告的归档检查：302 entries / 271 files / 31 dirs；无绝对路径/上级路径穿越；无 node_modules、DB、env、凭据；257 JS/MJS、701 个相对 import、0 unresolved。
+- DSH 报告的隔离测试：251/251 pass、0 fail、0 skip；但使用现有 node_modules 软链，**不等价于干净安装**。
+- DSHA Node v24.19.0 / npm 11.17.0 / node:sqlite SQLite 3.53.3。
+- 以上设备端数据来自负责人转述的本地报告摘要；GPT 未直接读取 tar.gz 或本地报告文件，未独立复算哈希。
+
+### 33.2 GPT 已复核的远程源码事实
+
+从候选 commit 读取：
+- `package.json`：仅声明 `onnxruntime-node ^1.31.1` 为依赖；`engines.node >=20`；主入口 `lib/index.js`，Cordis patch `cordis.patch.yml`。
+- `lib/store/db.js`：`openDb()` 启动时执行 schema DDL、若干 ALTER/UPDATE 迁移，最后写入 `meta.schema_version = SCHEMA_VERSION`。
+- `lib/store/schema.js`：`SCHEMA_VERSION = 5`；DDL 含 `episode_rewrite_snapshots` 及索引，及其他既有表结构。
+- `scripts/export-home-archive.mjs`：直接依赖 Node 内置 `node:sqlite` 和相对导入；DB 以 readOnly 打开并 query_only；但会创建/修改 `--out` 指定的 archiveRoot，追加 JSONL 事件、生成/替换 Markdown/INDEX/README，并可能创建历史备份。因此不能把 exporter 称为“完全无写入”；它只对 SQLite DB 只读，对档案目录有写入。
+- `dsh-autonomy@6c4a475` 的 `lib/config.js`：`homeArchiveMaintenance.enabled` 默认 false；默认 exporter 路径为 `/root/.dsh/plugin-src/dsh-memory-core/scripts/export-home-archive.mjs`；DB、homeCwd、archiveRoot、backupDir 均可配置。生产 profile 当前实际配置仍需 DSH 只读核实，不能假定默认值就是生产值。
+- `dsh-autonomy/lib/index.js` 将 `dyPersona` / `dyMemory` 声明为依赖；memory-core 应由宿主按 package main + Cordis patch 加载。实际 staging 应避免同时加载旧版和候选版导致服务/工具重复注册。
+
+### 33.3 P0 候选包验收结论
+
+**结论：候选包可进入 staging；当前不批准生产部署，尚不能签发最终生产候选。**
+
+通过项（依据 DSH 本地报告，尚未由 GPT 独立复算）：
+- SHA/大小与 HANDOFF-0032 一致；
+- 归档路径安全、无 DB/凭据/node_modules；
+- 关键入口/资源齐全；
+- 相对导入无缺失；
+- 在 DSHA Node 24 下的 exporter 语法/导入和既有依赖环境下 251 tests 通过。
+
+未通过/待验证项：
+1. 干净隔离环境的 `npm ci` 尚未执行；现有 node_modules 软链测试不能证明 lockfile 依赖可重建。
+2. `onnxruntime-node` 是包外原生依赖；需要在 DSHA Ubuntu 24.04 arm64 下验证 npm 安装脚本、二进制取得、ABI 与实际 import/session 创建。离线缓存是否足够未知。
+3. schema 4→5 必须在生产 DB 的独立副本上复现。当前 `openDb()` 迁移不是单个显式事务：DDL/ALTER/UPDATE 分段执行，多个 ALTER/UPDATE 用宽泛 catch 吞错误，随后无条件更新 schema_version。若中间某项失败，可能留下部分迁移却把版本标成 5。该实现是本轮发现的发布阻塞，需隔离复现并审查；不可只因 DDL 大多为 CREATE IF NOT EXISTS / 加列就断言安全。
+4. 回滚不能仅靠把插件目录换回旧版：schema 5 DB 不应直接交给旧 schema 4 代码继续写。必须保存迁移前 DB 一致性备份；失败时停止所有写者、保留失败现场、恢复完整迁移前 DB 副本及 WAL/SHM 一致状态，再恢复旧插件目录。
+5. exporter 的 autonomy 配置路径要指向候选部署目录内真实存在的脚本；不能假定插件目录软链接/导入器自动复制后路径仍一致。staging 中须以绝对路径验证，生产配置不改。
+6. exporter 的临时输出路径必须是隔离目录。虽然 DB 只读，它会写 archiveRoot 并追加/修复事件；绝不可把生产 archiveRoot 传入 staging 命令。
+
+### 33.4 staging 计划（本轮仅计划，未运行）
+
+阶段 0：建立隔离边界
+- 使用独立 staging 根目录，例如 `/tmp/dsha-p0-staging-<run-id>/`，仅作为示意；DSH 需先确认该路径所在文件系统有足够空间且不是生产目录。
+- 候选包解压到 staging/plugin；所有 DB、profile、homeCwd fixture、archiveRoot、backupDir 均位于 staging。
+- 不使用生产 `/root/.dsh/profiles/web`、生产插件目录、生产 memory.db、真实 home cwd、真实 archiveRoot、真实备份目录。
+- 禁止调用 `/root/dsh-bin/dsha-plugin` 的生产 import 路径；该入口会改动宿主插件管理状态。若要做 Cordis 加载验证，必须建立隔离 profile/plugin-manager 根和独立端口/数据目录，先由 DSH 证明隔离参数有效。
+
+阶段 1：候选包与 npm 安装
+```sh
+set -eu
+STAGE="/tmp/dsha-p0-staging-<run-id>"
+PKG="/sdcard/DSHA/备份/候选/dsh-memory-core-732e3fa-20261120-194319.tar.gz"
+mkdir -p "$STAGE"/{plugin,cache,logs,fixture,archive,backup}
+sha256sum "$PKG"
+stat -c '%s %n' "$PKG"
+tar -tzf "$PKG" > "$STAGE/logs/tar-list.txt"
+tar -xzf "$PKG" -C "$STAGE/plugin"
+cd "$STAGE/plugin"
+node --version
+npm --version
+node --check scripts/export-home-archive.mjs
+node -e "import('node:sqlite').then(({DatabaseSync})=>{const d=new DatabaseSync(':memory:'); console.log(d.prepare('select sqlite_version() v').get()); d.close()})"
+npm ci --cache "$STAGE/cache" --prefer-offline --no-audit --no-fund
+node -e "import('onnxruntime-node').then(m=>console.log('onnxruntime-node import OK',Object.keys(m))).catch(e=>{console.error(e);process.exit(1)})"
+```
+- 若离线 npm ci 失败，保留日志并停止；不要临时复用生产 node_modules 软链伪装成 clean install。可以在有网环境下载 lockfile 精确依赖缓存后重新做隔离安装；原生模块安装脚本/平台二进制也必须验证。
+- 不要使用 `--ignore-scripts` 作为通过标准；这会跳过原生依赖安装步骤。
+
+阶段 2：静态入口与 Cordis 配置检查
+```sh
+cd "$STAGE/plugin"
+node --check lib/index.js
+node --check lib/store/db.js
+node --check lib/store/schema.js
+node --check scripts/export-home-archive.mjs
+node -e "const p=require('./package.json'); console.log({main:p.main,patch:p.dsh?.bundle?.patch,engines:p.engines,dependencies:p.dependencies})"
+test -f lib/index.js
+test -f cordis.patch.yml
+test -f scripts/export-home-archive.mjs
+test -f lib/permanent/home-archive.js
+```
+- 完整插件加载测试必须使用隔离 Cordis host/profile，且只加载一个 memory-core 候选实例；检查服务 `dyMemory`、工具注册数量/名称、patch 加载次数、重复注册日志。
+- 先只做静态检查和隔离加载；不得把候选与生产旧版同时注册在同一个 host。
+
+阶段 3：schema 4→5 隔离迁移
+- 从已脱敏的 schema 4 结构副本构造 staging DB；优先使用无个人正文的 schema fixture。若必须用生产 DB 副本，须先经负责人批准并在 staging 目录脱敏，不得将原库暴露给测试进程。
+- 保存迁移前 SQLite 一致性快照及 SHA-256；记录 `PRAGMA integrity_check`、`user_version`、`meta.schema_version`、所有表/索引清单、关键表行数、memory IDs、FTS/vector/entity/revision 计数。
+- 运行候选 `openDb()` 只对 staging DB 执行；确认新表、索引、列、schema_version=5；复核既有表行数、ID 集、索引/FTS/vector/entity/revision 不发生意外变化；再执行 `PRAGMA integrity_check`。
+- 注入失败点/构造迁移失败 fixture，检查迁移失败后是否存在部分 DDL、部分 ALTER、schema_version 却已标记 5 的状态；若出现，判定迁移流程必须先修复为显式可验证迁移步骤/失败停止机制，不能推进生产部署。
+- 迁移前后对照不得包含真实记忆正文；输出结构统计与哈希即可。
+
+阶段 4：exporter staging 运行（DB fixture 只读，输出目录可写）
+```sh
+mkdir -p "$STAGE/fixture/home" "$STAGE/archive" "$STAGE/backup"
+# fixture DB 中 raw_meta.cwd 必须使用 exporter 固定允许的逻辑值：
+# /sdcard/DSHA/生活/数据/home；该值仅为 DB 字段，不得访问真实 home 目录。
+node scripts/export-home-archive.mjs   --db "$STAGE/fixture/memory.db"   --out "$STAGE/archive"   --home-cwd "/sdcard/DSHA/生活/数据/home"
+tar -czf "$STAGE/backup/archive-staging.tar.gz" -C "$STAGE" archive
+tar -tzf "$STAGE/backup/archive-staging.tar.gz"
+```
+- fixture 必须含最小 raw_meta 表结构及代表性 fixture 行（user/self/tool/tombstone/extra/emotion）；DB 连接 readOnly/query_only；archive 输出目录必须为空的 staging 目录。
+- 检查生成的 JSONL、每日 Markdown、INDEX、README、历史备份；检查中文路径、重复执行幂等性、tombstone 追加、journal 错误退出码、并发修改时 consistency=false 的行为。
+- 不可用真实 archiveRoot；不可把真实 home cwd 当成文件系统输入。Exporter 会写档案目录，需把所有输出归档。
+
+阶段 5：autonomy 路径对齐（只在 staging）
+- 读取候选 memory 插件的实际 staging 绝对路径，核对 exporter 文件存在且可执行。
+- staging autonomy 配置副本中将 `homeArchiveMaintenance.exportScript` 指向 `$STAGE/plugin/scripts/export-home-archive.mjs`。
+- 确认 `memoryDbPath` 指向 staging fixture DB、`archiveRoot` 指向 staging archive、`backupDir` 指向 staging backup、`homeCwd` 仍为 exporter 允许的固定逻辑 cwd。
+- `enabled=false`；本轮不得启动 15 天调度，不得修改生产 profile。
+
+阶段 6：回滚演练（仅 staging）
+- 保存迁移前 DB 快照、迁移后 DB 快照、插件目录清单/哈希、配置副本。
+- 模拟候选加载失败/迁移失败：停止 staging host 与所有 staging DB 写者；隔离失败目录；恢复迁移前 DB 快照（包括一致的 WAL 状态）；恢复旧插件目录/旧配置副本；启动隔离 host 验证旧版可读写 staging fixture。
+- 不允许把 schema 5 DB 文件直接交回 schema 4 插件写入；若要回退代码，必须先恢复 schema 4 数据库快照。
+- 记录回滚命令、退出码、恢复前后哈希和 integrity_check。
+
+### 33.5 最终门槛
+
+P0 只有全部满足才可称“生产部署候选准备完成”：
+- clean `npm ci` 成功，原生依赖可加载；
+- 隔离 Cordis 加载无重复注册；
+- schema 4→5 迁移在结构副本上完整、幂等、失败安全；
+- exporter 在 Node 24 + 临时 DB/archiveRoot 下通过；
+- autonomy exporter 绝对路径已在 staging 对齐；
+- 失败回滚演练通过；
+- DSH 提交完整原始日志、命令、退出码、哈希和结构统计；
+- 负责人另行明确授权生产部署。
+
+### 33.6 当前执行声明与待办
+
+- GPT 已完成候选 commit 源码复核和 staging 计划。
+- DSH 报告中的候选 tar.gz 哈希/大小/清单/测试结果作为本轮引用证据；GPT 未直接读取 tar.gz，也未独立复算。
+- **本轮 staging 未运行；待 DSH 复跑。**
+- 未修改生产源码/profile/config/DB；未部署；未重启；未启用 M3-2B/永久双写/15 天调度。
+- 下一步 DSH 应先复核本节 staging 隔离边界与迁移风险；经负责人安排后，在隔离环境执行，不得将本方案视为生产部署授权。
+
+### 33.7 DSH 与 GPT 的交接协议提醒
+
+- `coordination/HANDOFF.md` 是 GPT、DSH 和负责人共同使用的唯一长期项目状态入口，不是普通汇报附件，也不是只给 GPT 阅读的历史文档。
+- 每次开始工作先读取全文、核对最新 Blob SHA/commit；完成后把新证据、决策、阻塞、未运行项写回同一文件，采用 SHA 乐观锁，避免覆盖并发更新。
+- DSH 每轮完成后必须向负责人交付一份**可直接转发给 GPT 的完整反馈**：任务标识、实际执行命令、原始输出、退出码、文件路径/hash、PASS/FAIL/BLOCKED/NOT RUN、生产副作用声明、HANDOFF 新旧 Blob SHA/commit/链接。不要只回复“完成”或只更新文件而不反馈。
+- DSH 必须明确提醒负责人把完整反馈转给 GPT；GPT 收到后会独立审查证据、更新计划并生成下一轮任务。
+- 不能把 GPT 生成的计划当作已执行结果；不能把未运行写成通过；不能因交接文档存在就省略直接反馈。
