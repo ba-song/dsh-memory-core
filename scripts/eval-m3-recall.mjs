@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { recall } from '../lib/recall/recall.js'
@@ -11,7 +11,7 @@ import { buildQuotesBlock } from '../lib/inject/quotes.js'
 import { scopeForSession } from '../lib/scope.js'
 import { evaluateRankedResults, explainRrf } from '../lib/recall/eval-metrics.js'
 import { eventChainCandidates } from '../lib/recall/event-chain.js'
-import { sha256File, validateAnnotationDataset, verifySnapshotFingerprint } from '../lib/recall/eval-dataset.js'
+import { assertOfflineSnapshotPath, sha256File, validateAnnotationDataset, verifySnapshotFingerprint } from '../lib/recall/eval-dataset.js'
 
 const args = process.argv.slice(2)
 const valueAfter = (flag) => {
@@ -22,7 +22,9 @@ const dbArgument = valueAfter('--db')
 if (!dbArgument) throw new Error('必须显式提供 --db 指向独立、一致的离线数据库快照；禁止使用默认生产数据库路径')
 const dbPath = resolve(dbArgument)
 if (!existsSync(dbPath)) throw new Error(`数据库快照不存在：${dbPath}`)
-if (existsSync(`${dbPath}-wal`) && (await import('node:fs')).statSync(`${dbPath}-wal`).size > 0) {
+const productionDbPath = resolve(join(process.env.DY_MEMORY_DIR || '/sdcard/DSHA/记忆/数据', 'memory.db'))
+assertOfflineSnapshotPath(dbPath, productionDbPath)
+if (existsSync(`${dbPath}-wal`) && statSync(`${dbPath}-wal`).size > 0) {
   throw new Error('数据库快照存在非空 WAL；请先在隔离副本上完成一致性快照/检查点，再运行评测')
 }
 const cwd = valueAfter('--cwd') || '/sdcard/DSHA/生活/数据/home'

@@ -1,9 +1,10 @@
 import test from 'node:test'
+import { symlinkSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { sha256File, validateAnnotationDataset, verifySnapshotFingerprint } from '../lib/recall/eval-dataset.js'
+import { assertOfflineSnapshotPath, sha256File, validateAnnotationDataset, verifySnapshotFingerprint } from '../lib/recall/eval-dataset.js'
 
 const sourceQueries = [{ id: 'q1', query: '记得我们约定的事情吗' }]
 const base = {
@@ -90,6 +91,21 @@ test('database snapshot fingerprint is verified against actual file bytes', asyn
     })
     assert.throws(() => verifySnapshotFingerprint('a'.repeat(64), actual), /SHA-256 mismatch/)
     assert.equal(verifySnapshotFingerprint(null, actual).pinned, false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('evaluator refuses the production database path, including a symlink alias', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-eval-path-'))
+  const production = join(dir, 'memory.db')
+  const alias = join(dir, 'snapshot-alias.db')
+  try {
+    writeFileSync(production, 'production-db')
+    assert.throws(() => assertOfflineSnapshotPath(production, production), /拒绝使用生产数据库路径/)
+    symlinkSync(production, alias)
+    assert.throws(() => assertOfflineSnapshotPath(alias, production), /拒绝使用生产数据库路径/)
+    assert.notEqual(assertOfflineSnapshotPath(join(dir, 'snapshot.db'), production).snapshotPath, production)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
