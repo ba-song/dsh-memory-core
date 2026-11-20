@@ -3,9 +3,9 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0015`  
-> 更新时间：2026-11-20（Asia/Shanghai）  
-> 更新者：GPT  
+> 版本：`HANDOFF-0016`  
+> 更新时间：2026-11-20 13:48（Asia/Shanghai）  
+> 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
 ---
@@ -326,17 +326,60 @@ DSH首次接入时：
 
 ## 14. 最新交接
 
-- 版本：`HANDOFF-0015`
-- 更新者：GPT
-- 时间：2026-11-20（Asia/Shanghai）
-- 基于旧文件blob SHA：`89230edf52c93a152fab1fe58d214fbb3d627a94`
-- 开发分支HEAD：`4b4b5f17a123533cceef7a0cd05f3a08ff5f2004`
-- Actions #62：https://github.com/ba-song/dsh-memory-core/actions/runs/44680017982（success，238 tests / 236 pass / 0 fail / 2 skipped）。
-- 派生文件安全写入进一步收口：读取现有派生文件时以O_NOFOLLOW打开并比较dev/ino；权限收紧改用已验证fd上的fchmodSync，不再在关闭fd后通过路径chmod文件，降低路径被替换时误chmod外部目标的风险。备份和临时文件以`wx`及0600创建，不再通过路径chmod备份文件。
-- Actions #61同样成功（238 / 236 / 0 / 2），验证派生文件O_NOFOLLOW读取和排他备份创建基础实现；#62验证fd权限收紧调整后仍全套通过。
-- 当前已验证的自动化：锁符号链接拒绝、锁文件身份保护、损坏锁保守回收、12进程并发追加、导出期journal变化检测、尾部半行保留和错误报告、派生文件历史备份、symlink输出边界。
-- 已知限制：目录祖先检查与后续mkdir/open/rename之间仍有平台级TOCTOU窗口；Node当前实现未使用openat/dirfd相对路径操作。DSHA Android共享存储通常由单用户应用操作，但外部进程可访问共享存储，因此不能宣称完全消除此类竞态。需在本机确认共享存储权限和实际威胁模型。
-- CI仍有2项跳过：`p4-vector-conflict-corpus`与`p4-ingest-pipeline`，日志明确因GitHub runner未安装DSHA BGE模型；真实embedding检索须DSHA隔离环境验证。
-- M3-2A-REPORT-01、M3-REF-06仍待DSH本地报告。GPT下一步继续审查目录TOCTOU可缓解措施、最终核对开发分支与交接状态，再提供完整DSH同步提示词。
-- 交接文件URL：https://github.com/ba-song/dsh-memory-core/blob/coordination/project-handoff/coordination/HANDOFF.md
-- 副作用：仅开发分支与交接分支GitHub提交；无生产数据库/配置/源码改动、无部署或重启。
+- 版本：`HANDOFF-0016`
+- 更新者：DSH
+- 时间：2026-11-20 13:48（Asia/Shanghai）
+- 基于旧文件 blob SHA：`b037ceb22be638c35a133567369982fdf48253a3`
+- 开发分支 HEAD：`4b4b5f17a123533cceef7a0cd05f3a08ff5f2004`
+- 生产版本：`bb77de2`（永久档案新实现**未部署**；生产 schema 4）
+
+### 本轮执行概况
+- 执行者：DSH（DSHA Android/proot，Node v24.19.0）
+- 工作包：`M3-2A-REPORT-01`、`M3-REF-06`、`HOME-ARCHIVE-ANDROID-VERIFY-01`
+- 最新 HEAD 全量测试：**238/238，0 fail，0 skipped，exit 0**（本地 BGE 模型可用，CI 的 2 项跳过在本机通过）
+- 永久档案专项：`tests/permanent-home-archive.test.mjs` **20/20 pass**
+
+### M3-2A-REPORT-01
+- 状态：**已完成（有证据）**
+- 报告：`/sdcard/DSHA/插件优化/M3-2A_生产episode治理候选报告.md`
+- 当前生产 episode：**69**（清理 11 条测试/空图片/验收残留后的状态；清理记录 `/sdcard/DSHA/插件优化/81-M3-2A清理执行记录.md`）
+- 分类：A 0、B 1、C 68、D 0；B 仅 #83（抖音观看记录，需负责人判断）
+- 证据：当前库只读统计、逐条 69 行候选表、#83/#86 历史区分
+- 未做：改写、归档、失效、清理；未进入 M3-2B
+
+### M3-REF-06
+- 状态：**部分 PASS / 部分 FAIL（有证据）**
+- 报告：`/sdcard/DSHA/插件优化/M3-REF-06_DSHA本地只读验证与风险复核.md`
+- FAIL（临时库复现）：
+  1. `searchArchive(withContext=true)` 可带出 tombstone 相邻消息（`lib/archive/tools.js:66-73` 无 `tombstone=0`）；
+  2. `RawArchive.tombstone(sid8,seq)` 无 cwd 条件，不同 cwd 同 file+seq 两条均被标记、FTS 均删（`lib/ingest/archive.js:468-473`）；
+  3. `updateMemory()` 只更新 FTS；vectors/entities/relations/quote 不更新；删除后 `memory_revisions`/`relations` 留孤儿（`lib/store/memories.js:99-106/128-136`）。
+- PASS：cleanup 只删 raw 日期目录、不删 DB；`eval-m3-recall.mjs` 只读安全；`eval-recall.mjs` 不可用于生产；全量 238/238。
+- 生产只读统计：raw_meta 58,320；raw_old 0（最早 10-27，约 11-26 才会过期）；tombstone 61；raw_fts 58,259；raw_vectors 57,896；emotion 1,889；raw 目录 24 天/65 文件；memory 引用 raw 27/p4 87/explicit 3，raw 失效 0。
+
+### HOME-ARCHIVE-ANDROID-VERIFY-01
+- 状态：**部分 PASS / 1 项 FAIL / 部分 BLOCKED**
+- 报告：`/sdcard/DSHA/插件优化/HOME-ARCHIVE-ANDROID-VERIFY-01_实机验证报告.md`
+- PASS：Android `/sdcard`+`/storage/emulated/0` 别名、O_NOFOLLOW 可用、wx 排他创建、非 home 跳过；锁/符号链接/半行/导出一致性/派生文件安全单测 20/20；raw 优先（永久失败不影响 raw）。
+- FAIL：12 个 Node 子进程同一瞬间并发追加 → 成功 2、失败 10（`home-archive writer lock is busy`），journal 未损坏；说明永久写是 best-effort，需 15 天补齐（或加重试）。
+- 平台差异：Android FUSE 下 fchmod 后实测 mode 660，不等于桌面 600/640。
+- BLOCKED：磁盘满、真实进程崩溃未在共享存储模拟。
+- NOT RUN：生产部署双写（未授权）；生产永久档案仍为 DSH 静态首次导出（16 天/1,902 轮/约 5.3MB），不是插件双写实机运行。
+
+### 生产安全与副作用
+- 未写生产数据库；未改 raw_meta/memories/FTS/vectors；
+- 未改生产源码/配置/profile；未部署、未重启；
+- 新增了永久档案首次导出的可见文件（负责人指定路径），未写 raw 数据；
+- 未调用 updateMemory/dailyConsolidate/cleanup；未输出真实原话正文到报告。
+
+### GPT 下一步需要处理
+1. 审查并修复 M3-REF-06 的 3 个 FAIL：`hitWindow` tombstone、`tombstone()` cwd、`updateMemory` 关联一致性；
+2. 决定是否给永久档案双写增加短重试/退避，以缓解 12 并发下 10/12 失败；
+3. 审查 `HOME-ARCHIVE-ANDROID-VERIFY-01` 的 FUSE 权限差异与派生文件安全实现；
+4. M3-2B 仍应先做快照+dry-run，不得直接批量 `updateMemory()`；
+5. 需要负责人决定：#83 、群聊/邮件保留/注入、15 天导出调度、永久档案备份。
+
+### 交接链接
+- 文件：https://github.com/ba-song/dsh-memory-core/blob/coordination/project-handoff/coordination/HANDOFF.md
+- 开发分支：https://github.com/ba-song/dsh-memory-core/tree/feat/m1-preference-memory
+- 本轮证据报告均在 `/sdcard/DSHA/插件优化/`。
