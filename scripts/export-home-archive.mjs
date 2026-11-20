@@ -231,9 +231,9 @@ export async function exportHomeArchive({ dbPath = DEFAULT_DB, outDir = DEFAULT_
         tombstoneEvents++
       }
     }
-    journal = readPermanentJournal(archiveDir)
     // 先完成DB缺失行/撤回标记补齐，再记录渲染起点；否则本轮自身修复会被误判为并发写入。
     const journalVersionAtStart = permanentJournalVersion(archiveDir)
+    journal = readPermanentJournal(archiveDir)
     const all = [...journal.events.values()].filter((event) => Boolean(event.cwd) && String(event.cwd).replace(/[/\\]+$/, '') === cwd)
     const byDay = new Map()
     for (const event of all) {
