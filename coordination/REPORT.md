@@ -91,3 +91,82 @@ const value = numericConfidence
 
 ## 8. 副作用
 只读/隔离 worktree；未改生产源码/DB/profile；未启动 staging/host；未部署/重启。
+
+
+---
+
+# REPORT-0014 · Memory P4 邻居过滤与语义冲突误判修复
+
+## 2026-11-21 · GPT 开发分支修改 · 等待 DSH 隔离验证
+
+## 1. 背景与决策
+
+依据 HANDOFF-0056 / REPORT-0013：
+- pending #8：memory_a=185、memory_b=355，原因 `sim=0.677 opposition`。
+- #185 数据显示 `status=active`，但 `superseded_by=320`、`valid_to` 有值；向量仍存在。
+- #355：“主人喜欢带有语气词的句子”。
+- #185：“主人希望汐说话带语气词、活泼些，不要冷冰冰”。
+- 旧 P4 从传入 vectors 直接 bestMatch，neighbor 查询只取 id/text/kind；旧 conflict 极性按整段判断，容易把不同语义对象的正负词拼接。
+
+负责人明确决策：**先修代码，数据后修**。
+
+## 2. 实施
+
+开发分支：`fix/p4-active-neighbors-semantic-opposition`，基于 `feat/m1-preference-memory`。
+
+### 2.1 P4 active neighbor filtering
+
+在向量 bestMatch 前，查询 memories 的有效 ID：
+- `status='active'`
+- `superseded_by IS NULL OR superseded_by=0 OR superseded_by=''`
+- `valid_to IS NULL`
+
+仅用有效 ID 过滤传入 vectors Map，再执行 bestMatch。选出 best 后，最终 neighbor SQL 再次施加相同条件，避免过期/被 supersede 的记忆参与冲突判断。向量表/历史数据本身未删除或改写。
+
+### 2.2 Clause-scoped opposition
+
+`hasOpposition` 改为成对比较分句：
+- 两边分句必须有明确相反极性；
+- 必须共享至少一个非停用主题字；
+- ANTONYMS 词对必须在同一对共享主题的分句内出现；
+- “不要冷冰冰”不能单独与“喜欢语气词”拼接成反义。
+保留主题匹配要求，避免只因“喜欢/讨厌”等泛词判冲突。
+
+### 2.3 Regression tests
+
+在 `tests/p4.test.mjs` 新增：
+- 已 supersede 且仍 status=active、仍有最高相似度向量的旧记录，不得成为邻居；应选中有效 active 记录。
+- “主人喜欢带有语气词的句子” + “主人希望汐说话带语气词，活泼些，不要冷冰冰”不判 opposition。
+- 对上述文本在相似度 0.95 时，`decideConflict` 应返回 merge。
+既有喜欢海/讨厌海、爱吃辣/讨厌吃辣等正向冲突测试仍保留。
+
+## 3. GitHub 文件核验
+
+| 文件 | Blob SHA |
+|---|---|
+| `lib/ingest/p4.js` | `e05b9c30b31d9e8546d67eb256ebdfdbea6bfdb8` |
+| `lib/ingest/conflict.js` | `cb960430d163d1c40be60a778162af19b5904ce4` |
+| `tests/p4.test.mjs` | `4ed68ce0de11a7c3b89de21a6c723c6421ef4100` |
+
+最新 commit：`d9d50ac087e40cef0de03f96e2a05248cfe4e5e2`。GPT 已重新 fetch 文件并核对 blob SHA。
+
+## 4. 验证状态
+
+- GPT 未运行 Node 测试。
+- P4 定向测试：NOT RUN。
+- conflict 定向测试：NOT RUN。
+- Memory 全量测试：NOT RUN。
+- DSH 隔离 worktree 复验：待执行。
+- 生产 DB/冲突队列/记忆状态：未改。
+- staging/host、部署、重启：NOT RUN。
+
+当前代码状态：**已提交开发分支，等待 DSH 验证；不得标记修复 PASS。**
+
+## 5. 数据后修门禁
+
+只有代码验证通过后，才由负责人单独授权处理：
+- #185：修正 active 与 superseded_by/valid_to 不一致；
+- #8：根据真实证据决定 resolved/stale，不自动清理；
+- #355 与 #320：核对后合并/处理。
+
+本轮不执行任何数据修复，不更新生产向量，不改生产冲突队列。
