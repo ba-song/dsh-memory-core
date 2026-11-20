@@ -3,7 +3,7 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0011`  
+> 版本：`HANDOFF-0012`  
 > 更新时间：2026-11-20（Asia/Shanghai）  
 > 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
@@ -326,16 +326,19 @@ DSH首次接入时：
 
 ## 14. 最新交接
 
-- 版本：`HANDOFF-0011`
+- 版本：`HANDOFF-0012`
 - 更新者：GPT
 - 时间：2026-11-20（Asia/Shanghai）
-- 基于旧文件blob SHA：`cf1e4c52013b4245c5469a453b1f22e233786325`
-- 本次变更：记录home归档导出期间JSONL并发变化检测及CI成功证据。
-- 开发分支HEAD：`22fc787046dee54c178f7266cb97f848b89e0554`
-- Actions #54：https://github.com/ba-song/dsh-memory-core/actions/runs/44678400560（success，235 tests / 233 pass / 0 fail / 2 skipped）。
-- 导出并发保护：完成DB缺失行/撤回标记补齐后，先捕获JSONL版本指纹，再读取渲染快照；Markdown/INDEX/README生成后重新捕获指纹。若不同，`consistent=false`、`journalStable=false`，INDEX记录告警，CLI退出码2。若稳定且无journal解析错误则consistent=true。
-- 版本指纹使用文件名、size、mtime、ctime、inode；该机制是乐观一致性检测，不是跨DB/JSONL原子事务，最终比较后仍有极短竞争窗口。设备时间戳粒度及并发进程行为仍需DSHA实测。
-- Actions #52/#53因后续push自动取消，不计为测试失败或通过。
+- 基于旧文件blob SHA：`e5147f75dcd47045cae478553889f9c481605dc1`
+- 开发分支HEAD：`2f7a93b261e408b4bd84de36195e4b8926baeb05`
+- Actions #56：https://github.com/ba-song/dsh-memory-core/actions/runs/44678985785（success，236 tests / 234 pass / 0 fail / 2 skipped）。
+- Actions #57：https://github.com/ba-song/dsh-memory-core/actions/runs/44679155199（success，237 tests / 235 pass / 0 fail / 2 skipped）。新增真实多进程并发写入测试，12个Node子进程并发追加不同raw_id，全部成功；journal 12条、解析错误0。子进程对短暂ELOCKED进行有限重试，验证并发竞争下锁和JSONL完整性。
+- 锁文件加固：staleLock使用lstat拒绝符号链接/非普通文件；通过O_NOFOLLOW打开锁文件读取owner；文件系统/path错误不作为stale证据；格式损坏的普通锁文件保留10分钟人工恢复兜底。
+- 锁释放加固：取得锁时保存fd的dev/ino；释放时只在路径仍指向同一普通文件时unlink，避免误删后继锁。注意lstat后unlink仍有极短TOCTOU窗口；若要完全消除需平台支持更强原子目录锁/文件描述符方案。
+- 新增测试：锁路径符号链接不被跟随或回收；损坏锁超过10分钟仍可按保守策略回收；12进程并发追加不产生JSONL解析错误。
+- 归档导出并发视图检测仍保留：完成DB补齐后捕获journal版本指纹，渲染后再次比较；不一致则INDEX告警且CLI退出码2。此为乐观检测，不是跨DB/JSONL原子快照。
+- 两个CI跳过项仍与DSHA BGE模型依赖有关，真实embedding模型检索未在GitHub CI验证。
 - 当前交接文件URL：https://github.com/ba-song/dsh-memory-core/blob/coordination/project-handoff/coordination/HANDOFF.md
-- 当前待办：M3-2A-REPORT-01、M3-REF-06仍待DSH；GPT继续检查异常中断/半行故障恢复和并发去重测试覆盖；DSHA验证O_NOFOLLOW、`/sdcard`别名、真实文件系统行为及正式离线评测仍待DSH。
-- 副作用：仅开发分支与交接分支GitHub提交；未修改生产环境、数据库、配置或部署。
+- M3-2A-REPORT-01、M3-REF-06仍待DSH本地报告。GPT继续可做项：审查尾部半行/异常中断、导出文件替换和归档路径TOCTOU；随后才汇总完整DSH提示词。
+- DSH本地仍需验证：Android/Termux O_NOFOLLOW支持、`/sdcard`别名、文件系统mtime/ctime精度、真实设备多进程写入、生产隔离离线评测。
+- 副作用：仅开发分支与交接分支GitHub提交；未修改生产DB、生产源码/profile/config、未部署、未重启。
