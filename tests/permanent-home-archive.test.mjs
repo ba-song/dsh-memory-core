@@ -1,0 +1,166 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {
+  copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync,
+} from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { openDb } from '../lib/store/db.js'
+import { RawArchive } from '../lib/ingest/archive.js'
+import { readPermanentJournal, appendPermanentEvent } from '../lib/permanent/home-archive.js'
+import { exportHomeArchive } from '../scripts/export-home-archive.mjs'
+import { dayOf } from '../lib/adapter/timefmt.js'
+
+const HOME = '/sdcard/DSHA/生活/数据/home'
+const OTHER = '/sdcard/DSHA/群聊/测试'
+const mk = (prefix) => {
+  const dir = join(tmpdir(), `dsh-home-archive-${prefix}-${process.pid}-${Math.random().toString(16).slice(2)}`)
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+const event = (type, seq, time, data) => ({ type, seq, time, data })
+const session = (id, cwd) => ({ header: { id, cwd } })
+
+test('home raw rows are best-effort dual-written as append-only JSONL events', () => {
+  const dir = mk('dual')
+  const { db } = openDb(dir)
+  const archiveDir = join(dir, 'permanent')
+  const raw = new RawArchive({
+    db, dir: join(dir, 'raw'), cwdPrefixes: [HOME, OTHER],
+    permanentArchiveEnabled: true, permanentArchiveDir: archiveDir, permanentArchiveHomeCwd: HOME,
+    log: { warn() {}, info() {} },
+  })
+  try {
+    const at = Date.now()
+    raw.onEvent(session('home-session-001', HOME), event('user/message', 1, at, {
+      message: { source: { kind: 'user' } }, content: [{ type: 'text', text: '永久档案双写测试正文' }],
+    }))
+    const journal = readPermanentJournal(archiveDir)
+    assert.equal(journal.events.size, 1)
+    const [saved] = [...journal.events.values()]
+    assert.equal(saved.role, 'user')
+    assert.equal(saved.text, '永久档案双写测试正文')
+    assert.equal(saved.cwd, HOME)
+    assert.equal(saved.raw_id > 0, true)
+  } finally { db.close(); rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('permanent archive failure does not roll back successful raw file or raw_meta writes', () => {
+  const dir = mk('failure')
+  const { db } = openDb(dir)
+  const badPath = join(dir, 'not-a-directory')
+  writeFileSync(badPath, 'block')
+  const warnings = []
+  const raw = new RawArchive({
+    db, dir: join(dir, 'raw'), cwdPrefixes: [HOME],
+    permanentArchiveEnabled: true, permanentArchiveDir: badPath, permanentArchiveHomeCwd: HOME,
+    log: { warn(message) { warnings.push(String(message)) }, info() {} },
+  })
+  try {
+    const at = Date.now()
+    raw.onEvent(session('home-session-fail', HOME), event('user/message', 1, at, {
+      message: { source: { kind: 'user' } }, content: [{ type: 'text', text: 'raw 必须成功' }],
+    }))
+    assert.equal(db.prepare('SELECT count(*) c FROM raw_meta WHERE cwd=?').get(HOME).c, 1)
+    assert.ok(existsSync(join(dir, 'raw', dayOf(at), 's-home-se.md')))
+    assert.ok(warnings.some((message) => message.includes('home 永久档案双写失败')))
+  } finally { db.close(); rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('non-home cwd never writes to the home permanent journal', () => {
+  const dir = mk('scope')
+  const { db } = openDb(dir)
+  const archiveDir = join(dir, 'permanent')
+  const raw = new RawArchive({
+    db, dir: join(dir, 'raw'), cwdPrefixes: [HOME, OTHER],
+    permanentArchiveEnabled: true, permanentArchiveDir: archiveDir, permanentArchiveHomeCwd: HOME,
+    log: { warn() {}, info() {} },
+  })
+  try {
+    raw.onEvent(session('other-session', OTHER), event('user/message', 1, Date.now(), {
+      message: { source: { kind: 'user' } }, content: [{ type: 'text', text: '群聊不能进入 home 永久档案' }],
+    }))
+    assert.equal(db.prepare('SELECT count(*) c FROM raw_meta WHERE cwd=?').get(OTHER).c, 1)
+    assert.equal(readPermanentJournal(archiveDir).events.size, 0)
+  } finally { db.close(); rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('same short session filename and seq in different cwd only tombstones the matching cwd', () => {
+  const dir = mk('tombstone-scope')
+  const { db } = openDb(dir)
+  const archiveDir = join(dir, 'permanent')
+  const raw = new RawArchive({
+    db, dir: join(dir, 'raw'), cwdPrefixes: [HOME, OTHER],
+    permanentArchiveEnabled: true, permanentArchiveDir: archiveDir, permanentArchiveHomeCwd: HOME,
+    log: { warn() {}, info() {} },
+  })
+  try {
+    const at = Date.now()
+    raw.onEvent(session('aaaaaaaa-home-session', HOME), event('user/message', 1, at, {
+      message: { source: { kind: 'user' } }, content: [{ type: 'text', text: 'home 原文' }],
+    }))
+    raw.onEvent(session('aaaaaaaa-group-session', OTHER), event('user/message', 1, at + 1, {
+      message: { source: { kind: 'user' } }, content: [{ type: 'text', text: 'group 原文' }],
+    }))
+    raw.onEvent(session('aaaaaaaa-home-session', HOME), event('message/recall', 2, at + 2, { seq: 1 }))
+    const rows = db.prepare('SELECT cwd,tombstone,raw_text FROM raw_meta WHERE seq=1 ORDER BY id').all()
+    assert.equal(rows.length, 2)
+    assert.equal(rows.find((row) => row.cwd === HOME).tombstone, 1)
+    assert.equal(rows.find((row) => row.cwd === OTHER).tombstone, 0)
+    const journal = readPermanentJournal(archiveDir)
+    assert.ok(journal.tombstones.size >= 1)
+  } finally { db.close(); rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('duplicate raw_id is idempotent and does not append a second base event', () => {
+  const dir = mk('idempotent')
+  const archiveDir = join(dir, 'permanent')
+  const item = { raw_id: 77, day: '2026-11-20', seq: 4, role: 'user', time: '12:00:00', at: 1795156800000, text: '同一条', extra: {}, emotion: null }
+  try {
+    assert.equal(appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: item }).appended, true)
+    assert.equal(appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: item }).duplicate, true)
+    assert.equal(readPermanentJournal(archiveDir).events.size, 1)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('export repairs missing journal rows from read-only DB and does not depend on raw files', async () => {
+  const dir = mk('export')
+  const { db, file: dbPath } = openDb(dir)
+  const archiveDir = join(dir, 'permanent')
+  const rawDir = join(dir, 'raw')
+  const raw = new RawArchive({
+    db, dir: rawDir, cwdPrefixes: [HOME],
+    permanentArchiveEnabled: true, permanentArchiveDir: archiveDir, permanentArchiveHomeCwd: HOME,
+    getPersona: () => ({ emotionAt: () => ({ label: '平静', valence: 0.16, intensity: 0.2, confidence: 0.9 }) }),
+    log: { warn() {}, info() {} },
+  })
+  const at = Date.now()
+  try {
+    raw.onEvent(session('home-export-session', HOME), event('user/message', 1, at, {
+      message: { source: { kind: 'user' } }, content: [{ type: 'text', text: '补齐器应恢复这段正文' }],
+    }))
+    raw.onEvent(session('home-export-session', HOME), event('assistant/message', 2, at + 1, {
+      content: [{ type: 'text', text: '我会把这段写入永久档案' }],
+    }))
+    raw.onEvent(session('home-export-session', HOME), event('message/recall', 3, at + 2, { seq: 1 }))
+    db.close()
+
+    // 模拟永久双写缺失；数据库仍保留 raw_meta，且 raw Markdown 文件被清理。
+    rmSync(join(archiveDir, '_events'), { recursive: true, force: true })
+    rmSync(rawDir, { recursive: true, force: true })
+    const result = await exportHomeArchive({ dbPath, outDir: archiveDir, homeCwd: HOME, now: at + 1000 })
+    assert.equal(result.ok, true)
+    assert.equal(result.repaired, 2)
+    const day = dayOf(at)
+    const markdown = readFileSync(join(archiveDir, `${day}.md`), 'utf8')
+    assert.match(markdown, /补齐器应恢复这段正文/)
+    assert.match(markdown, /我会把这段写入永久档案/)
+    assert.match(markdown, /已撤回/)
+    assert.ok(existsSync(join(archiveDir, 'INDEX.json')))
+    assert.ok(existsSync(join(archiveDir, 'README.md')))
+    assert.ok(existsSync(join(archiveDir, '_events', `${day}.jsonl`)))
+  } finally {
+    try { db.close() } catch {}
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
