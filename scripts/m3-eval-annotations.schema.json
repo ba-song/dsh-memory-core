@@ -83,7 +83,43 @@
               "groupId": {
                 "type": "string"
               }
-            }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "level": {
+                      "const": "external"
+                    }
+                  },
+                  "required": [
+                    "level"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "contactId"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "level": {
+                      "const": "group"
+                    }
+                  },
+                  "required": [
+                    "level"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "groupId"
+                  ]
+                }
+              }
+            ]
           },
           "asOf": {
             "type": [

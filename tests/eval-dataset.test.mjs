@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { validateAnnotationDataset } from '../lib/recall/eval-dataset.js'
 
 const sourceQueries = [{ id: 'q1', query: '记得我们约定的事情吗' }]
@@ -58,4 +59,12 @@ test('external and group annotations require exact derived identity labels', () 
   const invalid = structuredClone(base)
   invalid.queries[0].scope = { level: 'external', cwd: '/sdcard/DSHA/渠道/qq/100000001' }
   assert.throws(() => validateAnnotationDataset(invalid, sourceQueries), /external scope requires contactId/)
+})
+
+test('checked-in annotation template matches the evaluator query set', () => {
+  const dataset = JSON.parse(readFileSync(new URL('../scripts/m3-eval-annotations.template.json', import.meta.url), 'utf8'))
+  const queries = JSON.parse(readFileSync(new URL('../scripts/m3-eval-queries.json', import.meta.url), 'utf8'))
+  assert.deepEqual(validateAnnotationDataset(dataset, queries), {
+    valid: true, queryAnnotations: queries.length, labelledQueries: 0, positiveLabels: 0,
+  })
 })
