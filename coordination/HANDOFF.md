@@ -2994,3 +2994,46 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - 基于旧 blob：`81b7456fcdeb2468d590c4c55b43bebe0c94e287`
 - REPORT-0005：`coordination/REPORT.md`
 - 下一位更新者必须重新读取最新 blob SHA。
+
+---
+
+## 47. EI-0 契约修订决策（HANDOFF-0049）
+
+> 完整报告：coordination/REPORT.md（REPORT-0006）
+> REPORT commit：70cf787fd9c40e9a5da907fa40088b72b697badb
+> REPORT blob：1ba38b583434de2cbe350d41ede0898379d5a69a
+> 基于 HANDOFF-0048 blob：79bb0afb56b1f4817945d544c3d8604c925c460e
+> 本轮仅更新协调文档；未修改插件源码、未运行测试、未连接/修改生产 DB、未启动 staging、未部署/重启。
+
+### 47.1 四项结构性裁决
+1. Event/Appraisal 分离：Event 仅记录不可变触发事实；Appraisal 是不可变判断版本。重新评价追加，不修改旧事件/评价。
+2. Episode 多来源：采用 emotion_episode_sources(episode_id, appraisal_id, weight, added_at, source_role) junction 表；保留旧 appraisal_id 作为 primary 兼容字段；旧数据回填必须幂等。
+3. MemoryLink 归属：放在 Memory DB；Persona event/appraisal ID 是 opaque 外部引用，不做跨库 FK。删除/撤回只标 invalidated/dangling，不删除事件；双库一致性用幂等 outbox/inbox，不做跨 SQLite 事务。
+4. State target：按 experiencer+target 分区；每个 emotion item 带 target；新增 stateFor(target)；旧 state() global primary 保持兼容。
+
+### 47.2 其他契约决定
+- 不设情绪 ontology/组合总量上限；正负情绪并存、不抵消。
+- 同 label + 同 target 合并展示，effective intensity 取衰减后最大值；保留全部 source IDs。
+- primary label 仅兼容展示，按 target 过滤后以 intensity×confidence 排序，稳定 tie-break。
+- 低置信 shadow 初值：>=0.65 可进入 active episode 候选；0.45–0.65 仅保留 appraisal；<0.45 uncertain/abstain。待隔离评测校准。
+- 单次 appraisal 最多 12 个有效 items 是资源保护，不是情绪种类/组合上限；State 默认展示最多 8 项，完整集合可分页。
+- Event dedupe_key 唯一约束建议 (experiencer,source_kind,dedupe_key)；时间字段分开 occurred_at/recorded_at/appraised_at；Link temporal_precision 必填。
+- API 兼容：保留旧字段/签名，新增 emotions[]、stateFor(target)、capabilities.emotionV2=true、schema_version=2；旧 Memory 不读新字段。
+- Persona DB 内事件/Appraisal/Episode/EpisodeSource 单事务；MemoryLink 独立事务，采用 outbox/inbox 幂等重试。
+- 低置信不改关系/人格/记忆权重；recall 首阶段 shadow only。
+
+### 47.3 状态
+| 项目 | 状态 |
+|---|---|
+| 四项结构性设计决策 | 已完成（GPT决策） |
+| EI-0 修订契约 | 已完成，待DSH只读复核 |
+| EI-1 | NOT STARTED，需 EI-0 PASS 后再排期 |
+| Persona/Memory 源码修改与测试 | NOT RUN |
+| DB迁移/DSHA E2E | NOT RUN |
+| P0 staging | NOT RUN，待负责人决定 |
+| 生产写入/部署 | 未授权、未执行 |
+
+### 47.4 下一步
+- DSH：只读复核 REPORT-0006，重点检查 junction 迁移兼容、Memory DB Link/outbox 设计、target state API、阈值/上限是否可落地；不得实施。
+- GPT：收到复核后定稿 EI-0；EI-0 PASS 后再在 Persona 开发分支实施 EI-1 纯函数层。
+- 负责人：继续作为唯一中转和授权人；本次不代表授权 staging 或生产操作。
