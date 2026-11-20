@@ -3265,3 +3265,53 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - 基于旧 blob：`96e68ded1c1ccf0c586b340d3d022ed7a54b8b0f`
 - REPORT-0013：`coordination/REPORT.md`
 - 下一位更新者必须重新读取最新 blob SHA。
+
+
+---
+
+## 54. Memory P4 冲突误判代码修复（HANDOFF-0057，等待 DSH 隔离验证）
+
+> 基于 HANDOFF-0056 / REPORT-0013。负责人决定先修代码、数据后修。
+> 仓库：`ba-song/dsh-memory-core`
+> 开发分支：`fix/p4-active-neighbors-semantic-opposition`
+> 分支基于 `feat/m1-preference-memory`；未修改 main、生产源码或生产数据。
+
+### 54.1 修复内容
+
+1. **P4 邻居与向量过滤**
+   - 向量匹配前，从 `memories` 读取有效候选 ID，仅允许 `status='active'`、`superseded_by IS NULL OR =0 OR =''`、`valid_to IS NULL`。
+   - 对传入 vectors Map 只保留上述有效 ID，再运行 bestMatch，避免旧向量遮蔽真正的 active 邻居。
+   - 最终按同一条件再次查询 neighbor，作为第二道防线。
+2. **冲突极性分句/同对象**
+   - `hasOpposition` 改为成对比较两边的分句。
+   - 只有分句极性相反且共享至少一个非停用主题字，才可判 opposition。
+   - 明确反义词也必须出现在这对共享主题的分句中。
+   - 修正换行分句正则。
+3. **回归测试**
+   - 在 `tests/p4.test.mjs` 增加 stale/superseded 旧记忆仍带最高向量时，必须选 active 当前记忆的管线测试。
+   - 增加“喜欢带有语气词的句子”与“希望汐说话带语气词，活泼些，不要冷冰冰”不构成 opposition、相似度高时 merge 的测试。
+
+### 54.2 GitHub 交付
+
+- 分支：`fix/p4-active-neighbors-semantic-opposition`
+- 最新 commit：`d9d50ac087e40cef0de03f96e2a05248cfe4e5e2`
+- `lib/ingest/p4.js` blob：`e05b9c30b31d9e8546d67eb256ebdfdbea6bfdb8`
+- `lib/ingest/conflict.js` blob：`cb960430d163d1c40be60a778162af19b5904ce4`
+- `tests/p4.test.mjs` blob：`4ed68ce0de11a7c3b89de21a6c723c6421ef4100`
+- GPT 已重新 fetch 核对上述 blob。
+- GPT 未运行 Node 测试；新增测试和全量测试均 NOT RUN。
+
+### 54.3 下一步
+
+- DSH 在隔离 worktree 拉取精确 commit，执行 P4/conflict 定向测试及 Memory 全量测试。
+- 重点确认 active 过滤同时作用于 vectors Map 和最终 neighbor 查询；空字符串 superseded_by 也视为未 superseded。
+- 重点确认既有真正冲突（喜欢海/讨厌海、爱吃辣/讨厌吃辣等）仍被识别。
+- 测试通过前，不修 #185/#8/#355 数据。
+- 数据修复必须等代码验证通过后，由负责人另行授权。
+
+### 54.4 边界
+
+- 只改开发分支 2 个源码文件和 1 个测试文件。
+- 未改生产 DB、冲突队列、记忆状态、profile、main。
+- 未运行生产数据修复、staging/host、部署或重启。
+- EI-2/EI-3/生产集成仍 NOT RUN。
