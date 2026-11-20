@@ -3,7 +3,7 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0013`  
+> 版本：`HANDOFF-0014`  
 > 更新时间：2026-11-20（Asia/Shanghai）  
 > 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
@@ -326,18 +326,20 @@ DSH首次接入时：
 
 ## 14. 最新交接
 
-- 版本：`HANDOFF-0013`
+- 版本：`HANDOFF-0014`
 - 更新者：GPT
 - 时间：2026-11-20（Asia/Shanghai）
-- 基于旧文件blob SHA：`79fe5239823ca814b35975228a650bef6148ffb7`
-- 开发分支HEAD：`8a76ee8af12059bd164d4c839edfa07fa6e27277`
-- Actions #57：https://github.com/ba-song/dsh-memory-core/actions/runs/44679155199（success，237 tests / 235 pass / 0 fail / 2 skipped）。真实多进程测试：12个Node子进程并发追加不同raw_id，全部成功，journal 12条且解析错误0。
-- Actions #58：https://github.com/ba-song/dsh-memory-core/actions/runs/44679385034（failure，新增导出尾部损坏测试的fixture没有初始化raw_meta schema，错误为`raw_meta 缺少必要字段：id`；这是测试fixture问题，不是生产代码失败）。
-- Actions #59：https://github.com/ba-song/dsh-memory-core/actions/runs/44679497051（success，238 tests / 236 pass / 0 fail / 2 skipped）。已在尾部损坏导出测试中通过RawArchive初始化DB schema；新测试确认导出器报告1条journalErrors、consistent=false、journalStable=true，保留JSONL原始字节不变，并仍能导出有效事件到Markdown。
-- 锁文件加固和多进程验证同HANDOFF-0012：拒绝锁符号链接/非普通文件；O_NOFOLLOW读取；释放时dev/ino身份比对；损坏普通锁保留超时人工恢复兜底；并发12进程测试通过。
-- 导出期间并发变化检测：补齐完成后捕获JSONL版本指纹，渲染后复核；发现变化则INDEX告警、consistent=false、CLI退出码2。该机制不是跨DB/JSONL原子快照。
-- 半行策略验证：追加前不截断既有尾部字节，若末字节不是换行则先补换行再追加；无法解析的尾部记录在导出结果与INDEX中显式报告，原始JSONL不被自动修复或删除。
+- 基于旧文件blob SHA：`f3dbb2ca28a587df670c5960ff8fbc9e608efe1d`
+- 开发分支HEAD：`e57722c8711870424e90042428fe64fafd5e008f`
+- Actions #61：https://github.com/ba-song/dsh-memory-core/actions/runs/44679770673（success，238 tests / 236 pass / 0 fail / 2 skipped）。
+- 派生文件写入器安全加固：读取既有Markdown/INDEX/README时先lstat并通过O_NOFOLLOW打开，比较路径与fd的dev/ino；拒绝符号链接和非普通文件。备份文件采用wx排他创建，遇到已有路径则使用唯一历史备份名，避免跟随备份目标符号链接。
+- 修复备份错误处理边界：只有读取源派生文件时的ENOENT表示文件不存在；备份创建失败不再被误当作源文件不存在而吞掉，备份失败会终止本次替换，保留旧文件。
+- Actions #58为新增尾部损坏测试fixture缺少raw_meta schema而失败；#59已修复fixture并通过（238 tests含该测试）。该失败不涉及生产逻辑。
+- Actions #57：12个Node子进程并发追加测试成功，12条事件全部落盘、journal解析错误0。
+- Actions #56：锁路径符号链接拒绝、锁释放dev/ino身份校验、损坏锁恢复等测试通过。
+- Actions #54：导出期间journal变化指纹检测通过。导出视图乐观一致性检测不是跨DB/JSONL原子快照。
+- 尾部半行策略：不截断/覆盖已有不完整字节；后续append先补换行；导出将损坏行放入journalErrors并使consistent=false，但仍可导出有效记录。原始JSONL保持不变。
 - 当前交接文件URL：https://github.com/ba-song/dsh-memory-core/blob/coordination/project-handoff/coordination/HANDOFF.md
-- M3-2A-REPORT-01、M3-REF-06仍待DSH本地报告。GPT继续可做项：复核派生文件原子替换/备份路径的符号链接风险和TOCTOU；完成后整理完整DSH同步提示词。
-- DSHA本机仍需验证：Android/Termux O_NOFOLLOW支持、`/sdcard`别名、mtime/ctime精度、真实文件系统多进程写入、离线评测和模型依赖。
-- 副作用：仅开发分支与交接分支GitHub提交；无生产DB/配置/源码更改、无部署、无重启。
+- M3-2A-REPORT-01、M3-REF-06仍待DSH本地报告。GPT继续检查范围：导出文件替换在Android/Termux文件系统上的原子性与权限语义、路径祖先TOCTOU残余；然后整理完整自包含DSH同步提示词。
+- DSHA仍需实机验证：O_NOFOLLOW、rename语义、`/sdcard`别名、mtime/ctime精度、并发进程行为和模型依赖评测。
+- 副作用：仅开发分支和交接分支GitHub提交；没有生产数据库/源码/profile/config改动、部署或重启。
