@@ -595,11 +595,17 @@ test('12 concurrent child processes use explicit best-effort append semantics wi
     const journal = readPermanentJournal(archiveDir)
     assert.equal(journal.errors.length, 0, 'lock contention must not corrupt JSONL')
     assert.equal(journal.events.size, appended.length, 'only successful appends may appear in the journal')
-    const seen = new Set()
-    for (const [id] of journal.events) {
-      assert.ok(!seen.has(id), `duplicate raw_id ${id}`)
-      seen.add(id)
+    const rawIds = []
+    for (const name of readdirSync(join(archiveDir, '_events'))) {
+      if (!name.endsWith('.jsonl')) continue
+      for (const line of readFileSync(join(archiveDir, '_events', name), 'utf8').split('\\n')) {
+        if (!line.trim()) continue
+        const event = JSON.parse(line)
+        if (event.type !== 'tombstone') rawIds.push(Number(event.raw_id))
+      }
     }
+    assert.equal(new Set(rawIds).size, rawIds.length, 'journal must not contain duplicate raw_id rows')
+    assert.deepEqual(new Set(rawIds), new Set(appended.map((row) => row.rawId)), 'journal rows must exactly match successful appends')
     for (const row of failed) assert.equal(journal.events.has(row.rawId), false, `failed raw_id ${row.rawId} must not be partially written`)
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
