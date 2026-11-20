@@ -62,7 +62,7 @@ test('permanent archive failure does not roll back successful raw file or raw_me
       message: { source: { kind: 'user' } }, content: [{ type: 'text', text: 'raw 必须成功' }],
     }))
     assert.equal(db.prepare('SELECT count(*) c FROM raw_meta WHERE cwd=?').get(HOME).c, 1)
-    assert.ok(existsSync(join(dir, 'raw', dayOf(at), 's-home-se.md')))
+    assert.ok(existsSync(join(dir, 'raw', dayOf(at), 's-home-ses.md')))
     assert.ok(warnings.some((message) => message.includes('home 永久档案双写失败')))
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }) }
 })
