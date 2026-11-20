@@ -123,7 +123,7 @@ try {
       .filter((hit) => relevanceOf(hit) >= 0.55)
     const hitsBlock = buildHitsBlock(injectedHits, { maxItems: 3, maxChars: 200, minScore: 0.55 })
     const injectedCount = hitsBlock ? (hitsBlock.match(/^- \[/gm) ?? []).length : 0
-    const quotesBlock = queryScope.raw === 'none' ? '' : buildQuotesBlock(db, { cwd: queryCwd, hits: [], query: item.query, maxHits: 2 }).block
+    const quotesBlock = queryScope.raw === 'none' || asOfAt !== null ? '' : buildQuotesBlock(db, { cwd: queryCwd, hits: [], query: item.query, maxHits: 2 }).block
     if (String(item.id).startsWith('g')) generalizedInjectionCount += injectedCount
     if (item.placeholder === true) placeholderInjectionCount += injectedCount
     const expected = Array.isArray(item.expectedContains) ? item.expectedContains : []
@@ -131,8 +131,8 @@ try {
     const matching = expected.length
       ? top.filter((hit) => matches(hit.text)).length
       : null
-    const stableHit = expected.length > 0 && matches(queryStableText)
-    const quotesHit = expected.length > 0 && matches(quotesBlock)
+    const stableHit = asOfAt === null && expected.length > 0 && matches(queryStableText)
+    const quotesHit = asOfAt === null && expected.length > 0 && matches(quotesBlock)
     const hitsBlockOnly = expected.length > 0 && matches(hitsBlock)
     const hitsOnly = expected.length > 0 && found.slice(0, 3).some((hit) => matches(hit.text))
     // Coverage measures what the agent can actually see, not retrieval-only candidates.
