@@ -201,7 +201,7 @@ test('repeated tombstone is idempotent and incomplete trailing JSONL bytes are p
     assert.equal(journal.events.size, 1)
     assert.ok(journal.tombstones.has(88))
     assert.equal(journal.errors.length, 1)
-    assert.ok(readFileSync(file, 'utf8').startsWith(brokenTail + '\\n'))
+    assert.ok(readFileSync(file, 'utf8').startsWith(brokenTail + '\n'))
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
