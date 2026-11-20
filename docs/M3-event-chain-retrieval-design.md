@@ -1,6 +1,6 @@
 # M3 Event-chain Retrieval: Evidence-constrained Design
 
-Status: design note only. This document does not claim event-chain retrieval is implemented.
+Status: a read-only, evidence-gated selector prototype exists in `lib/recall/event-chain.js` with isolated tests in `tests/event-chain.test.mjs`. It is not connected to the main recall pipeline or automatic injection; this document remains the admission and rollout contract.
 
 ## Existing primitives
 
@@ -11,6 +11,8 @@ Status: design note only. This document does not claim event-chain retrieval is 
   - `group-turn:<groupId>:<timestamp>`
 - `memories.source_ts`, `source_file`, `scope_type`, `scope_id`, `valid_from`, `valid_to`, and `temporal_kind` provide additional provenance and filtering context.
 - `findAnchorRow()` resolves raw-id, session-seq, timestamp, and text fallback anchors. Its SQL is constrained by cwd and `tombstone=0`.
+- New raw archive rows carry the full host session ID in `raw_meta.extra.sessionId`; provenance loaders use it to separate records even when short session filenames collide. Legacy rows without this metadata retain a degraded time/text fallback.
+- `eventChainCandidates()` currently requires the seed and each candidate to have an exact full-session anchor, same owner/core scope, active status, temporal validity, and at least one shared entity. Missing/legacy anchors fail closed.
 - `buildProvenanceBlock()` expands an anchor into a bounded same-file dialogue window and associates nearby thoughts/tools. This is local evidence-window reconstruction, not multi-event chain retrieval.
 - `graphCandidates()` is an entity graph path. The `relations` table exists in schema, but current code does not provide a complete, maintained event-edge lifecycle.
 - `buildSessionIndex()` gives a small owner-only recent episode/decision summary; it is not a ranked event-chain retriever.
@@ -62,10 +64,10 @@ Apply all gates before a candidate can enter ranking:
 - Duplicate anchors/windows: de-duplicated by stable raw anchor identity.
 - RRF explanation identifies the event-chain arm and its rank contribution.
 
-## Implementation order
+## Implementation status and remaining order
 
-1. Add a pure source-reference parser/chain selector with no database writes.
-2. Add isolated SQLite fixtures proving all admission gates.
-3. Integrate as a separate recall arm behind a disabled-by-default flag.
+1. **Done in development branch:** pure source-reference/chain selector with no database writes.
+2. **Added, awaiting DSHA execution:** isolated SQLite fixtures for same-session, same-scope, shared-entity, tombstone, missing-anchor, and as-of validity gates.
+3. Remaining: integrate as a separate recall arm behind a disabled-by-default flag.
 4. Add offline manually labelled evaluation and compare against the existing three arms.
 5. Only after a measured improvement and zero scope/tombstone violations, consider enabling it for owner-only recall.
