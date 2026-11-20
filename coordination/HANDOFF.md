@@ -3,7 +3,7 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0008`  
+> 版本：`HANDOFF-0009`  
 > 更新时间：2026-11-20（Asia/Shanghai）  
 > 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
@@ -326,16 +326,16 @@ DSH首次接入时：
 
 ## 14. 最新交接
 
-- 版本：`HANDOFF-0008`
+- 版本：`HANDOFF-0009`
 - 更新者：GPT
 - 时间：2026-11-20（Asia/Shanghai）
-- 基于旧文件blob SHA：`bd947b08130f8720dbb87e44285c364827c3da36`
-- 本次变更：离线评测生产DB硬链接别名防护；home归档路径祖先链符号链接防护（仅放行精确`/sdcard`系统别名）；更新CI证据和开发HEAD。
+- 基于旧文件blob SHA：`7ba5f91277e8724f96a9e5529e8b4a40230e41c2`
+- 本次变更：补记home归档路径防护、离线评测DB硬链接防护和最新CI结果；继续只读审查归档锁与并发行为。
 - 开发分支HEAD：`8d5943443d4951046c9f3cf1ba421dee03d4decd`
-- Actions #47：https://github.com/ba-song/dsh-memory-core/actions/runs/44676880334（success，233 tests / 231 pass / 0 fail / 2 skipped）。
-- Actions #48：https://github.com/ba-song/dsh-memory-core/actions/runs/44677099059（success，233 tests / 231 pass / 0 fail / 2 skipped）。
 - Actions #51：https://github.com/ba-song/dsh-memory-core/actions/runs/44677614819（success，234 tests / 232 pass / 0 fail / 2 skipped）。
-- Actions #50：https://github.com/ba-song/dsh-memory-core/actions/runs/44677488003（测试断言文本不匹配，实际拒绝逻辑触发；已由#51修正验证）。
+- 最新代码审查：`acquireLock()`使用`wx`排他创建；锁记录PID；活PID不回收；死PID锁回收通过`.home-archive.recovery`串行化并以dev/ino复核，防止并发回收误删新锁。`journalIndex()`在锁内以文件size/mtime/ctime/ino签名识别跨进程追加并重建索引，raw_id去重跨日期文件。
+- 尚未有多进程真实并发测试。导出器逐条补写调用同一写锁，但整个导出/Markdown派生过程没有持有全局锁；若导出期间同时发生新写入，JSONL事件日志仍是权威源，Markdown/INDEX可能暂时落后一轮，下一次导出可重建。需要决定是否为导出整体增加一致性锁或明确接受最终一致视图，并补隔离并发测试。
+- 尾部半行策略：追加前检测末字节并补换行，不破坏/截断历史半行；读取器把无法解析行报告为journalErrors。异常中断后的半行保留并暴露错误，不会静默修复或删除，需补故障注入测试。
 - 当前交接文件URL：https://github.com/ba-song/dsh-memory-core/blob/coordination/project-handoff/coordination/HANDOFF.md
-- 当前待办：M3-2A-REPORT-01、M3-REF-06仍待DSH；GPT继续审查home归档多进程并发/异常恢复；DSHA验证O_NOFOLLOW、`/sdcard`别名和设备路径链、正式离线评测仍待DSH。
+- 当前待办：M3-2A-REPORT-01、M3-REF-06仍待DSH；GPT继续评估导出并发一致性、尾部半行故障恢复测试和多进程去重；DSHA验证O_NOFOLLOW、`/sdcard`别名和真实文件系统行为、正式离线评测仍待DSH。
 - 副作用：仅开发分支与交接分支GitHub提交；未修改生产环境、数据库、配置或部署。
