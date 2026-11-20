@@ -89,3 +89,48 @@ if (value >= activeMin) return 'active_candidate'
 
 ## 7. 副作用
 只读/隔离 worktree；未改生产源码/DB/profile；未启动 staging/host；未部署/重启。
+
+
+---
+
+# REPORT-0012 · EI-1 confidence classification 单点修复
+
+## 2026-11-21 · GPT GitHub 开发分支修复 · 等待 DSH 第三轮复验
+
+> 依据 DSH HANDOFF-0054 / REPORT-0011。
+> Persona：`ba-song/dsh-persona-core`，分支 `feat/ei1-emotion-composition`。
+> 第二轮失败基线：`ad809910801983be61165ff037a2e138676854aa`。
+
+## 1. 缺陷与修复
+
+第二轮报告唯一失败为 `classifyEmotionConfidence(-0.1)` 返回 `uncertain`，期望 `unknown`；1.1 会被 clamp 到 1 并错误返回 `active_candidate`。
+
+在 `lib/emotion-compose.js` 中，保留原有缺失/非有限值检查；随后将 confidence 转为 Number，在 clamp/阈值分类前检查越界，若 <0 或 >1 则返回 `unknown`。合法 [0,1] 值直接用于阈值判断。既有 `normalizeEpisode` 对越界 confidence 归 null 的逻辑保持不变。
+
+在 `tests/emotion-compose.test.mjs` 中扩充 direct API 测试：
+- -0.1、1.1、NaN、Infinity、-Infinity -> unknown
+- 0 -> uncertain
+- 1 -> active_candidate
+
+## 2. GitHub 文件与提交核验
+
+| 项目 | 值 |
+|---|---|
+| source commit | `4b9a744cb2fbf6251b2b2787d3deac3eea3a4216` |
+| source blob | `4f460b2b10f0dea87cffaf550d2fbe66dde591c0` |
+| tests commit / branch HEAD | `92a763bfc096c490ba65878f7593961f982ea20a` |
+| tests blob | `9f813b973546d41fe933b75b1f18178b2e8418a4` |
+
+两个文件已重新 fetch，blob SHA 与上表一致。仅修改 EI-1 纯函数文件及其测试。
+
+## 3. 验证状态
+
+- GPT 本轮未运行 Node；新增测试、全量测试、CI：NOT RUN。
+- DSH 第三轮隔离复验：待执行。
+- 预期目标：新增测试 14/14，Persona 全量 317/317；这只是验收目标，不代表测试已通过。
+- 生产源码/DB/profile、appraisal、service、注入、composeEmotionView：未改。
+- staging/host、EI-2/EI-3、部署/重启：NOT RUN。
+
+## 4. 结论与交接
+
+当前状态仍为 **EI-1 IMPLEMENTATION REVIEW BLOCKED（等待复验）**。只有 DSH 在精确 commit 上复验通过，才可更新为 implementation PASS。测试通过不代表 EI-1 已生产集成，也不自动授权 EI-2/EI-3 或部署。
