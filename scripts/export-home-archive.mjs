@@ -4,7 +4,7 @@ import {
   chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync,
   renameSync, writeFileSync,
 } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join, resolve, parse, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { archiveLabel, normalizeRole, ROLE } from '../lib/roles.js'
@@ -70,9 +70,26 @@ function emotionMapOf(db, rawIds = []) {
 
 function assertNoSymlink(path, label) {
   try {
-    if (lstatSync(path).isSymbolicLink()) throw new Error(`${label} must not be a symbolic link: ${path}`)
+    if (lstatSync(path).isSymbolicLink() && path !== '/sdcard') throw new Error(`${label} must not be a symbolic link: ${path}`)
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
+  }
+}
+
+function assertNoSymlinkAncestors(path, label) {
+  const absolute = resolve(path)
+  const root = parse(absolute).root
+  let current = root
+  for (const part of absolute.slice(root.length).split(sep).filter(Boolean)) {
+    current = join(current, part)
+    let stat
+    try { stat = lstatSync(current) } catch (error) {
+      if (error?.code === 'ENOENT') continue
+      throw error
+    }
+    const allowedStorageAlias = current === '/sdcard' && stat.isSymbolicLink()
+    if (stat.isSymbolicLink() && !allowedStorageAlias) throw new Error(`${label} ancestor must not be a symbolic link: ${current}`)
+    if (!stat.isDirectory() && !allowedStorageAlias && current !== absolute) throw new Error(`${label} ancestor must be a directory: ${current}`)
   }
 }
 
@@ -163,12 +180,16 @@ export async function exportHomeArchive({ dbPath = DEFAULT_DB, outDir = DEFAULT_
   const archiveDir = resolve(outDir)
   const cwd = String(homeCwd ?? '').trim().replace(/[/\\]+$/, '')
   if (!isHomeArchiveCwd(cwd, DEFAULT_HOME_CWD)) throw new Error('home archive scope is fixed to /sdcard/DSHA/生活/数据/home; refusing other cwd values')
+  assertNoSymlinkAncestors(archiveDir, 'home archive output directory')
   assertNoSymlink(archiveDir, 'home archive output directory')
   mkdirSync(archiveDir, { recursive: true, mode: 0o700 })
+  assertNoSymlinkAncestors(archiveDir, 'home archive output directory')
   assertNoSymlink(archiveDir, 'home archive output directory')
   const eventsDir = join(archiveDir, '_events')
+  assertNoSymlinkAncestors(eventsDir, 'home archive _events directory')
   assertNoSymlink(eventsDir, 'home archive _events directory')
   mkdirSync(eventsDir, { recursive: true, mode: 0o700 })
+  assertNoSymlinkAncestors(eventsDir, 'home archive _events directory')
   assertNoSymlink(eventsDir, 'home archive _events directory')
   try { chmodSync(archiveDir, 0o700) } catch {}
   try { chmodSync(join(archiveDir, '_events'), 0o700) } catch {}

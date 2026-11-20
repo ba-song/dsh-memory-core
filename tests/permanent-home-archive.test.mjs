@@ -112,6 +112,25 @@ test('home archive scope cannot be retargeted to group or email cwd values', asy
   }
 })
 
+test('permanent archive refuses symlinked ancestor directories before creating anything', () => {
+  const dir = mk('symlink-ancestor')
+  const outside = join(dir, 'outside')
+  const parentLink = join(dir, 'parent-link')
+  mkdirSync(outside, { recursive: true })
+  symlinkSync(outside, parentLink, 'dir')
+  const redirectedArchive = join(parentLink, 'archive')
+  try {
+    assert.throws(
+      () => appendPermanentEvent({
+        dir: redirectedArchive, homeCwd: HOME, cwd: HOME,
+        event: { raw_id: 704, day: '2026-11-20', role: 'user', text: 'must not escape' },
+      }),
+      /ancestor must not be a symbolic link/,
+    )
+    assert.equal(existsSync(join(outside, 'archive')), false)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
 test('home raw rows are best-effort dual-written as append-only JSONL events', () => {
   const dir = mk('dual')
   const { db } = openDb(dir)
