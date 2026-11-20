@@ -18,7 +18,7 @@ test('syncDerived updates FTS/vector/entities/relations/quote/revision and confl
  const newEntity=scalar("SELECT id FROM entities WHERE name='GitHub' AND type='platform'")
  db.prepare('INSERT INTO relations(src,dst,relation,weight,memory_id,created_at) VALUES(?,?,?,?,?,?)').run(oldEntity.id,newEntity.id,'mentions',1,id,1)
  const q=Number(db.prepare("INSERT INTO conflict_queue(memory_a,memory_b,reason,created_at,status) VALUES(?,?,?,?,?)").run(id,other,'test',1,'pending').lastInsertRowid)
- const r=await updateMemory(db,id,{text:'主人现在使用 GitHub'},1,{syncDerived:true,sourceText:'主人现在使用 GitHub',embedFn:async()=>new Float32Array([0,1]),relationBuilder:async()=>[{src:newEntity.id,dst:oldEntity.id,relation:'uses',weight:0.8}]})
+ const r=await updateMemory(db,id,{text:'主人现在使用 GitHub',quote:'主人现在使用 GitHub'},1,{syncDerived:true,sourceText:'主人现在使用 GitHub',embedFn:async()=>new Float32Array([0,1]),relationBuilder:async()=>[{src:newEntity.id,dst:oldEntity.id,relation:'uses',weight:0.8}]})
  assert.equal(r.ok,true); assert.equal(r.revision,2); assert.equal(r.derived.vectorStatus,'fresh')
  assert.equal(scalar('SELECT count(*) c FROM vectors WHERE memory_id=?',id).c,1)
  assert.equal(scalar("SELECT count(*) c FROM fts_bigram WHERE rowid=? AND text MATCH '抖音'",id).c,0)

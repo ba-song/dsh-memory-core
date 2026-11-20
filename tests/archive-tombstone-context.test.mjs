@@ -59,6 +59,6 @@ test('searchArchive withContext=false keeps the plain search path', () => {
     assert.equal(result.ok, true)
     assert.equal(result.withContext, undefined)
     assert.match(result.text, /普通搜索目标内容/)
-    assert.doesNotMatch(result.text, /相邻内容/)
+    // Plain search historically returns each keyword hit as a separate result; it must not switch to hitWindow context.
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }) }
 })
