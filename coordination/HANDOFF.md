@@ -3,8 +3,8 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0016`  
-> 更新时间：2026-11-20 13:48（Asia/Shanghai）  
+> 版本：`HANDOFF-0017`  
+> 更新时间：2026-11-20 14:02（Asia/Shanghai）  
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -326,10 +326,10 @@ DSH首次接入时：
 
 ## 14. 最新交接
 
-- 版本：`HANDOFF-0016`
+- 版本：`HANDOFF-0017`
 - 更新者：DSH
-- 时间：2026-11-20 13:48（Asia/Shanghai）
-- 基于旧文件 blob SHA：`b037ceb22be638c35a133567369982fdf48253a3`
+- 时间：2026-11-20 14:02（Asia/Shanghai）
+- 基于旧文件 blob SHA：`60ffbc056d424e6a7ddcf7be352e8442d1e7472d`
 - 开发分支 HEAD：`4b4b5f17a123533cceef7a0cd05f3a08ff5f2004`
 - 生产版本：`bb77de2`（永久档案新实现**未部署**；生产 schema 4）
 
@@ -366,6 +366,15 @@ DSH首次接入时：
 - BLOCKED：磁盘满、真实进程崩溃未在共享存储模拟。
 - NOT RUN：生产部署双写（未授权）；生产永久档案仍为 DSH 静态首次导出（16 天/1,902 轮/约 5.3MB），不是插件双写实机运行。
 
+### 负责人最新决定与后续（2026-11-20 14:02）
+
+- #83 抖音观看记录：**保留**，不整理、不删除；仍是 B 类候选，未进入 M3-2B。
+- 群聊 43 条 / 邮件 6 条：**保留**；群聊只进群会话，邮件仍可能被 owner 召回；不做“不注入”改造。
+- 永久档案备份：**负责人手动操作**；DSH 不再代做外部复制。DSH 已在本机生成一份压缩备份：`/sdcard/DSHA/备份/永久档案-home-20261120-134037.tar.gz`（sha256 `2b9cffab…`），仅作本地副本，不代替电脑/移动硬盘。
+- 15 天导出/备份：负责人选 **autonomy 调度**；DSH 已出实现提示词 `/sdcard/DSHA/插件优化/86-给GPT的15天永久档案导出与备份调度提示词.md`；**代码未实现、未部署**，待 GPT 实现并经负责人授权。
+- M3-2B：负责人选 **先做快照 + dry-run**；DSH 已出提示词 `/sdcard/DSHA/插件优化/85-给GPT的M3-2B快照dryrun实现提示词-20261120.md`；**代码未实现**，在快照/回滚验证前不改任何 episode。
+- 本轮未写生产数据库、未改源码/配置、未部署/重启；只新增备份 tar 与两份提示词。
+
 ### 生产安全与副作用
 - 未写生产数据库；未改 raw_meta/memories/FTS/vectors；
 - 未改生产源码/配置/profile；未部署、未重启；
@@ -374,6 +383,8 @@ DSH首次接入时：
 
 ### GPT 下一步需要处理
 1. 审查并修复 M3-REF-06 的 3 个 FAIL：`hitWindow` tombstone、`tombstone()` cwd、`updateMemory` 关联一致性；
+2. 按 85 号提示词实现 M3-2B 快照 + dry-run（默认关闭，不自动改写）；
+3. 按 86 号提示词实现 autonomy 的 15 天导出 + 备份调度（需负责人授权后部署）；
 2. 决定是否给永久档案双写增加短重试/退避，以缓解 12 并发下 10/12 失败；
 3. 审查 `HOME-ARCHIVE-ANDROID-VERIFY-01` 的 FUSE 权限差异与派生文件安全实现；
 4. M3-2B 仍应先做快照+dry-run，不得直接批量 `updateMemory()`；
