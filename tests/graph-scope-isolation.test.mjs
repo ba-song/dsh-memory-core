@@ -33,6 +33,9 @@ test('graph traversal cannot use out-of-scope memories as seeds or hops', async 
     })
     linkMemory(db, privateId, '鲸鱼曾和主人约定一起看海')
     linkMemory(db, publicId, '主人公开表达过喜欢海边')
+    linkMemory(db, expiredId, '鲸鱼以前去过海边')
+    linkMemory(db, futureId, '鲸鱼计划未来去看海')
+    linkMemory(db, inactiveId, '鲸鱼已归档的旧记录')
 
     const external = scopeForSession({
       cwd: '/sdcard/DSHA/渠道/douyin/123',
