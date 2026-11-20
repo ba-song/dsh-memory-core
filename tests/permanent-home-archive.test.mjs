@@ -450,6 +450,35 @@ test('raw_id idempotency is global across date files and invalidates after exter
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
+test('export reports incomplete trailing journal records without rewriting the source log', async () => {
+  const dir = mk('export-trailing-partial')
+  const { db, file: dbPath } = openDb(dir)
+  const archiveDir = join(dir, 'permanent')
+  const eventsDir = join(archiveDir, '_events')
+  const day = '2026-11-20'
+  const journalFile = join(eventsDir, day + '.jsonl')
+  const valid = { raw_id: 1801, day, seq: 1, role: 'user', time: '10:00:00', at: 1795168800000, cwd: HOME, text: '完整事件仍可导出' }
+  const brokenTail = '{"raw_id":'
+  try {
+    mkdirSync(eventsDir, { recursive: true })
+    writeFileSync(journalFile, JSON.stringify(valid) + '\n' + brokenTail, 'utf8')
+    const before = readFileSync(journalFile, 'utf8')
+    db.close()
+    const result = await exportHomeArchive({ dbPath, outDir: archiveDir, homeCwd: HOME, now: valid.at + 1000 })
+    assert.equal(result.journalErrors.length, 1)
+    assert.equal(result.consistent, false)
+    assert.equal(result.journalStable, true)
+    assert.equal(readFileSync(journalFile, 'utf8'), before)
+    assert.match(readFileSync(join(archiveDir, day + '.md'), 'utf8'), /完整事件仍可导出/)
+    const index = JSON.parse(readFileSync(join(archiveDir, 'INDEX.json'), 'utf8'))
+    assert.equal(index.journalErrors.length, 1)
+    assert.equal(index.journalStable, true)
+  } finally {
+    try { db.close() } catch {}
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('daily markdown replacement preserves each prior version', async () => {
   const dir = mk('markdown-history')
   const { db, file: dbPath } = openDb(dir)
