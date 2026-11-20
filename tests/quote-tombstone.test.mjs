@@ -55,7 +55,7 @@ const out = { ok: true, test: 'quote-tombstone' }
 
 // 2) tombstone：raw_fts 同步删除 + raw_meta 置 1
 {
-  raw.tombstone('abc', 1)
+  raw.tombstone('abc', 1, cwd)
   const row = db.prepare('SELECT tombstone FROM raw_meta WHERE id=?').get(idA)
   assert.equal(row.tombstone, 1)
   const fts = db.prepare('SELECT count(*) c FROM raw_fts WHERE rowid=?').get(idA)

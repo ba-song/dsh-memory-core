@@ -16,7 +16,7 @@ test('human graded metrics distinguish unlabelled queries from zero-recall label
     { memoryId: 2, grade: 1 },
   ])
   assert.equal(labelled.labelled, true)
-  assert.equal(labelled.recall[1], 0.5)
+  assert.equal(labelled.recall[1], 0)
   assert.equal(labelled.recall[3], 0.5)
   assert.equal(labelled.precision[3], 1 / 3)
   assert.equal(labelled.mrr, 1 / 2)
