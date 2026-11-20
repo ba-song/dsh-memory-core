@@ -1,4 +1,5 @@
 import test from 'node:test'
+import { spawn } from 'node:child_process'
 import assert from 'node:assert/strict'
 import {
   chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync,
@@ -300,6 +301,50 @@ test('stale lock recovery checks owner process before deleting an old lock', () 
       (error) => error?.code === 'ELOCKED',
     )
     rmSync(recoveryDir, { recursive: true, force: true })
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('multiple processes append distinct events without corrupting the journal', async () => {
+  const dir = mk('multiprocess-append')
+  const archiveDir = join(dir, 'permanent')
+  const moduleUrl = new URL('../lib/permanent/home-archive.js', import.meta.url).href
+  const childSource = `
+    const [moduleUrl, dir, rawId] = process.argv.slice(1)
+    const { appendPermanentEvent } = await import(moduleUrl)
+    const event = { raw_id: Number(rawId), day: '2026-11-20', seq: Number(rawId), role: 'user', at: Date.now(), text: 'parallel append' }
+    for (let attempt = 0; attempt < 200; attempt++) {
+      try {
+        const result = appendPermanentEvent({ dir, homeCwd: '/sdcard/DSHA/生活/数据/home', cwd: '/sdcard/DSHA/生活/数据/home', event })
+        if (result.appended || result.duplicate) {
+          process.stdout.write(JSON.stringify(result))
+          process.exit(0)
+        }
+      } catch (error) {
+        if (error?.code !== 'ELOCKED') throw error
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5)
+    }
+    throw new Error('timed out waiting for archive writer lock')
+  `
+  const runChild = (rawId) => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', childSource, moduleUrl, archiveDir, String(rawId)], { stdio: ['ignore', 'pipe', 'pipe'] })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk })
+    child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk })
+    child.once('error', reject)
+    child.once('close', (code) => resolve({ code, stdout, stderr, rawId }))
+  })
+  try {
+    const results = await Promise.all(Array.from({ length: 12 }, (_, index) => runChild(1200 + index)))
+    for (const result of results) {
+      assert.equal(result.code, 0, `child ${result.rawId} failed: ${result.stderr}`)
+      assert.equal(JSON.parse(result.stdout).appended, true)
+    }
+    const journal = readPermanentJournal(archiveDir)
+    assert.equal(journal.events.size, 12)
+    assert.equal(journal.errors.length, 0)
+    assert.deepEqual([...journal.events.keys()].sort((a, b) => a - b), Array.from({ length: 12 }, (_, index) => 1200 + index))
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
