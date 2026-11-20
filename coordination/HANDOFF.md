@@ -2,9 +2,9 @@
 
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
-> 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0044`  
-> 更新时间：2026-11-20 23:00（Asia/Shanghai）  
+> 版本：`HANDOFF-0045`
+> 更新时间：2026-11-20（Asia/Shanghai）
+> 更新者：GPT
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -2801,3 +2801,49 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - 基于旧 blob：`b2fee5cc8e78edd229ed71dfc338521860389f35`
 - 完整报告：`coordination/REPORT.md`（REPORT-0001）
 - 下一位更新者必须重新读取最新 blob SHA。
+
+
+---
+
+## 44. Emotion Intelligence 纳入 Persona 长期计划 + P0 v5 PASS（HANDOFF-0045）
+
+> 完整报告：`coordination/REPORT.md`（REPORT-0002）
+> REPORT-0002 commit：`3445b5ecb6b881c03d217af42e3d17340517501d`
+> REPORT blob：`fd41689568555de8a9e04ce6a3041976c56018d4`
+> 本节只记录长期决策与状态；源码审查细节、文件 SHA、分阶段方案见 REPORT-0002。
+
+### 44.1 P0 staging 状态
+- DSH 复核结论：**PLAN V5 REVIEW PASS（仅设计/静态复核）**，依据 HANDOFF-0044 / REPORT-0001。
+- 可进入隔离 staging 阶段，但 staging 尚未执行；本轮不启动 staging，等待负责人明确安排。
+- staging 仍需验证 profile bundles、web→candidate link、symlink/realpath、npm ci/ONNX、SQLite 3.53.3、schema4 migration/rollback、WAL/快照、host/strace/exporter。
+- 生产 DB/profile/config 修改、部署、重启仍未授权。
+
+### 44.2 新增长期专题：Emotion Intelligence（情绪智能系统）
+负责人确认将其纳入 Persona 长期优化计划，防止遗忘。参考负责人提供的六种基础情绪、复合情绪组合、情绪触发/变化、情绪关联记忆、安全区/消散区概念。
+- 不把离散组合数量当作情绪上限；六种基础情绪是参考维度，不是封闭 enum。
+- 图中组合按 C(6,2)+C(6,3)+C(6,4)+C(6,5)+C(6,6)=**57** 种；若计六种单独情绪则非空子集共63种。组合数不等于心理有效情绪全集。
+- 情绪强度/置信度/目标/来源/原因/时间衰减应可分别表达；允许正负情绪并存。
+- 情绪衰减、episode 过期不得删除或改写 raw 对话、永久档案或历史记忆。
+- 先做源码审查和契约设计，不直接改生产。
+
+### 44.3 Persona 源码第一轮只读审查结论
+- 仓库：`ba-song/dsh-persona-core`；main HEAD：`a84c7badd1e6c971a66b6c39dd4f7ab795df4b90`；package `0.2.0`。
+- 已确认现有 emotion_state / timeline / points / event / appraisal / episodes、PAD/mood/dominance、LLM appraisal、peer-specific relationship axes，以及供 Memory 使用的 `dyPersona.emotionAt/emotionTimeline` 只读接口。
+- 主要差距：多个活跃 episode 虽可存储，但 `composeEmotionView` 当前只选最强 episode 输出单一 label；LLM appraisal 也是单个 emotion 字段；基础情绪 ontology 未统一版本化；本轮未确认 Memory 消费端端到端保留情绪关联。
+- 不需要推翻现有系统；先在纯函数层研究复合情绪合成，再扩展 appraisal 和 Memory 关联接口。
+- 历史 README 测试基线 233/233；本轮未运行测试，不作为本轮验收。
+
+### 44.4 后续阶段
+1. GPT 完成 Persona 情绪状态/迁移/异步 appraisal/注入预算/测试的第二轮审查。
+2. GPT 审查 Memory 对 `emotionAt/emotionTimeline` 的真实调用、raw/episode 写入和 recall 数据流。
+3. 输出 EI-0 逻辑契约与开发任务拆解，再决定是否在开发分支实施。
+4. DSH 只读核对 DSHA 安装版 Persona 是否与 GitHub HEAD 一致，并可核实 Memory 消费端调用点；不得运行迁移、改生产、重启或自行启动 P0 staging。
+
+### 44.5 本轮副作用
+- 仅 GitHub 只读源码审查与协调文档更新。
+- Persona 源码/测试：NOT RUN；DSHA 本地核对：NOT RUN；Memory 调用端审查：NOT RUN；staging：NOT RUN；生产写入/部署/重启：NOT RUN。
+
+### 44.6 协作协议与报告
+- HANDOFF：`coordination/HANDOFF.md`，当前 HANDOFF-0045。
+- 完整报告：`coordination/REPORT.md`，当前 REPORT-0002。
+- 本轮由于 GitHub connector 的文件更新接口不提供 tree SHA，REPORT 与 HANDOFF 分两次顺序提交；HANDOFF-0045 明确引用已提交的 REPORT-0002 commit/blob。后续继续按更新前重新读取最新 Blob SHA、SHA 保护和并发冲突重读合并，不覆盖他人更新。
