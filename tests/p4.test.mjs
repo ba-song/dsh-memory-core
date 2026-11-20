@@ -1,5 +1,6 @@
 import assert from 'node:assert'
 import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { openDb } from '../lib/store/db.js'
 import { insertMemory } from '../lib/store/memories.js'
 import { extractPreference, extractRelation, extractSkill, isTooShortOrGreeting } from '../lib/ingest/classes.js'

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { loadEmbed, embedAvailable, embedTexts } from '../lib/embed/onnx.mjs'
 
-const modelDir = '/opt/qqai/models/bge-small-zh'
+const modelDir = process.env.DY_EMBED_MODEL || '/opt/qqai/models/bge-small-zh'
 test('BGE embedding model loads and separates related from unrelated text', { skip: !existsSync(modelDir + '/tokenizer.json') ? 'DSHA BGE model is not installed in this runner' : false }, async () => {
   const r = await loadEmbed(modelDir)
   assert.ok(r.ok, '模型应能加载: ' + r.error)
