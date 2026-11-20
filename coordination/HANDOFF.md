@@ -821,3 +821,72 @@ DSH 本地文件不在 GitHub；以下为需要负责人转给 GPT 的提示词�
 
 - 本轮未写生产库、未改源码/profile/config、未部署/重启；无生产副作用。
 - 下一位更新者必须重新读取远程最新 blob SHA。
+
+
+---
+
+## 21. GPT 复核与部署前收口（HANDOFF-0025）
+
+> 依据：负责人转交 HANDOFF-0024 与 DSHA 本地复验报告 `M3-MERGED-LOCAL-VERIFY-02.md`。本节只记录远程代码/CI复核和部署候选要求；未修改任何插件源码或生产环境。
+
+### 21.1 复核范围与边界
+
+- 执行者：GPT。
+- 复核了本文件 HANDOFF-0024、`ba-song/dsh-autonomy` main @ `6c4a4753b4737060211955b1f022cab2f1d39521`、`ba-song/dsh-memory-core` 开发分支 @ `732e3fa3381ed4b3b4242e0e6fd6e411b35ab972`。
+- 未修改 memory-core/autonomy 源码、测试、CI workflow、生产 profile/config。
+- 未部署、未重启、未写生产 DB/raw/episode/vector/FTS/relations/永久档案。
+- 未启用 `homeArchiveMaintenance` 或 `m3_2b`。
+
+### 21.2 autonomy CI 全量覆盖核实
+
+- GitHub Actions run：`44720665021`，job `136235242540`，结论 success。
+- job steps 明确包含全量 `npm test`，之后额外执行 `node --test tests/home-archive-maintenance.test.mjs`。
+- 全量测试日志：411 tests / 408 pass / 0 fail / 3 skipped；专项测试：5/5 pass / 0 skipped。
+- 因此 HANDOFF-0023 所述“CI 覆盖全量 npm test”在当前 autonomy main 上得到 workflow job 与原始日志再次确认。
+- 注意：GitHub runner 的 3 个 skip 不能算作通过；DSHA 本地 411/411、0 skip 是另一条独立实机证据。二者口径不得混写。
+
+### 21.3 exporter 文件与部署包核实
+
+- autonomy 默认配置仍为：
+  `/root/.dsh/plugin-src/dsh-memory-core/scripts/export-home-archive.mjs`
+- 当前 DSHA 生产部署目录缺少该脚本及 `lib/permanent/`，所以当前生产路径仍不可用；运行时会明确失败，不会静默跳过。
+- memory-core 开发候选 `732e3fa3381ed4b3b4242e0e6fd6e411b35ab972` 中存在：
+  - `scripts/export-home-archive.mjs`
+  - `lib/permanent/home-archive.js`
+  - `lib/roles.js`
+  - `lib/adapter/timefmt.js`
+- exporter 使用相对导入，不能只把单个 `export-home-archive.mjs` 文件复制进生产目录。部署候选必须保留整个 memory-core 插件源码/发行目录及其相对依赖，至少确保以上文件与 exporter 位于同一版本目录；不得混用不同 commit 的脚本和依赖。
+- memory-core package.json 声明 `export:home-archive` 脚本，但没有通过本轮证据证明生产部署工具会自动把所有源码文件打包进产物。因此不能只凭 package.json 推断生产部署包已包含 exporter。
+- 当前默认路径本身与已知生产插件目录约定一致；问题是部署目录仍是旧版内容，不应把默认值改成另一个未经证实的绝对路径，也不应在运行时递归猜测插件目录。
+- autonomy 已有 `homeArchiveMaintenance.exportScript` 配置项；将来若部署目录不同，可在经过负责人授权的部署配置中明确指定真实绝对路径。当前不得改生产配置。
+
+### 21.4 部署前必须执行的隔离/只读检查
+
+在任何未来部署或启用申请之前，部署候选必须逐项满足：
+
+1. memory-core 插件候选版本与 exporter 同源同 commit；完整保留 exporter 及其相对依赖，不做单文件拷贝。
+2. 在候选安装目录检查 exporter 是普通文件而非 symlink；检查 `lib/permanent/home-archive.js`、`lib/roles.js`、`lib/adapter/timefmt.js` 存在。
+3. 用候选 Node 运行时执行 `node <实际exporter绝对路径> --help`，确认模块解析成功且正常输出 Usage；该参数路径在脚本中先于 SQLite 打开执行，不应访问生产 DB。
+4. 在隔离目录使用临时 DB、临时 archiveRoot、临时 backupDir 完成真实 Node exporter + tar 流程，并复核产物大小与 SHA256；不得把生产永久档案目录或生产备份目录用作测试输出。
+5. 检查 autonomy 的 `homeArchiveMaintenance.exportScript` 最终解析值与候选安装目录完全一致；路径缺失/符号链接必须分别得到 `E_EXPORT_SCRIPT_NOT_FOUND` / `E_EXPORT_SCRIPT_INVALID`。
+6. 在上述检查全部通过后，仍需负责人单独授权部署、修改生产 profile/config、手动首次导出或开启调度；本节不构成任何生产操作授权。
+
+### 21.5 产品策略与未决项
+
+- 永久档案并发维持 best-effort：允许明确的 `ELOCKED`，raw 优先，依靠后续导出补齐；不擅自增加串行队列或扩大锁等待。
+- relations 仍无已确认业务语义，不实现 relationBuilder/co-mention。
+- M3-2B 继续默认关闭；不得部署后顺手开启。
+- home 永久档案导出调度继续默认关闭；首次人工验收、15 天调度启用和任何生产配置变更均需负责人另行授权。
+- 本轮无需修改 memory-core 或 autonomy 源码。当前唯一阻塞属于部署候选完整性/路径验收，不是代码测试失败。
+
+### 21.6 本次交付与版本信息
+
+- 版本：`HANDOFF-0025`
+- 更新者：GPT。
+- 基于 HANDOFF-0024 当前 Blob SHA：`7fa8d9dac6f28a34db1354ececd321d03823fffd`。
+- HANDOFF-0024 commit 前缀（负责人提供）：`4a44096…`。
+- memory-core HEAD：`732e3fa3381ed4b3b4242e0e6fd6e411b35ab972`。
+- autonomy HEAD：`6c4a4753b4737060211955b1f022cab2f1d39521`。
+- 代码修改：无。
+- 生产副作用：无。
+- 下一位更新者必须重新读取远程 HANDOFF 全文及 Blob SHA 后再追加，不得沿用本节 SHA。
