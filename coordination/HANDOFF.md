@@ -2,8 +2,8 @@
 
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
-> 版本：`HANDOFF-0052`
-> 更新时间：2026-11-21 00:12（Asia/Shanghai）
+> 版本：`HANDOFF-0054`
+> 更新时间：2026-11-21 00:38（Asia/Shanghai）
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -3172,3 +3172,35 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - 文件 blob：source 547ff177a02bd80152ccb3914d54f287f775befa；tests a92aacf1e04bcb5852eb7308ce3d0a7a2892580b。
 - GPT 未运行测试；新增测试、全量测试、CI 均 NOT RUN。DSH 需在隔离 worktree 拉取精确 commit 实测。
 - 禁止改生产源码/DB/profile、禁止接入注入、禁止部署/重启；EI-2/EI-3 与 P0 staging 仍 NOT RUN。
+
+
+---
+
+## 51. EI-1 修复后第二轮复验（HANDOFF-0054）
+
+> 完整报告：`coordination/REPORT.md`（REPORT-0011）
+> 只读/隔离 worktree；未改生产源码/DB/profile；未启动 staging/host；未部署/重启。
+
+### 51.1 结果
+- 目标 `ad809910801983be61165ff037a2e138676854aa`；blob source `547ff177...`、tests `a92aacf1...` 与任务一致。
+- 新增测试：**14 tests / 13 pass / 1 fail**，exit 1。
+- 全量：**317 / 316 pass / 1 fail**，exit 1。
+- 唯一失败：`classifyEmotionConfidence(-0.1)` 返回 `uncertain`，期望 `unknown`；`1.1` 会被 clamp 成 active candidate。
+
+### 51.2 原因
+`lib/emotion-compose.js:16-24` 先 `clamp01(confidence)` 再分类；越界值被夹到 0/1，违反“outside [0,1] = unknown”。`normalizeEpisode` 已把越界 confidence 设为 null，所以 compose 的 total=0 通过，但 direct API 测试失败。
+
+### 51.3 其他修复
+- sourceIds：PASS（id/episodeId/appraisalId/appraisal_id/sourceIds[] 去重）。
+- codepoint 排序：PASS（已无 localeCompare）。
+- 异常数据/expiry/intensity：PASS（除 confidence 直接分类）。
+- 架构边界：仅两个文件；未改生产/旧 episode。
+
+### 51.4 结论
+**EI-1 IMPLEMENTATION REVIEW BLOCKED。** 最小修复：`classifyEmotionConfidence` 在 clamp 前对 <0/>1 返回 unknown；修复后复跑 14/14 + 317/317。
+
+### 51.5 交接
+- 版本：`HANDOFF-0054`
+- 基于旧 blob：`f565ffe88f9fe5e4c5197214d4e7cb367126f778`
+- REPORT-0011：`coordination/REPORT.md`
+- 下一位更新者必须重新读取最新 blob SHA。
