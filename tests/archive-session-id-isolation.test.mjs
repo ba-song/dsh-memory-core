@@ -36,6 +36,7 @@ test('full session identity isolates same-shortSid provenance and tombstones', (
     const hitA = { id: 1, source_msg_id: `p4:${sidA}:1`, source_ts: atA, scope_type: 'owner', text: '甲会话的独立原话内容' }
     const hitB = { id: 2, source_msg_id: `p4:${sidB}:1`, source_ts: atB, scope_type: 'owner', text: '乙会话的独立原话内容' }
     const anchorA = findAnchorRow(db, hitA, { cwd: HOME })
+    const rawIdA = Number(anchorA?.row?.id ?? 0)
     const anchorB = findAnchorRow(db, hitB, { cwd: HOME })
     assert.ok(anchorA && anchorB)
     assert.match(cleanRowBody(anchorA.row), /甲会话/)
@@ -53,6 +54,10 @@ test('full session identity isolates same-shortSid provenance and tombstones', (
       { sessionId: sidB, tombstone: 0 },
     ])
     assert.equal(findAnchorRow(db, hitA, { cwd: HOME }), null)
+    assert.equal(findAnchorRow(db, {
+      id: 3, source_msg_id: `raw:${rawIdA}`, source_ts: atA,
+      scope_type: 'owner', text: '甲会话的独立原话内容',
+    }, { cwd: HOME }), null, '精确 raw-id 撤回后不得降级到乙会话的邻近原话')
     assert.ok(findAnchorRow(db, hitB, { cwd: HOME }))
   } finally {
     db.close()
