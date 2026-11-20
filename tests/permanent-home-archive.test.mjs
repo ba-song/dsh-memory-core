@@ -591,14 +591,14 @@ test('12 concurrent child processes use explicit best-effort append semantics wi
     const appended = outcomes.filter((row) => row.status === 'appended')
     const failed = outcomes.filter((row) => row.status === 'failed')
     assert.ok(appended.length > 0, 'at least one writer must make progress')
-    assert.ok(failed.length <= count, 'contention failures are explicitly best-effort')
+    assert.equal(outcomes.length, count)
     const journal = readPermanentJournal(archiveDir)
     assert.equal(journal.errors.length, 0, 'lock contention must not corrupt JSONL')
     assert.equal(journal.events.size, appended.length, 'only successful appends may appear in the journal')
     const rawIds = []
     for (const name of readdirSync(join(archiveDir, '_events'))) {
       if (!name.endsWith('.jsonl')) continue
-      for (const line of readFileSync(join(archiveDir, '_events', name), 'utf8').split('\\n')) {
+      for (const line of readFileSync(join(archiveDir, '_events', name), 'utf8').split('\n')) {
         if (!line.trim()) continue
         const event = JSON.parse(line)
         if (event.type !== 'tombstone') rawIds.push(Number(event.raw_id))
