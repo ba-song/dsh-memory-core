@@ -38,7 +38,6 @@ test('event chain only returns same-session, same-scope, anchored shared-entity 
     emit(otherSid, 1, '主人也讨论了海边旅行')
     emit(sid, 6, '主人讨论了一件工资方面的事情')
     emit(sid, 7, '主人和鲸鱼继续讨论海边旅行', OTHER)
-    emit(sid, 9, '主人用显式来源继续讨论海边旅行')
 
     const add = async (seq, text, opts = {}) => {
       const id = await insertMemory(db, {
@@ -64,6 +63,7 @@ test('event chain only returns same-session, same-scope, anchored shared-entity 
 
     // 撤回 seq=4；它必须从链中消失。
     raw.onEvent({ header: { id: sid, cwd: HOME } }, event('message/recall', 8, '', at + 8000, { seq: 4 }))
+    emit(sid, 9, '主人用显式来源继续讨论海边旅行')
     const missingRaw = db.prepare("SELECT id FROM raw_meta WHERE seq=5 AND cwd=? AND tombstone=0").get(HOME)
     db.prepare('DELETE FROM raw_meta WHERE id=?').run(Number(missingRaw.id))
 
