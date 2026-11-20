@@ -59,6 +59,12 @@ test('full session identity isolates same-shortSid provenance and tombstones', (
       scope_type: 'owner', text: '甲会话的独立原话内容',
     }, { cwd: HOME }), null, '精确 raw-id 撤回后不得降级到乙会话的邻近原话')
     assert.ok(findAnchorRow(db, hitB, { cwd: HOME }))
+    // DB tombstone 与 FTS 删除必须同一事务：失败时不能留下半更新状态。
+    db.exec("CREATE TRIGGER fail_tombstone BEFORE UPDATE OF tombstone ON raw_meta BEGIN SELECT RAISE(ABORT, 'test rollback'); END")
+    const rawIdB = Number(anchorB.row.id)
+    raw.onEvent({ header: { id: sidB, cwd: HOME } }, event('message/recall', 2, { seq: 1 }, atB + 2))
+    assert.equal(Number(db.prepare('SELECT tombstone FROM raw_meta WHERE id=?').get(rawIdB).tombstone), 0)
+    assert.equal(Number(db.prepare('SELECT count(*) c FROM raw_fts WHERE rowid=?').get(rawIdB).c), 1)
   } finally {
     db.close()
     rmSync(dir, { recursive: true, force: true })
