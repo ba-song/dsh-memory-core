@@ -3,8 +3,9 @@ import { symlinkSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import { assertOfflineSnapshotPath, sha256File, validateAnnotationDataset, verifySnapshotFingerprint, verifyCodeCommit } from '../lib/recall/eval-dataset.js'
+import { assertOfflineSnapshotPath, sha256File, validateAnnotationDataset, verifySnapshotFingerprint, verifyCodeCommit, inspectGitCheckout } from '../lib/recall/eval-dataset.js'
 
 const sourceQueries = [{ id: 'q1', query: '记得我们约定的事情吗' }]
 const base = {
@@ -130,4 +131,28 @@ test('ungraded exploratory evaluation may omit runtime commit but cannot claim v
   assert.deepEqual(verifyCodeCommit(pinned, null), {
     verified: false, expected: pinned, actual: null,
   })
+})
+
+
+test('formal source checkout detection binds HEAD and rejects dirty or non-git trees', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-eval-git-checkout-'))
+  try {
+    execFileSync('git', ['init'], { cwd: dir, stdio: 'ignore' })
+    execFileSync('git', ['config', 'user.email', 'eval-test@example.invalid'], { cwd: dir, stdio: 'ignore' })
+    execFileSync('git', ['config', 'user.name', 'Eval Test'], { cwd: dir, stdio: 'ignore' })
+    writeFileSync(join(dir, 'source.js'), 'export const version = 1\n')
+    execFileSync('git', ['add', 'source.js'], { cwd: dir, stdio: 'ignore' })
+    execFileSync('git', ['commit', '-m', 'fixture'], { cwd: dir, stdio: 'ignore' })
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim()
+    assert.deepEqual(inspectGitCheckout(dir), { commit: head, clean: true, available: true })
+
+    writeFileSync(join(dir, 'source.js'), 'export const version = 2\n')
+    assert.equal(inspectGitCheckout(dir).clean, false)
+    writeFileSync(join(dir, 'source.js'), 'export const version = 1\n')
+    writeFileSync(join(dir, 'untracked.txt'), 'untracked\n')
+    assert.equal(inspectGitCheckout(dir).clean, false)
+    assert.equal(inspectGitCheckout(tmpdir()).available, false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

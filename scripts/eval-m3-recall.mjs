@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { resolve, join } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { resolve, join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { recall } from '../lib/recall/recall.js'
 import { loadVectors } from '../lib/store/memories.js'
@@ -11,7 +13,7 @@ import { buildQuotesBlock } from '../lib/inject/quotes.js'
 import { scopeForSession } from '../lib/scope.js'
 import { evaluateRankedResults, explainRrf } from '../lib/recall/eval-metrics.js'
 import { eventChainCandidates } from '../lib/recall/event-chain.js'
-import { assertOfflineSnapshotPath, sha256File, validateAnnotationDataset, verifySnapshotFingerprint, verifyCodeCommit } from '../lib/recall/eval-dataset.js'
+import { assertOfflineSnapshotPath, sha256File, validateAnnotationDataset, verifySnapshotFingerprint, verifyCodeCommit, inspectGitCheckout } from '../lib/recall/eval-dataset.js'
 
 const args = process.argv.slice(2)
 const valueAfter = (flag) => {
@@ -19,7 +21,10 @@ const valueAfter = (flag) => {
   return i >= 0 ? args[i + 1] : ''
 }
 const dbArgument = valueAfter('--db')
-const actualCodeCommit = valueAfter('--code-commit')
+const suppliedCodeCommit = valueAfter('--code-commit')
+const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const sourceCheckout = inspectGitCheckout(sourceRoot)
+const detectedCodeCommit = sourceCheckout.clean ? sourceCheckout.commit : ''
 if (!dbArgument) throw new Error('必须显式提供 --db 指向独立、一致的离线数据库快照；禁止使用默认生产数据库路径')
 const dbPath = resolve(dbArgument)
 if (!existsSync(dbPath)) throw new Error(`数据库快照不存在：${dbPath}`)
@@ -48,7 +53,14 @@ const queryPath = new URL('./m3-eval-queries.json', import.meta.url)
 const queries = JSON.parse(readFileSync(queryPath, 'utf8'))
 const annotationDataset = JSON.parse(readFileSync(annotationsPath, 'utf8'))
 const annotationValidation = validateAnnotationDataset(annotationDataset, queries)
-const codeCommitVerification = verifyCodeCommit(annotationDataset.codeCommit, actualCodeCommit, { required: annotationValidation.positiveLabels > 0 })
+const hasPositiveLabels = annotationValidation.positiveLabels > 0
+if (hasPositiveLabels && !suppliedCodeCommit) throw new Error('正式人工标注评测必须显式提供 --code-commit')
+if (hasPositiveLabels && !sourceCheckout.available) throw new Error('正式人工标注评测必须从可读取 Git HEAD 的工作树运行')
+if (hasPositiveLabels && !sourceCheckout.clean) throw new Error('正式人工标注评测拒绝 dirty working tree；请提交或清理所有已跟踪/未跟踪改动')
+if (suppliedCodeCommit && sourceCheckout.commit && suppliedCodeCommit.trim().toLowerCase() !== sourceCheckout.commit) {
+  throw new Error(`--code-commit 与当前工作树 HEAD 不一致：argument=${suppliedCodeCommit} HEAD=${sourceCheckout.commit}`)
+}
+const codeCommitVerification = verifyCodeCommit(annotationDataset.codeCommit, detectedCodeCommit, { required: hasPositiveLabels })
 const actualDatabaseSnapshotSha256 = await sha256File(dbPath)
 const snapshotFingerprint = verifySnapshotFingerprint(annotationDataset.databaseSnapshotSha256, actualDatabaseSnapshotSha256)
 const annotationsById = new Map((annotationDataset.queries ?? []).map((item) => [String(item.id), item]))
@@ -193,6 +205,8 @@ try {
     annotationValidation,
     codeCommit: annotationDataset.codeCommit ?? null,
     actualCodeCommit: codeCommitVerification.actual,
+    suppliedCodeCommit: suppliedCodeCommit || null,
+    sourceCheckout: { headCommit: sourceCheckout.commit || null, clean: sourceCheckout.clean, available: sourceCheckout.available },
     codeCommitVerification,
     databaseSnapshotSha256: annotationDataset.databaseSnapshotSha256 ?? null,
     actualDatabaseSnapshotSha256,
