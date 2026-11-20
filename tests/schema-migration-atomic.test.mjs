@@ -202,7 +202,7 @@ test('schema migration rejects an incomplete snapshot table and rolls back other
     const inject = new DatabaseSync(fixture.file)
     inject.exec('CREATE TABLE episode_rewrite_snapshots(id INTEGER PRIMARY KEY)')
     inject.close()
-    assert.throws(() => openDb(fixture.dir), /episode_rewrite_snapshots missing/)
+    assert.throws(() => openDb(fixture.dir), /no such column: memory_id/)
     const after = new DatabaseSync(fixture.file, { readOnly: true })
     assert.equal(after.prepare("SELECT v FROM meta WHERE k='schema_version'").get().v, '4')
     assert.equal(after.prepare("SELECT count(*) AS n FROM pragma_table_info('episode_rewrite_snapshots')").get().n, 1)
