@@ -3,7 +3,7 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0001`  
+> 版本：`HANDOFF-0002`  
 > 更新时间：2026-11-20（Asia/Shanghai）  
 > 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
@@ -300,9 +300,12 @@ DSH首次接入时：
 
 ## 14. 最新交接
 
-- 版本：`HANDOFF-0001`
+- 版本：`HANDOFF-0002`
 - 更新者：GPT
 - 时间：2026-11-20（Asia/Shanghai）
-- 本次变更：创建独立交接分支与首版交接文件；整理项目总纲、角色边界、授权门禁、阶段状态、主线与home专题进度、待DSH任务、GPT待办和并发更新协议。
+- 本次变更：补录首版文件创建提交与blob SHA，并确认文件可从交接分支读取。
+- 交接文件创建commit：`322e088e498e02f83a18fc348b3ad652fa7c3f02`
+- 当前文件blob SHA：`9edd98322afc8de6046fb53d39d0dffb50a2da33`
+- 文件URL：https://github.com/ba-song/dsh-memory-core/blob/coordination/project-handoff/coordination/HANDOFF.md
 - 开发分支HEAD：沿用上一轮已知值 `ecad69d9386e731b86d6dd4306d2d5379581d47f`，**待下一轮从GitHub重新核验**。
 - 当前阻塞：M3-2A-REPORT-01、M3-REF-06等待DSH结果；其他待办按第12节推进。
