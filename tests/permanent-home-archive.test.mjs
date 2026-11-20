@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync,
+  copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -106,6 +106,19 @@ test('non-home cwd never writes to the home permanent journal', () => {
     assert.equal(db.prepare('SELECT count(*) c FROM raw_meta WHERE cwd=?').get(OTHER).c, 1)
     assert.equal(readPermanentJournal(archiveDir).events.size, 0)
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('new permanent archive journal uses owner-only POSIX permissions', () => {
+  const dir = mk('permissions')
+  const archiveDir = join(dir, 'permanent')
+  const item = { raw_id: 990, day: '2026-11-20', seq: 1, role: 'user', at: Date.now(), text: '权限测试' }
+  try {
+    appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: item })
+    const eventsDir = join(archiveDir, '_events')
+    const file = join(eventsDir, '2026-11-20.jsonl')
+    assert.equal(statSync(eventsDir).mode & 0o077, 0)
+    assert.equal(statSync(file).mode & 0o077, 0)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
 test('same short session filename and seq in different cwd only tombstones the matching cwd', () => {

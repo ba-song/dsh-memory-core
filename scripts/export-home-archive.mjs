@@ -61,7 +61,7 @@ function emotionMapOf(db) {
 
 function atomicWrite(file, content) {
   const temp = `${file}.tmp-${process.pid}-${randomUUID()}`
-  writeFileSync(temp, content, 'utf8')
+  writeFileSync(temp, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
   renameSync(temp, file)
 }
 
@@ -126,7 +126,8 @@ export async function exportHomeArchive({ dbPath = DEFAULT_DB, outDir = DEFAULT_
   const archiveDir = resolve(outDir)
   const cwd = String(homeCwd ?? '').trim().replace(/[/\\]+$/, '')
   if (!cwd) throw new Error('home cwd 不能为空')
-  mkdirSync(join(archiveDir, '_events'), { recursive: true })
+  mkdirSync(archiveDir, { recursive: true, mode: 0o700 })
+  mkdirSync(join(archiveDir, '_events'), { recursive: true, mode: 0o700 })
 
   const db = new DatabaseSync(dbPath, { readOnly: true })
   let journal
