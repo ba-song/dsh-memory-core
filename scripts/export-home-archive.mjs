@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { archiveLabel, normalizeRole, ROLE } from '../lib/roles.js'
 import { dayOf, clockOf } from '../lib/adapter/timefmt.js'
-import { appendPermanentEvent, appendPermanentTombstone, readPermanentJournal, isHomeArchiveCwd } from '../lib/permanent/home-archive.js'
+import { appendPermanentEvent, appendPermanentTombstone, readPermanentJournal, permanentJournalVersion, isHomeArchiveCwd } from '../lib/permanent/home-archive.js'
 
 const DEFAULT_HOME_CWD = '/sdcard/DSHA/生活/数据/home'
 const DEFAULT_ARCHIVE_DIR = '/sdcard/DSHA/记忆/档案/永久/home'
@@ -208,6 +208,7 @@ export async function exportHomeArchive({ dbPath = DEFAULT_DB, outDir = DEFAULT_
     const tombstoneExpr = cols.has('tombstone') ? 'tombstone' : '0 AS tombstone'
     rows = db.prepare(`SELECT id,day,seq,role,raw_text,at,cwd,${extraExpr},${tombstoneExpr} FROM raw_meta WHERE cwd=? ORDER BY day,at,id`).all(cwd)
     emotionById = emotionMapOf(db, rows.map((row) => Number(row.id)))
+    const journalVersionAtStart = permanentJournalVersion(archiveDir)
     journal = readPermanentJournal(archiveDir)
 
     let repaired = 0
@@ -280,7 +281,20 @@ export async function exportHomeArchive({ dbPath = DEFAULT_DB, outDir = DEFAULT_
       '',
     ].join('\n')
     atomicWrite(join(archiveDir, 'README.md'), readme)
-    return { ok: true, dbRows: rows.length, journalEvents: all.length, repaired, tombstoneEvents, days: dayIndex.length, journalErrors: journal.errors }
+    const journalVersionAtEnd = permanentJournalVersion(archiveDir)
+    const journalStable = journalVersionAtStart === journalVersionAtEnd
+    if (!journalStable) {
+      index.journalStable = false
+      index.journalVersionAtStart = journalVersionAtStart
+      index.journalVersionAtEnd = journalVersionAtEnd
+      index.consistencyWarning = 'Journal changed while derived views were being generated; run export again to refresh Markdown and INDEX.'
+      atomicWrite(join(archiveDir, 'INDEX.json'), JSON.stringify(index, null, 2) + '\n')
+    } else {
+      index.journalStable = true
+      index.journalVersion = journalVersionAtEnd
+      atomicWrite(join(archiveDir, 'INDEX.json'), JSON.stringify(index, null, 2) + '\n')
+    }
+    return { ok: true, consistent: journalStable && journal.errors.length === 0, journalStable, journalVersionAtStart, journalVersionAtEnd, dbRows: rows.length, journalEvents: all.length, repaired, tombstoneEvents, days: dayIndex.length, journalErrors: journal.errors }
   } finally {
     db.close()
   }
@@ -294,7 +308,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     } else {
       const result = await exportHomeArchive(args)
       process.stdout.write(JSON.stringify(result, null, 2) + '\n')
-      if (result.journalErrors.length) process.exitCode = 2
+      if (result.journalErrors.length || !result.journalStable) process.exitCode = 2
     }
   } catch (error) {
     process.stderr.write(`home archive export failed: ${error?.stack ?? error}\n`)

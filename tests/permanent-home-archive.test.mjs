@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { openDb } from '../lib/store/db.js'
 import { RawArchive } from '../lib/ingest/archive.js'
-import { readPermanentJournal, appendPermanentEvent, appendPermanentTombstone } from '../lib/permanent/home-archive.js'
+import { readPermanentJournal, permanentJournalVersion, appendPermanentEvent, appendPermanentTombstone } from '../lib/permanent/home-archive.js'
 import { exportHomeArchive } from '../scripts/export-home-archive.mjs'
 import { dayOf } from '../lib/adapter/timefmt.js'
 
@@ -332,6 +332,21 @@ test('repeated tombstone is idempotent and incomplete trailing JSONL bytes are p
     assert.ok(journal.tombstones.has(88))
     assert.equal(journal.errors.length, 1)
     assert.ok(readFileSync(file, 'utf8').startsWith(brokenTail + '\n'))
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('journal version changes after an external concurrent append', () => {
+  const dir = mk('journal-version')
+  const archiveDir = join(dir, 'permanent')
+  const eventsDir = join(archiveDir, '_events')
+  mkdirSync(eventsDir, { recursive: true })
+  const file = join(eventsDir, '2026-11-20.jsonl')
+  try {
+    writeFileSync(file, JSON.stringify({ raw_id: 910, day: '2026-11-20', cwd: HOME, text: 'first' }) + '\n')
+    const before = permanentJournalVersion(archiveDir)
+    writeFileSync(file, JSON.stringify({ raw_id: 910, day: '2026-11-20', cwd: HOME, text: 'first' }) + '\n' + JSON.stringify({ raw_id: 911, day: '2026-11-20', cwd: HOME, text: 'concurrent append' }) + '\n')
+    const after = permanentJournalVersion(archiveDir)
+    assert.notEqual(after, before)
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
