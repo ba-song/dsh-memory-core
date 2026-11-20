@@ -29,7 +29,10 @@ test('raw group and person archive tools never return tombstoned messages', asyn
     const mod = await import('../lib/index.js')
     mod.apply(ctx, { ownerQQ: '1000000001' })
     ;({ db } = openDb(dir))
-    new RawArchive({ db, dir: join(dir, 'raw'), cwdPrefixes: ['/sdcard/DSHA/渠道/qq-群'], log: { info() {}, warn() {} } })
+    new RawArchive({ db, dir: join(dir, 'raw'), cwdPrefixes: ['/sdcard/DSHA/渠道'], log: { info() {}, warn() {} } })
+    const { ensureContactsSchema, seedOwner } = await import('../lib/store/contacts.js')
+    ensureContactsSchema(db)
+    seedOwner(db, { ownerQQ: '1000000001' })
     const insert = db.prepare(`INSERT INTO raw_meta
       (day,file,line_no,seq,role,speaker,channel,tombstone,chars,raw_text,at,extra,cwd,person_id)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
@@ -46,6 +49,7 @@ test('raw group and person archive tools never return tombstoned messages', asyn
 
     const ownerExec = { agent: { session: { header: { cwd: '/root/qq-agent/QQ会话/私聊_1000000001', id: 'raw-tools-owner' } } } }
     const group = JSON.parse((await registered.dy_memory_group_archive.execute({ groupId: 'g-test' }, ownerExec)).detail)
+    assert.equal(group.denied, undefined, 'owner 私聊调用不应被拒绝')
     assert.equal(group.count, 1)
     assert.match(group.items[0].text, /有效消息/)
     assert.doesNotMatch(JSON.stringify(group), /撤回消息/)
