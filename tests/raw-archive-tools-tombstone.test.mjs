@@ -34,7 +34,7 @@ test('raw group and person archive tools never return tombstoned messages', asyn
     const at = Date.now()
     const add = (line, cwd, personId, text, tombstone = 0) => insert.run(
       '2026-11-20', '2026-11-20/s-test.md', line, line, 'user', 'user', 'qq',
-      tombstone, text.length, text, at + line, '{}', cwd, personId, personId,
+      tombstone, text.length, text, at + line, '{}', cwd, personId,
     )
     add(1, groupCwd, 'person-1', '群 g-test 的有效消息')
     add(2, groupCwd, 'person-1', '群 g-test 的撤回消息', 1)
