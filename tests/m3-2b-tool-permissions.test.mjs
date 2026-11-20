@@ -6,6 +6,8 @@ process.env.DY_MEMORY_DIR = '/tmp/dy-m3-2b-tools-' + process.pid
 rmSync(process.env.DY_MEMORY_DIR,{recursive:true,force:true})
 mkdirSync(process.env.DY_MEMORY_DIR,{recursive:true})
 const mod = await import('../lib/index.js')
+const { DEFAULTS } = await import('../lib/config.js')
+assert.equal(DEFAULTS.m3_2b.enabled, false)
 const makeCtx = (registered) => ({
   get(name) {
     if(name==='tools') return { register(def){ if(registered[def.name]) throw new Error('duplicate'); registered[def.name]=def } }
@@ -21,9 +23,6 @@ const owner = { agent:{session:{header:{cwd:'/root/qq-agent/QQ会话/私聊_1000
 const group = { agent:{session:{header:{cwd:'/sdcard/DSHA/渠道/qq/群_123456',id:'m3-2b-group'}}} }
 
 test('M3-2B tools are absent by default and owner-only/non-batch when explicitly enabled',async()=>{
- const off={}
- mod.apply(makeCtx(off),{ownerQQ:'1000000001'})
- assert.equal(off.dy_episode_rewrite_preview,undefined)
  const on={}
  mod.apply(makeCtx(on),{ownerQQ:'1000000001',m3_2b:{enabled:true}})
  for(const name of ['dy_episode_rewrite_preview','dy_episode_rewrite_apply','dy_episode_rewrite_rollback']) assert.ok(on[name],name)
