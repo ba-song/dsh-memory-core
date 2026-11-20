@@ -5,7 +5,11 @@ import { evaluateRankedResults, explainRrf, compareRankStability } from '../lib/
 test('human graded metrics distinguish unlabelled queries from zero-recall labels', () => {
   const unlabelled = evaluateRankedResults([1, 2, 3], [])
   assert.equal(unlabelled.labelled, false)
-  assert.equal(unlabelled.recall, null)\n  const labelledNone = evaluateRankedResults([1, 2], [{ memoryId: 3, grade: 0 }])\n  assert.equal(labelledNone.labelled, true)\n  assert.equal(labelledNone.recall, null)\n  assert.equal(labelledNone.precision[3], 0)
+  assert.equal(unlabelled.recall, null)
+  const labelledNone = evaluateRankedResults([1, 2], [{ memoryId: 3, grade: 0 }])
+  assert.equal(labelledNone.labelled, true)
+  assert.equal(labelledNone.recall, null)
+  assert.equal(labelledNone.precision[3], 0)
 
   const labelled = evaluateRankedResults([9, 2, 8, 1], [
     { memoryId: 1, grade: 3, evidence: { sourceMsgId: 'raw:11' } },
