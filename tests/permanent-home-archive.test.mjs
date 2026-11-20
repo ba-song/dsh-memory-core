@@ -244,6 +244,30 @@ test('new permanent archive journal uses owner-only POSIX permissions', () => {
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
+test('archive lock symlinks are neither followed nor reclaimed', () => {
+  const dir = mk('lock-symlink')
+  const archiveDir = join(dir, 'permanent')
+  const eventsDir = join(archiveDir, '_events')
+  const outside = join(dir, 'outside-lock')
+  const lockPath = join(eventsDir, '.home-archive.lock')
+  try {
+    mkdirSync(eventsDir, { recursive: true })
+    writeFileSync(outside, JSON.stringify({ pid: 2147483647, at: 1 }))
+    const old = new Date(Date.now() - 20 * 60 * 1000)
+    utimesSync(outside, old, old)
+    symlinkSync(outside, lockPath, 'file')
+    assert.throws(
+      () => appendPermanentEvent({
+        dir: archiveDir, homeCwd: HOME, cwd: HOME,
+        event: { raw_id: 990, day: '2026-11-20', seq: 1, role: 'user', at: Date.now(), text: '拒绝符号链接锁' },
+      }),
+      (error) => error?.code === 'ELOCKED',
+    )
+    assert.ok(existsSync(lockPath))
+    assert.equal(readFileSync(outside, 'utf8'), JSON.stringify({ pid: 2147483647, at: 1 }))
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
 test('stale lock recovery checks owner process before deleting an old lock', () => {
   const dir = mk('stale-lock')
   const archiveDir = join(dir, 'permanent')
