@@ -92,6 +92,26 @@ test('exporter refuses symlinked output root, _events directory and derived INDE
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
+
+test('home archive scope cannot be retargeted to group or email cwd values', async () => {
+  const dir = mk('fixed-home-scope')
+  const archiveDir = join(dir, 'permanent')
+  const { db, file: dbPath } = openDb(dir)
+  const item = { raw_id: 880, day: '2026-11-20', seq: 1, role: 'user', at: Date.now(), text: 'scope guard' }
+  try {
+    assert.equal(appendPermanentEvent({ dir: archiveDir, homeCwd: OTHER, cwd: OTHER, event: item }).skipped, true)
+    assert.equal(appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: OTHER, event: item }).skipped, true)
+    assert.equal(readPermanentJournal(archiveDir).events.size, 0)
+    await assert.rejects(
+      () => exportHomeArchive({ dbPath, outDir: archiveDir, homeCwd: OTHER }),
+      /scope is fixed to/,
+    )
+  } finally {
+    try { db.close() } catch {}
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('home raw rows are best-effort dual-written as append-only JSONL events', () => {
   const dir = mk('dual')
   const { db } = openDb(dir)

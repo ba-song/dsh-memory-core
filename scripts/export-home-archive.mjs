@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { archiveLabel, normalizeRole, ROLE } from '../lib/roles.js'
 import { dayOf, clockOf } from '../lib/adapter/timefmt.js'
-import { appendPermanentEvent, appendPermanentTombstone, readPermanentJournal } from '../lib/permanent/home-archive.js'
+import { appendPermanentEvent, appendPermanentTombstone, readPermanentJournal, isHomeArchiveCwd } from '../lib/permanent/home-archive.js'
 
 const DEFAULT_HOME_CWD = '/sdcard/DSHA/生活/数据/home'
 const DEFAULT_ARCHIVE_DIR = '/sdcard/DSHA/记忆/档案/永久/home'
@@ -162,7 +162,7 @@ function renderDay(day, events, tombstones) {
 export async function exportHomeArchive({ dbPath = DEFAULT_DB, outDir = DEFAULT_ARCHIVE_DIR, homeCwd = DEFAULT_HOME_CWD, now = Date.now() } = {}) {
   const archiveDir = resolve(outDir)
   const cwd = String(homeCwd ?? '').trim().replace(/[/\\]+$/, '')
-  if (!cwd) throw new Error('home cwd 不能为空')
+  if (!isHomeArchiveCwd(cwd, DEFAULT_HOME_CWD)) throw new Error('home archive scope is fixed to /sdcard/DSHA/生活/数据/home; refusing other cwd values')
   assertNoSymlink(archiveDir, 'home archive output directory')
   mkdirSync(archiveDir, { recursive: true, mode: 0o700 })
   assertNoSymlink(archiveDir, 'home archive output directory')
