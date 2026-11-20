@@ -3,9 +3,9 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0022`  
-> 更新时间：2026-11-20 19:15（Asia/Shanghai）  
-> 更新者：DSH  
+> 版本：`HANDOFF-0023`  
+> 更新时间：2026-11-20 18:38（Asia/Shanghai）  
+> 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
 ---
@@ -637,3 +637,111 @@ DSH 本地文件不在 GitHub；以下为需要负责人转给 GPT 的提示词�
 
 - 本轮未部署、未重启、未写生产库；无生产副作用。
 - 下一位更新者必须重新读取远程最新 blob SHA，不能沿用本节。
+
+
+---
+
+## 18. GPT 后续修复（HANDOFF-0023）
+
+> 依据负责人转交的 HANDOFF-0021 后续修复任务。已先读取并保留 DSH 最新 HANDOFF-0022；本节为 GPT 开发分支修改与 GitHub CI 结果。未进行任何 DSHA 本地或生产操作。
+
+### 18.1 本轮范围与边界
+
+- 执行者：GPT。
+- 仅修改 GitHub 开发分支：
+  - `ba-song/dsh-memory-core` / `feat/m1-preference-memory`
+  - `ba-song/dsh-autonomy` / `main`
+- 未部署、未重启、未修改生产 profile/config、未写生产 DB/raw/episode/vector/FTS/relations/永久档案。
+- 本轮没有接触 DSHA 设备；Android FUSE 实测仍由 DSH 复验。
+- relations 语义不在本轮实现；仍等待负责人定义关系类型、方向、权重和是否参与召回。
+
+### 18.2 最新开发 HEAD 与 CI
+
+#### dsh-memory-core
+
+- 分支：`feat/m1-preference-memory`
+- 最新 HEAD：`732e3fa3381ed4b3b4242e0e6fd6e411b35ab972`
+- 最新提交：https://github.com/ba-song/dsh-memory-core/commit/732e3fa3381ed4b3b4242e0e6fd6e411b35ab972
+- GitHub Actions #79：251 tests / 249 pass / 0 fail / 2 skipped，成功。
+- CI：https://github.com/ba-song/dsh-memory-core/actions/runs/44720477406
+- 两项 skipped 仍是 GitHub runner 缺少 DSHA BGE 模型的向量冲突语料与 ingest pipeline 测试；HANDOFF-0021 记录的 DSHA 本机 BGE 两项曾通过，但本轮没有重跑设备端测试。
+
+#### dsh-autonomy
+
+- 分支：`main`
+- 最新 HEAD：`6c4a4753b4737060211955b1f022cab2f1d39521`
+- 最新提交：https://github.com/ba-song/dsh-autonomy/commit/6c4a4753b4737060211955b1f022cab2f1d39521
+- GitHub Actions #7：全量 `npm test` 为 411 tests / 408 pass / 0 fail / 3 skipped；专项 scheduler suite 5/5 pass。workflow 成功。
+- CI：https://github.com/ba-song/dsh-autonomy/actions/runs/44720665021
+- 三项 skipped 的原因：
+  1. Ubuntu runner 没有 `/root/.dsh/profiles/web/cordis.patch.yml`，profile 读取测试跳过。
+  2. GitHub runner 未安装可选宿主包 `@deepseek-ai/dsh-settings`，设置服务集成测试跳过；该测试在 DSHA 本地有包时应实际执行，不能把 skip 说成通过。
+  3. autonomy 仓库 CI 没有 sibling `dsh-memory-core` checkout，真实 dyMemory 集成测试跳过。
+- workflow 现在执行 `npm install --ignore-scripts`、全量 `npm test`，并额外执行 `node --test tests/home-archive-maintenance.test.mjs`。触发路径包括 scheduler、Config、`lib/index.js`、`package.json`、相关测试与 workflow。
+- `@deepseek-ai/schemastery ^3.19.0` 已加入 autonomy runtime dependencies，因为 `lib/index.js` 实际导入它；不再将 `@deepseek-ai/dsh-settings` 强行安装为 CI 依赖，保留其宿主可选集成性质。
+
+### 18.3 任务 A：autonomy 陈旧 volatile 断言
+
+- 原因：新增 `homeArchiveMaintenance` 后，其字段被错误标记为 `.volatile()`，导致 dsh-settings 将调度开关和路径等内部配置纳入即时设置表单。
+- 修复：`lib/index.js` 中 `homeArchiveMaintenance` 的所有字段取消 `.volatile()`，保留 schema/default/范围验证和 profile 配置解析能力。
+- 这样调度仍默认关闭，仍可通过明确的 profile 配置控制，但不会暴露为普通即时设置卡片字段。
+- 更新 `tests/config-schema.test.mjs`：
+  - 精确断言原设置卡片 volatile 路径集合；
+  - 明确断言 `homeArchiveMaintenance` 子树没有 volatile 字段；
+  - 检查解析后 `loadConfig` 保留调度配置；
+  - 设置服务描述的预期字段保持不包含 `homeArchiveMaintenance`，mutate 仍只修改原表单字段。
+- GitHub 全量 CI 中 Config volatile 精确测试 PASS。设置服务 integration 在 GitHub 因缺少宿主可选包而 SKIPPED，必须由 DSH DSHA 本地复验。
+
+### 18.4 任务 B：永久档案并发明确 best-effort
+
+- 选择负责人任务书方案 3：明确接受 best-effort，不继续扩大同步锁等待。
+- 理由：DSHA 已实测 12 个独立 Node 子进程在 Android FUSE 下有 1–2 个因 ELOCKED 退出；同进程串行队列无法解决跨进程竞争。扩大阻塞重试会增加 raw 写入路径等待，仍无法保证共享存储锁永不竞争。
+- 维持当前有限重试 100/250/500ms；锁竞争耗尽抛出明确 ELOCKED。调用点 `RawArchive.appendPermanentRow()` 已捕获异常并 warn，永久档案失败不回滚已成功 raw/DB 写入。
+- 15 天 exporter 从只读 `raw_meta` 补齐 journal 缺失 raw_id；永久档案失败依靠后续导出补齐。
+- 在调用点补充 best-effort 策略注释。
+- 重写 12 子进程测试：
+  - 每个子进程都必须正常退出并输出机器可解析的结果；
+  - 只接受成功追加或明确 `ELOCKED`，其他错误失败；
+  - 至少一个 writer 成功；
+  - 逐行解析 JSONL，检查没有解析错误、没有重复 raw_id；
+  - journal 中的 raw_id 必须与成功追加结果完全一致；
+  - 失败的 raw_id 不得出现半截记录。
+- GitHub Actions #79 该测试 PASS；Ubuntu runner 并发结果不能代替 Android FUSE 实测。DSH 必须在设备上重复执行，确认 ELOCKED 仅造成可见 warn，raw 行仍存在且下次 exporter 可补齐。
+
+### 18.5 任务 C：exporter 路径对齐与缺失错误
+
+- autonomy 已有 `homeArchiveMaintenance.exportScript` 配置项，允许明确指定实际 exporter 路径。
+- 新增启动前路径校验：`lstat` 检查 exporter 存在且是普通非符号链接文件。
+- 缺失时返回明确 `E_EXPORT_SCRIPT_NOT_FOUND: <path>`；未配置时 `E_EXPORT_SCRIPT_NOT_CONFIGURED`；非普通文件/符号链接时 `E_EXPORT_SCRIPT_INVALID: <path>`。
+- 校验在获取锁、创建备份目录和启动子进程之前执行；缺失脚本不会静默失败，也不会生成备份产物。
+- 新增测试：缺失路径明确报错、不 spawn、不创建 backupDir；存在路径可进入导出/备份流程（CI 用 fake child process）。
+- **路径尚未自动发现，也未改成未经证实的新默认值。** DSH 已确认当前生产部署目录缺少 exporter，因此当前默认路径仍会明确报错。后续需在隔离环境把配置指向开发 clone 中真实脚本并验证；生产配置仍不得修改。部署候选必须保证插件部署目录实际包含脚本，或经负责人批准配置正确绝对路径。
+
+### 18.6 任务 D：relations
+
+- 本轮未修改 relation schema、类型、方向、权重、extractor 或召回逻辑。
+- 继续保持 M3-2B 默认关闭。
+- 生产 relations=0 是 HANDOFF-0021 的历史只读证据，本轮没有重新读取生产库。
+
+### 18.7 交付后 DSH 必须复验
+
+1. 完整读取 HANDOFF-0023，核对两个仓库 HEAD。
+2. 在 DSHA 隔离 clone/worktree 对 memory-core `732e3fa3381ed4b3b4242e0e6fd6e411b35ab972` 执行全量 `npm test`；使用本机 BGE 模型验证原来 GitHub skipped 的两项。
+3. Android FUSE 上重复 12 个独立子进程并发测试至少 10 轮；按新 best-effort 断言，记录 appended/ELOCKED 数量、日志、JSONL parse errors、重复 raw_id。
+4. 在临时 DB + 临时永久目录验证：某个永久追加因 ELOCKED 失败时，raw_meta 已写入；运行 exporter 后该 raw_id 被补入 journal；不得写真实永久目录。
+5. 在 DSHA 对 autonomy `6c4a4753b4737060211955b1f022cab2f1d39521` 执行全量 `npm test`；确认原两项 volatile 问题消失。DSHA 安装有 `@deepseek-ai/dsh-settings` 时，必须实际执行设置服务集成测试，不得跳过。
+6. 在隔离配置下设置 exporter 指向开发 clone 的 `scripts/export-home-archive.mjs`，使用临时 memory DB、临时 archiveRoot 和 backupDir 实际执行 Node 子进程 + tar；验证缺失路径报错、存在路径跑通、hash 可复算。不得使用生产 archiveRoot/backupDir。
+7. 只读确认当前生产部署路径仍缺脚本，不修改生产配置，不部署、不重启。
+8. relations 仅沿用已知只读调查结论，不实现。
+9. 完成后重新读取最新 HANDOFF.md 全文和 Blob SHA，追加 HANDOFF-0024，记录所有命令、日志、退出码、PASS/FAIL/BLOCKED/NOT RUN、产物路径与副作用。不得覆盖本节。
+10. 任何部署、生产 profile 开关、真实永久目录导出或生产数据变更，必须另行取得负责人当前对话中的明确授权。
+
+### 18.8 最新交接文件信息
+
+- 版本：`HANDOFF-0023`
+- 更新者：GPT
+- 基于 HANDOFF-0022 Blob SHA：`201362a3ae7cdbcbd0f1ecb23509a0257955eace`
+- 交接分支父 commit：`6a4e3d1a2a14aefbaff8b79e29684a6d5eb8719e`
+- memory-core HEAD：`732e3fa3381ed4b3b4242e0e6fd6e411b35ab972`
+- autonomy HEAD：`6c4a4753b4737060211955b1f022cab2f1d39521`
+- 后续更新者必须重新读取 HANDOFF.md 全文及最新 Blob SHA；不得沿用本节 SHA。
