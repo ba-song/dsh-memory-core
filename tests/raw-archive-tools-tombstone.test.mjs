@@ -28,8 +28,8 @@ test('raw group and person archive tools never return tombstoned messages', asyn
     ;({ db } = openDb(dir))
     new RawArchive({ db, dir: join(dir, 'raw'), cwdPrefixes: ['/sdcard/DSHA/渠道/qq-群'], log: { info() {}, warn() {} } })
     const insert = db.prepare(`INSERT INTO raw_meta
-      (day,file,line_no,seq,role,speaker,channel,tombstone,chars,raw_text,at,extra,cwd,person_id,speaker_id)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      (day,file,line_no,seq,role,speaker,channel,tombstone,chars,raw_text,at,extra,cwd,person_id)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     const groupCwd = '/sdcard/DSHA/渠道/qq-群'
     const at = Date.now()
     const add = (line, cwd, personId, text, tombstone = 0) => insert.run(
