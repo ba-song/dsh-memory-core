@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { openDb } from '../lib/store/db.js'
 import { RawArchive } from '../lib/ingest/archive.js'
-import { readPermanentJournal, appendPermanentEvent } from '../lib/permanent/home-archive.js'
+import { readPermanentJournal, appendPermanentEvent, appendPermanentTombstone } from '../lib/permanent/home-archive.js'
 import { exportHomeArchive } from '../scripts/export-home-archive.mjs'
 import { dayOf } from '../lib/adapter/timefmt.js'
 
@@ -120,6 +120,29 @@ test('duplicate raw_id is idempotent and does not append a second base event', (
     assert.equal(appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: item }).appended, true)
     assert.equal(appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: item }).duplicate, true)
     assert.equal(readPermanentJournal(archiveDir).events.size, 1)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('repeated tombstone is idempotent and incomplete trailing JSONL bytes are preserved', () => {
+  const dir = mk('journal-recovery')
+  const archiveDir = join(dir, 'permanent')
+  const eventsDir = join(archiveDir, '_events')
+  mkdirSync(eventsDir, { recursive: true })
+  const day = '2026-11-20'
+  const file = join(eventsDir, `${day}.jsonl`)
+  const brokenTail = '{"raw_id":'
+  writeFileSync(file, brokenTail, 'utf8')
+  const item = { raw_id: 88, day, seq: 8, role: 'user', time: '12:00:00', at: 1795156800000, text: '尾部恢复', extra: {}, emotion: null }
+  try {
+    appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: item })
+    appendPermanentTombstone({ dir: archiveDir, homeCwd: HOME, cwd: HOME, rawId: 88, day, at: item.at })
+    const second = appendPermanentTombstone({ dir: archiveDir, homeCwd: HOME, cwd: HOME, rawId: 88, day, at: item.at + 1 })
+    assert.equal(second.duplicate, true)
+    const journal = readPermanentJournal(archiveDir)
+    assert.equal(journal.events.size, 1)
+    assert.ok(journal.tombstones.has(88))
+    assert.equal(journal.errors.length, 1)
+    assert.ok(readFileSync(file, 'utf8').startsWith(brokenTail + '\\n'))
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
