@@ -116,7 +116,7 @@ test('new permanent archive journal uses owner-only POSIX permissions', () => {
   const item = { raw_id: 990, day: '2026-11-20', seq: 1, role: 'user', at: Date.now(), text: '权限测试' }
   try {
     mkdirSync(eventsDir, { recursive: true, mode: 0o777 })
-    writeFileSync(file, 'legacy\\n', { mode: 0o666 })
+    writeFileSync(file, 'legacy\n', { mode: 0o666 })
     chmodSync(archiveDir, 0o777)
     chmodSync(eventsDir, 0o777)
     chmodSync(file, 0o666)
