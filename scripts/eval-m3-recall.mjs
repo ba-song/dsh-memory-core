@@ -41,7 +41,7 @@ const annotationsById = new Map((annotationDataset.queries ?? []).map((item) => 
 const db = new DatabaseSync(dbPath, { readOnly: true })
 let vectors = new Map()
 try { vectors = loadVectors(db) } catch {}
-try { await loadEmbed('/opt/qqai/models/bge-small-zh') } catch {}
+try { await loadEmbed(process.env.DY_EMBED_MODEL || '/opt/qqai/models/bge-small-zh') } catch {}
 
 let stableText = ''
 let stableError = ''
@@ -70,10 +70,22 @@ try {
     const annotation = annotationsById.get(String(item.id)) ?? null
     const queryCwd = String(annotation?.scope?.cwd ?? cwd)
     const asOfAt = asOfOf(annotation?.asOf, item.id)
+    const expectedLevel = String(annotation?.scope?.level ?? 'owner')
     const queryScope = scopeForSession({
       cwd: queryCwd, sessionId: `eval:${item.id}`,
-      isOwner: annotation?.scope?.level ? annotation.scope.level === 'owner' : true,
+      isOwner: expectedLevel === 'owner',
     })
+    if (annotation?.scope?.level && queryScope.level !== expectedLevel) {
+      throw new Error(`评测查询 ${item.id} 的标注 scope 与 cwd 推导不一致：标注=${expectedLevel}，推导=${queryScope.level}`)
+    }
+    if (expectedLevel === 'external' && annotation?.scope?.contactId
+      && String(annotation.scope.contactId) !== String(queryScope.contactId)) {
+      throw new Error(`评测查询 ${item.id} 的 contactId 与 cwd 推导不一致`)
+    }
+    if (expectedLevel === 'group' && annotation?.scope?.groupId
+      && String(annotation.scope.groupId) !== String(queryScope.groupId)) {
+      throw new Error(`评测查询 ${item.id} 的 groupId 与 cwd 推导不一致`)
+    }
     let armSnapshot = {}
     const monitor = { record(value) { armSnapshot = value?.arms ?? {} } }
     const found = await recall(db, item.query, {
