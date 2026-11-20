@@ -3,8 +3,8 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0018`  
-> 更新时间：2026-11-20 13:47（Asia/Shanghai）  
+> 版本：`HANDOFF-0019`  
+> 更新时间：2026-11-20 13:50（Asia/Shanghai）  
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -326,10 +326,10 @@ DSH首次接入时：
 
 ## 14. 最新交接
 
-- 版本：`HANDOFF-0018`
+- 版本：`HANDOFF-0019`
 - 更新者：DSH
-- 时间：2026-11-20 13:47（Asia/Shanghai）
-- 基于旧文件 blob SHA：`20fbe0da913c64c305c8da8cde1f470c79461e9c`
+- 时间：2026-11-20 13:50（Asia/Shanghai）
+- 基于旧文件 blob SHA：`375d35c749740032bd57217d58ef56b4d3fb641b`
 - 开发分支 HEAD：`4b4b5f17a123533cceef7a0cd05f3a08ff5f2004`
 - 生产版本：`bb77de2`（永久档案新实现**未部署**；生产 schema 4）
 
@@ -379,14 +379,15 @@ DSH首次接入时：
 
 DSH 本地文件不在 GitHub；以下为需要负责人转给 GPT 的提示词，均自包含：
 
-1. `/sdcard/DSHA/插件优化/85-给GPT的M3-2B快照dryrun实现提示词-20261120.md`
-   - 要求：episode 快照表 + preview/apply/rollback；默认关闭、不自动、不批量；在快照/回滚验证前不改 episode。
-2. `/sdcard/DSHA/插件优化/86-给GPT的15天永久档案导出与备份调度提示词.md`
-   - 要求：autonomy 每 15 天导出一致性检查、失败重试、备份 tar、日志/哈希；不写 raw/不写记忆/不部署。
-3. `/sdcard/DSHA/插件优化/87-给GPT的M3-REF-06三项FAIL修复提示词.md`
-   - 要求：修 `searchArchive(withContext)` tombstone 泄漏、`tombstone()` cwd 边界、`updateMemory()` 派生数据不一致/删除孤儿；建议永久档案并发短重试。
+**只需转发 1 份（已合并 85/86/87）：**
 
-报告本身（M3-2A/M3-REF/HOME-ARCHIVE）不需要转发全文；GPT 可读本交接文件中的摘要与路径。负责人只负责转发以上 3 份提示词，以及后续 GPT 要求补充的信息。
+1. `/sdcard/DSHA/插件优化/88-给GPT的M3合并实现提示词.md`
+   - 任务 A：修 M3-REF-06 三项 FAIL（撤回上下文泄漏、tombstone cwd、updateMemory 一致性/删除孤儿），并评估永久档案并发短重试；
+   - 任务 B：M3-2B 快照 + dry-run（preview/apply/rollback，默认关闭、不自动、不批量）；
+   - 任务 C：autonomy 每 15 天导出 + 备份（不写 raw/不写记忆/不部署）；
+   - 原 85/86/87 已被本份合并，**不要再转发旧三份**。
+
+报告本身（M3-2A/M3-REF/HOME-ARCHIVE）不需要转发全文；GPT 可读本交接文件中的摘要与路径。负责人只负责转发 88 号这一份，以及后续 GPT 要求补充的信息。
 
 ### 生产安全与副作用
 - 未写生产数据库；未改 raw_meta/memories/FTS/vectors；
