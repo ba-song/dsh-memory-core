@@ -4,20 +4,17 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
-import { DDL, SCHEMA_VERSION } from '../lib/store/schema.js'
+import { SCHEMA_VERSION } from '../lib/store/schema.js'
+import { SCHEMA4_DDL, SCHEMA4_VERSION } from './fixtures/schema-v4-ddl.mjs'
 import { openDb } from '../lib/store/db.js'
 
 function makeSchema4Fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-schema4-'))
   const file = join(dir, 'memory.db')
   const db = new DatabaseSync(file)
-  // Schema v4 is the checked-in bb77de2 DDL: identical to the candidate DDL
-  // except for the v5 episode_rewrite_snapshots table and its index.
-  for (const sql of DDL) {
-    if (/episode_rewrite_snapshots|idx_ers_memory/.test(sql)) continue
-    db.exec(sql)
-  }
-  db.prepare("INSERT INTO meta(k,v) VALUES('schema_version','4')").run()
+  // Frozen schema v4 DDL from bb77de2; deliberately independent of current schema.js.
+  for (const sql of SCHEMA4_DDL) db.exec(sql)
+  db.prepare("INSERT INTO meta(k,v) VALUES('schema_version',?)").run(String(SCHEMA4_VERSION))
   db.prepare("INSERT INTO memories(id,kind,text,created_at_epoch,scope_type,scope_id,quote,revision,updated_at,temporal_kind) VALUES(?,?,?,?,?,?,?,?,?,?)")
     .run(41, 'fact', 'synthetic-memory-no-private-content', 1700000000, 'owner', '', 'synthetic-quote', 3, 1700000001, 'point')
   db.prepare('INSERT INTO fts_bigram(rowid,text) VALUES(?,?)').run(41, 'synthetic-memory-no-private-content')
