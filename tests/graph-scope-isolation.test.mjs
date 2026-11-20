@@ -35,7 +35,12 @@ test('graph traversal cannot use out-of-scope memories as seeds or hops', async 
     assert.ok(unrestricted.direct.includes(privateId))
     assert.ok(unrestricted.hop.has(publicId), '对照组应能看到跨记忆关联')
 
-    const restricted = graphCandidates(db, '鲸鱼', { allowedIds: allowed })
+    const restricted = graphCandidates(db, '鲸鱼', {
+      allowedFilter: {
+        sql: "m.status='active' AND (m.scope_type IN ('core','public') OR (m.scope_type='contact' AND m.scope_id='douyin:123')) AND (m.valid_from IS NULL OR m.valid_from<=?) AND (m.valid_to IS NULL OR m.valid_to>?)",
+        params: [Date.now(), Date.now()],
+      },
+    })
     assert.deepEqual(restricted.direct, [])
     assert.equal(restricted.hop.has(publicId), false)
 
