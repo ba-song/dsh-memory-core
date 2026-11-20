@@ -141,8 +141,9 @@ test('duplicate raw_id is idempotent and does not append a second base event', (
   const item = { raw_id: 77, day: '2026-11-20', seq: 4, role: 'user', time: '12:00:00', at: 1795156800000, text: '同一条', extra: {}, emotion: null }
   try {
     assert.equal(appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: item }).appended, true)
+    assert.equal(appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: { ...item, raw_id: 78 } }).appended, true)
     assert.equal(appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: item }).duplicate, true)
-    assert.equal(readPermanentJournal(archiveDir).events.size, 1)
+    assert.equal(readPermanentJournal(archiveDir).events.size, 2)
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
