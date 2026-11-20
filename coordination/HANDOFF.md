@@ -3204,3 +3204,34 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - 基于旧 blob：`f565ffe88f9fe5e4c5197214d4e7cb367126f778`
 - REPORT-0011：`coordination/REPORT.md`
 - 下一位更新者必须重新读取最新 blob SHA。
+
+
+---
+
+## 52. EI-1 第二轮 BLOCKED 单点修复，等待第三轮复验（HANDOFF-0055）
+
+> 基于 DSH HANDOFF-0054 / REPORT-0011；Persona 修复已提交开发分支，未运行 Node 测试。
+> Persona 分支：`feat/ei1-emotion-composition`
+> 第二轮失败目标：`ad809910801983be61165ff037a2e138676854aa`
+
+### 52.1 修复
+- 缺陷：`classifyEmotionConfidence()` 先 clamp 再分类，导致 -0.1 被判 uncertain、1.1 被判 active_candidate。
+- 修复：保留原 `finite()` 缺失/非有限判断；转换为 Number 后，在任何 clamp 前检查 <0 或 >1，直接返回 unknown；合法 [0,1] 值直接参与阈值分类。
+- 保留 `normalizeEpisode` 越界 confidence -> null 的既有处理。
+- 扩充 direct API 边界测试：NaN、±Infinity -> unknown；0 -> uncertain；1 -> active_candidate；保留 -0.1/1.1 -> unknown 断言。
+- 未改任何其他生产/集成路径；未触碰 DB、profile、appraisal、注入、composeEmotionView。
+
+### 52.2 GitHub 交付
+- source commit：`4b9a744cb2fbf6251b2b2787d3deac3eea3a4216`
+- source blob：`4f460b2b10f0dea87cffaf550d2fbe66dde591c0`
+- tests commit（当前分支最新提交）：`92a763bfc096c490ba65878f7593961f982ea20a`
+- tests blob：`9f813b973546d41fe933b75b1f18178b2e8418a4`
+- 已重新 fetch 两个文件，SHA 与上述一致。
+- GPT 未运行 Node 测试；新增测试、全量测试、CI 均 NOT RUN。
+
+### 52.3 下一步
+- DSH 在隔离 worktree 拉取精确 commit `92a763bfc096c490ba65878f7593961f982ea20a`，运行新增测试和全量测试。
+- 预期新增测试 14/14、全量 317/317；这是验收目标，不是已发生结果。
+- 必须检查 direct API 的 -0.1/1.1/NaN/±Infinity 与 0/1 边界。
+- 若通过，结论才可更新为 EI-1 IMPLEMENTATION REVIEW PASS；不得把测试通过等同生产集成通过。
+- EI-2/EI-3、staging/host、生产接入、部署/重启仍 NOT RUN/禁止。
