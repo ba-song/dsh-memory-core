@@ -2,8 +2,8 @@
 
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
-> 版本：`HANDOFF-0048`
-> 更新时间：2026-11-20 23:35（Asia/Shanghai）
+> 版本：`HANDOFF-0050`
+> 更新时间：2026-11-20 23:58（Asia/Shanghai）
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -3037,3 +3037,47 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - DSH：只读复核 REPORT-0006，重点检查 junction 迁移兼容、Memory DB Link/outbox 设计、target state API、阈值/上限是否可落地；不得实施。
 - GPT：收到复核后定稿 EI-0；EI-0 PASS 后再在 Persona 开发分支实施 EI-1 纯函数层。
 - 负责人：继续作为唯一中转和授权人；本次不代表授权 staging 或生产操作。
+
+---
+
+## 48. EI-0 修订契约第二轮复核（HANDOFF-0050）
+
+> 完整报告：`coordination/REPORT.md`（REPORT-0007）
+> 只读；未改源码/DB/profile；未运行测试/staging/host；未部署/重启。
+
+### 48.1 结论
+**EI-0 REVIEW PASS（有条件），可作为 EI-1 纯函数层开发依据。**
+
+四项结构裁决已解决：Event/Appraisal 分离、Episode junction、Link 归 Memory、State 按 experiencer+target。
+
+### 48.2 必须先落的兼容条件
+1. **阈值与旧数据**：现有 345 条 episode/appraisal 的 confidence 默认 0.5；新 `>=0.65` 若直接回溯，会排除大量旧 episode。必须做 grandfathering/只对新 appraisal 应用/迁移标定。
+2. **emotions[] 存储**：建议 `emotion_appraisal_items` 子表，不只 JSON；旧 `emotion` 列保留 primary。
+3. **outbox/inbox 归属未定**：Persona 写入 event/appraisal 后谁保存待投递？建议 Persona DB outbox + Memory inbox/link；定义幂等 ack、重试、部分成功、双库不可用。
+4. **target namespace**：self/owner/owner:<peer>/tool:<name>/event:<id> 规范化；`stateFor` 缺数据要标 fallback，不伪装精确。
+5. **schema_version 命名冲突**：Persona DB 已用 schema v2；API 不要再用 `schema_version=2`，改用 `emotion_contract_version`/`api_version`。
+6. **Link FK/失效**：raw/memory 可本地 FK，但不 cascade 删除历史；task 外部命名空间；tombstone/删除只标 invalidated/dangling。
+
+### 48.3 当前只读证据
+- Persona DB：episode 345、event 345、appraisal 345、appraisal_id=0 0 条、一个 event 多 appraisal 0 条。
+- 旧数据一对一，junction 回填简单；仍要测试 0/无效 appraisal。
+- 现有 API：state/emotionAt/emotionTimeline/emotionLine 单值；新增 emotions[] 必须保留旧字段。
+
+### 48.4 状态
+| 项 | 状态 |
+|---|---|
+| Event/Appraisal 分离 | PASS |
+| Episode junction | PASS（需 unique/回填规则） |
+| Memory Link 归属 | PASS（outbox 未定） |
+| target State | PASS（namespace/fallback 需定） |
+| 阈值/上限 | PASS（需 legacy 兼容/校准） |
+| API 兼容 | PASS（schema_version 命名需改） |
+| emotions[] 存储/outbox | 待定（EI-2/EI-3 前） |
+| EI-1 | 可开始（NOT RUN） |
+| 生产写入/部署 | NOT RUN/禁止 |
+
+### 48.5 交接
+- 版本：`HANDOFF-0050`
+- 基于旧 blob：`7e3c573d463344f30f2b424e3c13d12abf0c5c07`
+- REPORT-0007：`coordination/REPORT.md`
+- 下一位更新者必须重新读取最新 blob SHA。
