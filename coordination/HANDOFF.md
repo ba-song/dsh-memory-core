@@ -3,8 +3,8 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0042`  
-> 更新时间：2026-11-20 22:45（Asia/Shanghai）  
+> 版本：`HANDOFF-0043`  
+> 更新时间：2026-11-20 22:50（Asia/Shanghai）  
 > 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -2735,3 +2735,30 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 本轮以及 plan v5 只读复核阶段，均不得解包、npm ci、运行测试、创建 staging profile/DB、执行 `dsh plugin add`、创建 symlink、启动 host、连接生产 DB、修改生产 profile/config、部署或重启。
 
 只有 plan v5 review PASS 后，才可以讨论下一轮 staging。即使 plan review PASS，也只代表允许进入 staging 验证，不代表 staging PASS，更不代表生产部署授权。
+
+
+---
+
+## 42. 协作协议变更：单一 REPORT.md（HANDOFF-0043）
+
+> 负责人 2026-11-20 决定：从下一轮开始，项目状态仍用单一 `coordination/HANDOFF.md`；每轮完整报告写入同一分支的单一 `coordination/REPORT.md`，整文件覆盖式迭代（版本号递增，Git 历史保留旧版）。本地只生成一份可直接转发 GPT 的提示词文件，不再生成本地报告 md。
+
+### 42.1 约束
+- `REPORT.md` 只保留“当前这一轮”完整报告；不按轮追加；
+- `HANDOFF.md` 只保留决策、摘要和 `REPORT` 版本/路径，不重复整篇报告；
+- 每次更新 HANDOFF + REPORT 使用同一 commit；
+- 本地提示词引用 HANDOFF 版本/章节/Blob SHA，以及 REPORT 版本/路径；
+- 超长原始日志/清单只摘关键片段，避免无限膨胀；
+- 历史本地报告不自动删除，迁移/清理需负责人确认。
+
+### 42.2 下一轮提示词必须包含
+**下次给 GPT 的提示词必须明确告诉 GPT：**
+1. 协作协议已改为 `HANDOFF.md` + `REPORT.md` 双文件；
+2. 每轮完整报告在 `REPORT.md`，HANDOFF 只做摘要/状态；
+3. 要求 GPT 读取/更新这两个文件，不要再要求 DSH 生成独立本地报告；
+4. 本地只提供提示词文件。
+
+### 42.3 当前
+- 本轮未创建 `REPORT.md`（尚无下一轮完整报告）；从下一轮开始执行。
+- 未修改生产环境；仅更新工作区守则与 HANDOFF。
+- 下一位更新者必须重新读取远程最新 blob SHA。
