@@ -10,12 +10,13 @@ const dir='/tmp/dy-m3-2b-'+process.pid
 rmSync(dir,{recursive:true,force:true})
 const {db}=openDb(dir)
 const get=(sql,...args)=>db.prepare(sql).get(...args)
+let entityBefore = null
 test('M3-2B preview is read-only and apply snapshots all derived state',async()=>{
  const id=await insertMemory(db,{kind:'episode',text:'主人在抖音看了视频',quote:'主人在抖音看了视频',sourceMsgId:'s:1',meta:{source:'fixture'}})
  linkMemory(db,id,'主人在抖音看了视频')
  await saveVector(db,id,[1,0,0])
  const ent=get("SELECT e.id,e.last_seen,e.first_seen,e.mention_count FROM entities e JOIN memory_entities me ON me.entity_id=e.id WHERE me.memory_id=? AND e.name='抖音'",id)
- const entityBefore={last_seen:ent.last_seen,first_seen:ent.first_seen,mention_count:ent.mention_count}
+ entityBefore={last_seen:ent.last_seen,first_seen:ent.first_seen,mention_count:ent.mention_count}
  const other=get("SELECT id FROM entities WHERE name='主人' AND type='person'")
  db.prepare('INSERT INTO relations(src,dst,relation,weight,memory_id,created_at) VALUES(?,?,?,?,?,?)').run(ent.id,other.id,'mentions',0.8,id,10)
  const before=Number(get('SELECT total_changes() n').n)
