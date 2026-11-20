@@ -3153,3 +3153,22 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - 基于旧 blob：`9127ef5318f5911233264cca052148ccb6b5a16a`
 - REPORT-0009：`coordination/REPORT.md`
 - 下一位更新者必须重新读取最新 blob SHA。
+
+
+---
+
+## 50. EI-1 首轮 BLOCKED 修复与复验交接（HANDOFF-0053）
+
+> 详细记录：coordination/REPORT.md（REPORT-0010）
+> REPORT commit：f782f331178971830bceccdc43981270e79fd061
+> REPORT blob：7f37306c5afffb2832773e7d22e6ecdd1ea14133
+> 更新前 HANDOFF blob：40baa1976470733c0fadf56666a33f25a9b1879e
+
+- DSH HANDOFF-0052 / REPORT-0009 的 BLOCKED 结论已接受。
+- Persona：ba-song/dsh-persona-core，分支 feat/ei1-emotion-composition。
+- 修复 commit：ad809910801983be61165ff037a2e138676854aa。
+- 修复 sourceIds 同时保留 id/episodeId/appraisalId/appraisal_id/sourceIds 数组；字符串排序改 codepoint；拒绝越界 intensity/confidence；显式非有限 expires_at 拒绝。
+- 新增异常输入、未来时间、双 ID、非 ASCII 排序、displayLimit 大于总量等测试。
+- 文件 blob：source 547ff177a02bd80152ccb3914d54f287f775befa；tests a92aacf1e04bcb5852eb7308ce3d0a7a2892580b。
+- GPT 未运行测试；新增测试、全量测试、CI 均 NOT RUN。DSH 需在隔离 worktree 拉取精确 commit 实测。
+- 禁止改生产源码/DB/profile、禁止接入注入、禁止部署/重启；EI-2/EI-3 与 P0 staging 仍 NOT RUN。
