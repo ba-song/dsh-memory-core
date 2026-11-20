@@ -42,10 +42,6 @@ test('graph traversal cannot use out-of-scope memories as seeds or hops', async 
       sessionId: 'graph-scope-test',
       isOwner: false,
     })
-    const allowed = new Set(db.prepare(
-      "SELECT id FROM memories WHERE status='active' AND (scope_type IN ('core','public') OR (scope_type='contact' AND scope_id='douyin:123'))",
-    ).all().map((row) => Number(row.id)))
-
     const unrestricted = graphCandidates(db, '鲸鱼')
     assert.ok(unrestricted.direct.includes(privateId))
     assert.ok(unrestricted.hop.has(publicId), '对照组应能看到跨记忆关联')
