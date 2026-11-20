@@ -6,6 +6,7 @@ import {
 } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { randomUUID } from 'node:crypto'
 import { archiveLabel, normalizeRole, ROLE } from '../lib/roles.js'
 import { dayOf, clockOf } from '../lib/adapter/timefmt.js'
 import { appendPermanentEvent, appendPermanentTombstone, readPermanentJournal } from '../lib/permanent/home-archive.js'
@@ -59,7 +60,7 @@ function emotionMapOf(db) {
 }
 
 function atomicWrite(file, content) {
-  const temp = `${file}.tmp-${process.pid}`
+  const temp = `${file}.tmp-${process.pid}-${randomUUID()}`
   writeFileSync(temp, content, 'utf8')
   renameSync(temp, file)
 }

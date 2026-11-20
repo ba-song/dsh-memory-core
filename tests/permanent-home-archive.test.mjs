@@ -170,6 +170,31 @@ test('repeated tombstone is idempotent and incomplete trailing JSONL bytes are p
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
+test('raw_id idempotency is global across date files and invalidates after external append', () => {
+  const dir = mk('global-idempotency')
+  const archiveDir = join(dir, 'permanent')
+  const eventsDir = join(archiveDir, '_events')
+  const firstDay = '2026-11-19'
+  const nextDay = '2026-11-20'
+  const first = { raw_id: 901, day: firstDay, seq: 1, role: 'user', at: 1795070400000, text: '原始事件' }
+  const duplicateOtherDay = { ...first, day: nextDay, text: '错误的跨日重复' }
+  try {
+    assert.equal(appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: first }).appended, true)
+    assert.equal(appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: duplicateOtherDay }).duplicate, true)
+    assert.equal(readPermanentJournal(archiveDir).events.size, 1)
+
+    mkdirSync(eventsDir, { recursive: true })
+    writeFileSync(join(eventsDir, '2026-11-18.jsonl'), JSON.stringify({
+      raw_id: 902, day: '2026-11-18', cwd: HOME, role: 'user', text: '外部追加',
+    }) + '\n')
+    assert.equal(appendPermanentEvent({
+      dir: archiveDir, homeCwd: HOME, cwd: HOME,
+      event: { ...first, raw_id: 902, day: nextDay },
+    }).duplicate, true)
+    assert.equal(readPermanentJournal(archiveDir).events.size, 2)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
 test('export repairs missing journal rows from read-only DB and does not depend on raw files', async () => {
   const dir = mk('export')
   const { db, file: dbPath } = openDb(dir)
