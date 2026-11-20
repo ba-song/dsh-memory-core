@@ -1466,3 +1466,90 @@ P0 收敛部署阻塞 → P1 统一服务契约/上下文 → P2 任务对象+�
 
 - 本轮未部署、未写生产库、未改生产源码/profile/config。
 - 下一位更新者必须重新读取远程最新 blob SHA。
+
+
+---
+
+## 29. HANDOFF-0033：GPT实施阶段首轮核查与外部阻塞
+
+> 2026-11-20。依据 HANDOFF-0032 开始实施；本节记录 GPT 已完成的远程源码核查、当前阻塞和下一步边界。未部署、未修改生产环境。
+
+### 29.1 当前状态与基线
+
+- 本轮实施依据：HANDOFF-0032；不再使用 91 号提示词作为交付依据。
+- 远程读取的 HANDOFF 文件 Blob SHA：`142bf41d7d97441b8307e0a975d71ed2c0ecc56b`。
+- memory-core 基线：`732e3fa3381ed4b3b4242e0e6fd6e411b35ab972`。
+- autonomy 基线：`6c4a4753b4737060211955b1f022cab2f1d39521`。
+- persona 基线：`a84c7badd1e6c971a66b6c39dd4f7ab795df4b90`。
+- DSHA 基线：`36d89b72294348d0482d509109cf8e76d51fc1cb`。
+- 当前未创建任务插件仓库、未修改任何插件源码、未部署、未重启、未写生产库/profile/人格/记忆。
+
+### 29.2 P0 候选包：已完成的源码级核查
+
+已从 memory-core 基线读取并核对：
+- `package.json`；
+- `package-lock.json`；
+- `scripts/export-home-archive.mjs`；
+- `lib/permanent/home-archive.js`；
+- `lib/roles.js`；
+- `lib/adapter/timefmt.js`；
+- `cordis.patch.yml`；
+- `README.md`。
+
+源码级结论：
+1. exporter 的相对导入目标在指定 commit 中均存在：`../lib/roles.js`、`../lib/adapter/timefmt.js`、`../lib/permanent/home-archive.js`。
+2. exporter 使用 Node 内置 `node:sqlite`，并使用 Node 内置文件系统、路径、URL、crypto 模块；不依赖额外 npm 包才能解析这些导入。
+3. `package.json` 声明 `engines.node >=20`，但 `node:sqlite` 并非整个 Node 20 版本线都具备。部署验收应将实际运行时最低版本明确为支持 `node:sqlite` 的版本；本项目已报告 DSHA Node 24，需在 DSHA 实机复跑确认。
+4. lockfile 中 `onnxruntime-node@1.31.1` 带原生安装脚本，声明 Linux 平台并依赖平台原生二进制。完整插件安装/运行必须独立验证其在 DSHA Ubuntu arm64 环境中的安装与加载；不能把 exporter 自身语法/import 检查等同于 ONNX 运行时可用。
+5. exporter 脚本本身的直接导入路径没有导入 `onnxruntime-node`；因此应分别验收“exporter 独立执行”和“完整 memory-core 插件安装/加载”，不要把两者混为一个检查。
+6. 远程指定路径 `scripts/deploy-home-archive.sh` 在该 commit 返回 404；本轮没有发现可据以确认的同名部署脚本。不得因此推断设备上不存在其他部署脚本，仍需将实际部署入口、脚本和调用参数交由 DSH 从 DSHA 生产只读核实。
+7. 远程 GitHub 源码不能证明手机本地候选 tar.gz 的真实内容、文件顺序、权限位、完整性或 SHA-256。负责人提供的路径/大小/哈希目前仍是报告值，GPT尚未直接读取候选包并独立复算哈希。
+
+P0 状态：**源码依赖关系初审完成；候选 tar.gz 实物校验、部署入口审查、隔离 staging 安装/导出/打包验收均未完成；禁止部署。**
+
+### 29.3 P0 继续验收所需材料
+
+需要从 DSHA 候选包实物完成：
+- 对候选 tar.gz 复算 SHA-256、大小；
+- 列出归档文件清单，确认同一 commit 的完整插件发行目录，而非只含 exporter 单文件；
+- 检查相对导入目标、`package.json`、`package-lock.json`、必要配置和资源是否齐全；
+- 检查归档是否意外包含生产数据库、个人数据、凭据、缓存或不应发布的文件；
+- 在隔离 staging 中执行目标 Node 24 的 exporter `--help`、隔离临时 DB 导出、临时 archiveRoot 校验、备份/重复运行/异常恢复测试；
+- 对完整插件单独验证 `npm ci`/原生依赖加载和 DSH 插件加载；
+- 对照实际部署脚本逐条确认源目录、目标目录、备份、权限、回滚和失败停止条件。
+上述全部标记为 **未运行，待 DSH 复跑/提供证据**。不得连接生产 DB 或真实 archiveRoot 做试验。
+
+### 29.4 独立任务插件 dsh-task-core：设计冻结前提
+
+HANDOFF-0032 要求独立仓库，但当前已连接 GitHub 工具集合没有创建新仓库的操作；检索也未发现可访问的 `dsh-task-core` 仓库。因此 GPT 当前不能在不违反“独立仓库”要求的前提下创建提交。不得把任务插件临时塞入 memory-core 或 autonomy 代替。
+
+仓库创建后，建议首版数据模型按以下职责实现（这是根据 HANDOFF-0032 的验收目标形成的实施草案，不声称来自未提供的 91 号原始字段表）：
+- `tasks`：任务 ID、owner ID、session ID、标题/目标、描述、状态、优先级、来源/外部引用、当前步骤、创建/更新时间、截止时间、重试策略、版本号及终态时间；
+- `task_steps`：步骤 ID、task ID、稳定序号、名称/目标、状态、依赖步骤 ID、执行器/能力引用、输入引用、输出引用、验证要求/验证结果、尝试次数、超时、错误摘要、开始/结束时间；
+- `task_events`：追加式事件 ID、task/step ID、owner/session、事件类型、发生时间、操作者/来源、脱敏 payload、幂等键；不允许通过更新旧事件伪造历史；
+- `task_checkpoints`：checkpoint ID、task ID、版本/序号、恢复状态快照、已完成步骤、待执行步骤、外部资源引用、创建时间及校验摘要。
+所有读写按 owner 隔离；session 隔离遵循明确授权策略，不允许通过猜测 ID 越权读取。步骤依赖必须形成 DAG，拒绝循环依赖。任务/步骤状态变更与事件记录应在同一事务内完成；checkpoint 应支持原子写入和版本校验。任务结果仅存引用，不复制真实记忆/人格内容。
+
+### 29.5 成长建议模块边界
+
+- 成长系统维持 suggest-only；建议队列与真实 skill/memory/persona 写入分离。
+- 建议记录必须包含 source、evidence_ref、suggested_change、target、confidence、status、创建时间、审批人/审批时间、版本/回滚引用。
+- 输入适配采用可选服务：memory lesson/skill、autonomy reflect/action、task 完成/失败事件。任一服务缺失时应降级，不阻塞现有插件。
+- 单次偶然事件不能直接固化为技能或人格结论；证据不足标记 low confidence。
+- 审批前只写建议记录；审批后生成可审查草案，不自动覆盖真实人格、记忆或技能。
+- 具体放置仓库与跨插件事件契约需在任务插件仓库可创建后结合现有插件服务模式完成源码审查再定，不能在未确认边界前把成长代码塞入 task-core。
+
+### 29.6 当前明确阻塞与所需负责人动作
+
+1. **任务插件仓库**：需要在 GitHub 账户下创建空仓库 `ba-song/dsh-task-core`（建议默认分支 `main`，公开/私有按负责人既有仓库策略），或为当前 GitHub 连接提供可创建仓库的能力。创建后 GPT 可独立创建开发分支、源码、schema、tests、README 和 CI；不需要 DSH 替 GPT 写代码。
+2. **P0 候选包实物**：需要把 `dsh-memory-core-732e3fa-20261120-194319.tar.gz` 上传到当前对话，或提供可读取的 GitHub 候选 release/artifact。仅有 DSHA 本地路径不能让 GPT 读取手机文件。
+3. **部署脚本与真实安装入口**：由 DSH 从 DSHA 本地只读提取实际部署脚本路径、内容和调用链，作为后续审查证据；不执行脚本、不部署。
+
+### 29.7 本轮执行声明
+
+- 已完成远程源码级静态核查和实施方案拆分。
+- 未创建新仓库（当前 GitHub 工具不支持创建仓库）；未修改 task/autonomy/memory/persona 源码。
+- 未下载、解包或复算 DSHA 本地候选 tar.gz；未运行 staging 测试。
+- 未写生产数据库、生产配置、真实记忆、人格或技能。
+- 未部署、未重启、未启用 M3-2B/永久双写/15 天调度。
+- 后续继续前必须重新读取 HANDOFF 全文和最新 Blob SHA；不得覆盖 DSH 或负责人并发更新。
