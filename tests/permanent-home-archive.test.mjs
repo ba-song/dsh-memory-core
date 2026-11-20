@@ -281,6 +281,12 @@ test('stale lock recovery checks owner process before deleting an old lock', () 
     utimesSync(lockPath, old, old)
     assert.equal(appendPermanentEvent({ dir: archiveDir, homeCwd: HOME, cwd: HOME, event: item }).appended, true)
 
+    writeFileSync(lockPath, '{corrupt lock metadata')
+    utimesSync(lockPath, old, old)
+    assert.equal(appendPermanentEvent({
+      dir: archiveDir, homeCwd: HOME, cwd: HOME, event: { ...item, raw_id: 994 },
+    }).appended, true)
+
     writeFileSync(lockPath, JSON.stringify({ pid: process.pid, at: 1 }))
     utimesSync(lockPath, old, old)
     assert.throws(
