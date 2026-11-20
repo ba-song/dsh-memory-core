@@ -11,7 +11,7 @@ test('human graded metrics distinguish unlabelled queries from zero-recall label
   assert.equal(labelledNone.recall, null)
   assert.equal(labelledNone.precision[3], 0)
 
-  const labelled = evaluateRankedResults([9, 2, 8, 1], [
+  const labelled = evaluateRankedResults([{ id: 9 }, { id: 2, source_msg_id: 'p4:session:2' }, { id: 8 }, { id: 1 }], [
     { memoryId: 1, grade: 3, evidence: { sourceMsgId: 'raw:11' } },
     { memoryId: 2, grade: 1 },
   ])

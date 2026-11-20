@@ -39,7 +39,7 @@ Do not infer memory IDs from query wording. Verify each label against the memory
 - Recall@1/3/5 and Precision@1/3/5;
 - MRR;
 - graded nDCG@5;
-- evidence coverage among retrieved relevant memories;
+- provenance-field coverage among retrieved relevant memories (measured from the actual returned memory rows' source anchors, not from annotation completeness);
 - forbidden returned ID count;
 - RRF per-arm rank and contribution explanation;
 - top-K Jaccard and exact-order stability comparison.

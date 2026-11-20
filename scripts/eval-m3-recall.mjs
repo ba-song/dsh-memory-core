@@ -106,7 +106,7 @@ try {
       scope: queryScope, asOf: asOfAt, monitor, trackAccess: false,
     })
     const graded = evaluateRankedResults(
-      found.map((hit) => Number(hit.id)),
+      found,
       annotation?.relevant ?? [],
       { forbiddenMemoryIds: annotation?.forbiddenMemoryIds ?? [] },
     )
