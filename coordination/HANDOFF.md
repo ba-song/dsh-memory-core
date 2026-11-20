@@ -3,9 +3,9 @@
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
 > 仓库：`ba-song/dsh-memory-core`  
-> 版本：`HANDOFF-0038`  
-> 更新时间：2026-11-20 21:22（Asia/Shanghai）  
-> 更新者：GPT  
+> 版本：`HANDOFF-0039`  
+> 更新时间：2026-11-20 21:55（Asia/Shanghai）  
+> 更新者：DSH  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
 ---
@@ -2030,3 +2030,41 @@ DSH 先只读复核本节 v2，不运行 staging、不解包、不 npm ci、不�
 6. 每条命令是否可能触碰生产目录/数据库/配置。
 
 DSH 必须完整读取 HANDOFF 全文并核对最新 Blob SHA/commit；完成后更新 HANDOFF，采用 SHA 并发保护，并提交完整可直接转发 GPT 的反馈（命令/原始输出/退出码/路径/hash/状态/副作用/HANDOFF 新旧 SHA/commit/link）。**必须提醒负责人把完整反馈转交 GPT**，不能只回复完成或只更新 HANDOFF。HANDOFF 是 GPT、DSH、负责人共同维护的唯一长期项目状态入口，DSH 不得遗忘或绕过该协议。
+
+
+---
+
+## 36. P0 staging plan v2 复核（HANDOFF-0039）
+
+> 报告：`/sdcard/DSHA/插件优化/P0-STAGING-PLAN-V2-REVIEW-01.md`
+> 反馈：`/sdcard/DSHA/插件优化/95-给GPT的P0-staging-plan-v2复核反馈.md`
+> 本轮只读；未解包、未 npm ci、未测试、未创建 staging/DB、未启动 host、未连生产 DB、未部署。
+
+### 36.1 版本
+- HANDOFF-0038：commit `29517a459b74dae6188c8b8c3b59cffb44315f2c`，blob `a2fcdbb6ba34de2b7c8e465f1244bfc378fd7129`。
+- memory-core HEAD：`0af569ac33b006d49c96d896094d77f5c75b6ede`。
+
+### 36.2 结论
+- 候选包路径/SHA/顶层/strip-components/exporter 路径：**PASS**。
+- 新迁移事务、版本写入、失败回滚、幂等：**PASS（静态/CI）；DSHA 未运行**。
+- ONNX session 命令：**PASS（静态）；未运行**。
+- **Cordis 隔离 host：BLOCKED**：自定义 profile 未建 `package.json`/`node_modules`，`plugin-src` 不自动被 DSH 加载；需补 profile 初始化/link。
+- **端口检查：BLOCKED**：`ss` 不存在，`netstat` 不支持 AF INET；需 Node 探测。
+- 生产路径审计：BLOCKED（未启动/未 strace；strace 可用）。
+- 快照/WAL 回滚：设计 PASS，未运行；建议快照前停写。
+- staging 实跑：NOT RUN。
+
+### 36.3 测试缺口
+- 失败注入只覆盖 schema_version 更新；未覆盖 ALTER/索引中途失败、version>code、非法 version、snapshot 缺列。
+- fixture 的 raw_meta 缺 file/line_no/speaker/channel/chars 等列，未完全贴近 archive.js。
+- FTS5 事务行为需 DSHA 实跑。
+
+### 36.4 交 GPT 的修订
+1. 补 staging profile `package.json`/bundles/`node_modules` link（或 staging `dsh plugin add link:`）；
+2. 用 Node 端口探测替代 `ss`；
+3. 补迁移测试缺口/fixture raw 列；
+4. 快照前停写、恢复后核对 ID/行数；
+5. 更新 HANDOFF 后再 staging，仍不部署。
+
+### 36.5 副作用
+未解包、未 npm ci、未运行测试、未创建 staging/DB、未启动 host、未调用 dsha-plugin、未连生产 DB、未改生产 profile/config、未部署/重启。
