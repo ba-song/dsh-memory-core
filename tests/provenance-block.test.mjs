@@ -4,7 +4,7 @@ import { join } from 'node:path'
 const DIR='/tmp/dy-prov-'+process.pid; process.env.DY_MEMORY_DIR=DIR; rmSync(DIR,{recursive:true,force:true}); mkdirSync(DIR,{recursive:true})
 const {openDb}=await import('../lib/store/db.js')
 const {RawArchive}=await import('../lib/ingest/archive.js')
-const {buildProvenanceBlock}=await import('../lib/inject/context-blocks.js')
+const {buildProvenanceBlock,buildThoughtsBlock,buildEmotionBlock}=await import('../lib/inject/context-blocks.js')
 const {buildQuotesBlock}=await import('../lib/inject/quotes.js')
 const {bigrams}=await import('../lib/store/fts.js')
 const HOME='/sdcard/DSHA/生活/数据/home'; const {db}=openDb(DIR)
@@ -36,4 +36,17 @@ assert.ok(prov2.block.includes('想：'),'去重后仍带想')
 assert.ok(prov2.block.includes('心情：')||prov2.block.includes('想：'),'去重后不丢信息')
 // 每行上限
 assert.ok(prov.block.split('\n').filter(l=>l.startsWith('- ')).length<=5)
+// 撤回原话及其邻近思考不得通过旧版独立块回流
+const revokedSeq=999; const revokedLine=ins('user','这条原话已经撤回',now+1000)
+db.prepare('UPDATE raw_meta SET seq=?,tombstone=1 WHERE line_no=?').run(revokedSeq,revokedLine)
+const revokedThoughtLine=ins('self-thought','这条思考也已撤回',now+1001)
+db.prepare('UPDATE raw_meta SET tombstone=1 WHERE line_no=?').run(revokedThoughtLine)
+const revokedHit={source_msg_id:'p4:revoked-session:'+revokedSeq,source_ts:now+1000}
+const revokedThoughts=buildThoughtsBlock(db,{cwd,hits:[revokedHit]})
+assert.equal(revokedThoughts.block,'','撤回原话附近的思考不得被注入')
+let revokedEmotionCalls=0
+const revokedEmotion=buildEmotionBlock(db,{cwd,hits:[revokedHit],persona:{emotionAt(){revokedEmotionCalls++;return {label:'开心',intensity:0.9,confidence:0.9}}}})
+assert.equal(revokedEmotion.block,'','找不到有效原话锚点时不得回填情绪')
+assert.equal(revokedEmotionCalls,0,'不得对撤回消息时间调用情绪回填')
+
 console.log(JSON.stringify(out))
