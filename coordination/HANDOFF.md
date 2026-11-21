@@ -3519,3 +3519,59 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - 未写生产 DB、未改生产插件/profile/config；未部署、重启或启动 staging；未合并主开发分支。
 - 未修改 EI/Persona、Android、Autonomy 或共享协调文件（本次由 GPT 统一更新）。
 - 下一建议批次为 **Batch B：session-index + handoff brief**，但当前尚未获得负责人对 Batch B 的明确授权；继续等待决定。生产验证、主线合并与部署均需独立授权。
+
+
+---
+
+## 59. Memory Batch B：session-index + handoff brief 统一 current 有效性接入（HANDOFF-0062）
+
+> 代码分支：`feat/memory-validity-b` @ `2a93031db3dfa1a1c7c34b7376aebe395493c57f`
+> 基线：Batch A `5797324175f345ff82337f409d8406e5256ddfc3`
+> 专项报告：`MEMORY-REPORT-0011`，报告 commit `a8454b87bc3fdd45bbc755dfff532056120599c7`，blob `f04a7ea62df8bed4d8829c20bf29800bf514ef22`
+> GPT 复核时间：2026-11-21；本节由 GPT 统一整合。
+
+### 59.1 代码范围与独立核对
+
+- GitHub compare：基线 `5797324175f345ff82337f409d8406e5256ddfc3` → HEAD `2a93031db3dfa1a1c7c34b7376aebe395493c57f`，ahead **11** / behind **0**。
+- Tree：`3d5e305ecf53f70b6f6090e4514346b8ce54ef91`。
+- 恰好六个文件变更：
+  - `lib/store/validity.js` blob `e2be1294e52e33724e1cd8c815dd418b8a883f2b`
+  - `lib/inject/session-index.js` blob `e155f1ce1ab147828c381d05532323e2cce0cebc`
+  - `lib/handoff/brief.js` blob `e8938ffc924f374d553017263d506472a5cacca0`
+  - `tests/validity.test.mjs` blob `f19e124edf6f93b298ab707469ba3e446bab0492`
+  - `tests/session-index.test.mjs` blob `3f51f279815337b56e36c3b1605118327ae295e2`
+  - `tests/handoff-brief.test.mjs` blob `98b6891a9d5cb8a2c7028e4e7c812598b0dfd452`
+- GPT 已实际读取专项报告、上述六个文件及 compare；报告 blob 与指定一致。三业务文件与首验逐字节相同；两项修复测试 blob 与报告一致。
+- 独立代码审查确认：
+  - session-index episode 使用 `current`；todo 使用 `currentTodoActiveEmpty`，保留 active/空字符串状态域；两者均增加 valid_from、valid_to、superseded_by 过滤。
+  - handoff 项目 todo 使用 `currentTodoLegacy`，保留 active/空字符串/NULL 兼容状态域，并保留 project_id 约束；owner 标签统计使用严格 `current`。
+  - decisions 表仍独立查询，没有错误接入 memories helper。
+  - 原有 owner scope、排序、LIMIT、文本截断、只读行为及 handoff 项目隔离仍保留。
+  - validity 测试 fixture 通过 try/finally 清理；session-index 新增 future/superseded todo 的排除断言。
+- 三个测试文件均无 SQL `status=NULL` fixture；NULL兼容只由纯 JS 镜像验证，符合 NOT NULL schema。
+
+### 59.2 Memory 智能体隔离测试证据
+
+以下测试由 Memory 智能体在独立 worktree 执行并报告，GPT 未亲自运行 Node 测试：
+
+| 项目 | 结果 |
+|---|---|
+| session-index 定向 | 1/1，exit 0 |
+| handoff brief 定向 | 1/1，exit 0 |
+| validity 定向 | 23/23，exit 0 |
+| validity 连续三次 | 23/23 × 3，0 fail / 0 skip |
+| 七文件相关回归 | 19/19，exit 0 |
+| 全量 `npm test` | **300/300 × 3，0 fail / 0 skip，exit 0** |
+| 负向对照 | **8/8** 全部按预期失败；恢复后逐字节一致 |
+| `git diff --check` | exit 0 |
+
+第三轮复验已覆盖前两轮发现的两个问题：共享 DB fixture 污染通过 finally 清理修复；session-index 对 future/superseded todo 的测试覆盖已补齐。删除 finally 可复现污染；旧过滤会触发新增 todo 断言失败。此前 `doctor.test.mjs` 环境 flake 本轮三次全量均未复现，且该文件不在本批 diff 内。
+
+### 59.3 GPT 裁决与边界
+
+- **Batch B：隔离代码验收 PASS。** 报告证据与 GitHub HEAD/tree/blob/compare 一致，业务实现与兼容状态域通过独立代码审查。
+- 这不是生产设备验证，也不代表生产 as-of、集成、主线合并或部署通过。
+- 本批没有写生产 DB、修改生产插件/profile/config、部署/重启/staging，也没有合并主线。
+- 未接入调用点仍包括 preference merge、daily、weekly；按风险继续分批处理。
+- **下一批建议 Batch C：preference merge**，需负责人另行明确授权；Batch B 的授权不自动涵盖 Batch C。
+- Android / Autonomy v4 仍为 DESIGN ALIGNED、真实设备验证 NOT RUN；继续保留主线计划，需独立安排与授权。
