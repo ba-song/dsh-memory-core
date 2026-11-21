@@ -16,7 +16,7 @@ import { insertMemory } from '../lib/store/memories.js'
 import { ingestCandidate } from '../lib/ingest/p4.js'
 import {
   VALIDITY_PRESETS, VALIDITY_MODES, SUPERSEDED_POLICIES,
-  validitySql, uncertaintySql, resolveSourceTs, assertEpochMs, presetOf, ValidityError,
+  validitySql, uncertaintySql, resolveSourceTs, assertEpochMs, presetOf, ValidityError, isValidAt,
 } from '../lib/store/validity.js'
 
 const T = 1795000000000          // 固定判定时刻
@@ -59,8 +59,8 @@ test('validity: legacy todo presets preserve distinct status domains with curren
   assert.match(legacy.sql, /status='active' OR status='' OR status IS NULL/)
   for (const r of [activeEmpty, legacy]) {
     assert.deepEqual(r.params, [T, T])
-    assert.match(r.sql, /valid_from IS NULL OR valid_from<=\\?/)
-    assert.match(r.sql, /valid_to IS NULL OR valid_to>\\?/)
+    assert.match(r.sql, /valid_from IS NULL OR valid_from<=\?/)
+    assert.match(r.sql, /valid_to IS NULL OR valid_to>\?/)
     assert.match(r.sql, /superseded_by IS NULL OR superseded_by=0 OR superseded_by=''/)
   }
 })
