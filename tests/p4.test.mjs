@@ -1,5 +1,6 @@
 import assert from 'node:assert'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { openDb } from '../lib/store/db.js'
 import { insertMemory } from '../lib/store/memories.js'
 import { extractPreference, extractRelation, extractSkill, isTooShortOrGreeting } from '../lib/ingest/classes.js'
@@ -21,19 +22,26 @@ assert.deepEqual(extractPreference('主人喜欢吃海鲜')?.kind, 'preference')
 assert.ok(extractRelation('主人叫我大肥鱼')?.text.includes('叫我'))
 assert.ok(extractSkill('以后就按这个格式发')?.text.includes('以后'))
 
-// 3) 20 对冲突语料（真实 bge 向量）
-const pairs = JSON.parse(readFileSync(new URL('./fixtures/conflict-pairs.json', import.meta.url), 'utf8'))
-await loadEmbed('/opt/qqai/models/bge-small-zh')
-const vecs = await embedTexts(pairs.flatMap(([a, b]) => [a, b]))
-let wrong = 0
-for (let i = 0; i < pairs.length; i++) {
-  const [a, b, exp] = pairs[i]
-  let s = 0
-  for (let k = 0; k < vecs[i * 2].length; k++) s += vecs[i * 2][k] * vecs[i * 2 + 1][k]
-  const d = decideConflict(a, b, s, { mergeLine: 0.78, queueLine: 0.45 })
-  if (d.action !== exp) { wrong++; console.error('MISS', a, b, s.toFixed(3), d.action, exp) }
+const modelAvailable = existsSync(join(process.env.DY_EMBED_MODEL || '/opt/qqai/models/bge-small-zh', 'tokenizer.json'))
+let pairCount = 0
+if (modelAvailable) {
+  // 3) 20 对冲突语料（真实 bge 向量）
+  const pairs = JSON.parse(readFileSync(new URL('./fixtures/conflict-pairs.json', import.meta.url), 'utf8'))
+  pairCount = pairs.length
+  await loadEmbed('/opt/qqai/models/bge-small-zh')
+  const vecs = await embedTexts(pairs.flatMap(([a, b]) => [a, b]))
+  let wrong = 0
+  for (let i = 0; i < pairs.length; i++) {
+    const [a, b, exp] = pairs[i]
+    let s = 0
+    for (let k = 0; k < vecs[i * 2].length; k++) s += vecs[i * 2][k] * vecs[i * 2 + 1][k]
+    const d = decideConflict(a, b, s, { mergeLine: 0.78, queueLine: 0.45 })
+    if (d.action !== exp) { wrong++; console.error('MISS', a, b, s.toFixed(3), d.action, exp) }
+  }
+  assert.equal(wrong, 0, '20 对语料应全部判对')
+} else {
+  console.log(JSON.stringify({ skipped: 'p4-vector-conflict-corpus', reason: 'DSHA BGE model is not installed' }))
 }
-assert.equal(wrong, 0, '20 对语料应全部判对')
 
 // 4) 衰减：快进 365 天
 const mk = (kind, days, extra = {}) => ({ kind, importance: 1, created_at_epoch: Date.now() - days * 86400e3, pinned: 0, access_count: 0, meta: '{}', ...extra })
@@ -48,6 +56,7 @@ assert.equal(isStale(mk('episode', 60)), true)
 const ep = aggregateDay(['今天好累啊，好累好累', '记忆和心情都很重要', '心情不好'], '2026-10-31')
 assert.ok(ep && ep.text.includes('2026-10-31'))
 
+if (modelAvailable) {
 // 6) 管线：门控不再写，重复相似直接合并
 const dir = '/tmp/dy-p4-' + process.pid
 rmSync(dir, { recursive: true, force: true })
@@ -67,8 +76,11 @@ assert.equal(r3.action, 'queue', '矛盾应进 queue')
 assert.equal(db.prepare("SELECT status FROM memories WHERE id=?").get(r3.id).status, 'pending')
 assert.equal(db.prepare('SELECT count(*) c FROM conflict_queue').get().c, 1)
 
-console.log(JSON.stringify({ ok: true, test: 'p4', pairs: pairs.length, decayFact365: +effectiveImportance(mk('fact', 365)).toFixed(3), actions: [r0.action, r1.action, r2.action, r3.action] }))
+console.log(JSON.stringify({ ok: true, test: 'p4', pairs: pairCount, decayFact365: +effectiveImportance(mk('fact', 365)).toFixed(3), actions: [r0.action, r1.action, r2.action, r3.action] }))
 
+} else {
+  console.log(JSON.stringify({ skipped: 'p4-ingest-pipeline', reason: 'DSHA BGE model is not installed' }))
+}
 // 7) 反义不要跨话题：喜好老 vs 不吃生蚝 不是矛盾
 assert.equal(hasOpposition('喜欢吃老的', '主人不爱吃生蚝'), false)
 assert.equal(hasOpposition('喜欢看海', '讨厌海'), true)
