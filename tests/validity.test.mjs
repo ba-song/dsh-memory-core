@@ -178,15 +178,19 @@ const sorted = (s) => [...s].sort((a, b) => a - b)
 test('validity: legacy todo JS mirror and SQL sets preserve NULL/empty distinctions', async () => {
   const active = await mk({ kind: 'todo', text: 'todo active', createdAt: T - 1 })
   const empty = await mk({ kind: 'todo', text: 'todo empty', createdAt: T - 1 })
-  db.prepare("UPDATE memories SET status='' WHERE id=?").run(empty)
-  const activeEmpty = selectIds(validitySql({ at: T, preset: 'currentTodoActiveEmpty' }))
-  const legacy = selectIds(validitySql({ at: T, preset: 'currentTodoLegacy' }))
-  assert.ok(activeEmpty.has(active) && activeEmpty.has(empty))
-  assert.ok(legacy.has(active) && legacy.has(empty))
-  assert.equal(isValidAt({ status: 'active' }, T, 'currentTodoLegacy'), true)
-  assert.equal(isValidAt({ status: '' }, T, 'currentTodoActiveEmpty'), true)
-  assert.equal(isValidAt({ status: null }, T, 'currentTodoActiveEmpty'), false)
-  assert.equal(isValidAt({ status: null }, T, 'currentTodoLegacy'), true)
+  try {
+    db.prepare("UPDATE memories SET status='' WHERE id=?").run(empty)
+    const activeEmpty = selectIds(validitySql({ at: T, preset: 'currentTodoActiveEmpty' }))
+    const legacy = selectIds(validitySql({ at: T, preset: 'currentTodoLegacy' }))
+    assert.ok(activeEmpty.has(active) && activeEmpty.has(empty))
+    assert.ok(legacy.has(active) && legacy.has(empty))
+    assert.equal(isValidAt({ status: 'active' }, T, 'currentTodoLegacy'), true)
+    assert.equal(isValidAt({ status: '' }, T, 'currentTodoActiveEmpty'), true)
+    assert.equal(isValidAt({ status: null }, T, 'currentTodoActiveEmpty'), false)
+    assert.equal(isValidAt({ status: null }, T, 'currentTodoLegacy'), true)
+  } finally {
+    db.prepare('DELETE FROM memories WHERE id IN (?,?)').run(active, empty)
+  }
 })
 
 test('db: current 视图', () => {
