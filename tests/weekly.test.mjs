@@ -50,7 +50,9 @@ test('周结 apply：只把重复条标 superseded，保留 keeper，不删正�
   const full = db.prepare('SELECT revision, updated_at, valid_to, temporal_kind FROM memories WHERE id=?').get(superseded[0].id)
   assert.equal(Number(full.revision), 2, 'superseded 必须 revision+1')
   assert.ok(Number(full.updated_at) > 0, 'superseded 必须更新 updated_at')
-  assert.ok(Number(full.valid_to) > 0, 'superseded 必须设 valid_to')
+  assert.equal(Number(full.valid_to), now, '原有未来 valid_to 必须收敛到实际 supersede 时刻')
+  const snapshot = db.prepare('SELECT previous_json FROM memory_revisions WHERE memory_id=?').get(superseded[0].id)
+  assert.ok(Number(JSON.parse(snapshot.previous_json).valid_to) > now, 'revision 快照必须保留迁移前的未来 valid_to')
   assert.equal(full.temporal_kind, 'historical')
   const snaps = db.prepare('SELECT count(*) c FROM memory_revisions WHERE memory_id=?').get(superseded[0].id).c
   assert.equal(Number(snaps), 1, 'superseded 必须留一条修订快照')
@@ -102,7 +104,7 @@ test('周结 apply：缺少 revision 快照表时失败关闭并整体回滚', a
   const { db: isolated } = openDb(dir)
   try {
     const a = await insertMemory(isolated, { kind: 'fact', text: '主人喜欢烤生蚝', layer: 'auto', importance: 0.6, createdAt: now - 2 * 86400000 })
-    const b = await insertMemory(isolated, { kind: 'fact', text: '主人喜欢吃烤生蚝', layer: 'auto', importance: 0.7, createdAt: now - 86400000 })
+    const b = await insertMemory(isolated, { kind: 'fact', text: '主人喜欢吃烤生蚝', layer: 'auto', importance: 0.7, createdAt: now - 86400000, validTo: now + 86400000 })
     isolated.exec('DROP TABLE memory_revisions')
     const r = weeklyConsolidate({ db: isolated, cfg: { dryRun: false, threshold: 0.55 }, now })
     assert.equal(r.ok, false, 'missing history table must not fall back to legacy status-only write')
