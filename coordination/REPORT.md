@@ -789,3 +789,39 @@ Android / Autonomy v4 设计对齐与真实设备后台恢复验证计划继续�
 - 等待 Memory 智能体在全新 worktree 核对 HEAD、diff、Node/npm 版本并提交完整原始测试报告。
 - 如有失败，只报告证据与最小原因；不得弱化断言、升级 schema 或改动生产数据。
 - 本轮无生产写入、迁移、部署、重启、staging、真实调度或执行器启动。
+
+
+---
+
+## REPORT-0018 · 四专业智能体接管只读审计（2026-11-22）
+
+完整审计文件：coordination/DSH-FOUR-AGENTS-TAKEOVER-REPORT.md
+
+### 本轮执行
+
+- 完成 Memory、Persona/EI、Channel Bridge、Douyin 四仓库的默认分支/HEAD/branch tree/compare/AGENTS/open PR/文档/Actions 核查。
+- 交叉核对 Autonomy 与 Android 宿主 DSHA；确认 Android 宿主仓库当前可读取，main HEAD 36d89b72294348d0482d509109cf8e76d51fc1cb（build357）。
+- 没有运行测试、连接设备或真实渠道；没有修改产品代码、生产配置、数据库或权限。
+
+### 主要发现
+
+1. Memory minimal-integration 当前 HEAD a63f994，旧 MEMORY-REPORT-0021 对应 8d0f3ad，必须在新 worktree 复验。wake-capture 与 minimal 分支 schema 不同，不可直接合并。
+2. Persona EI-1 隔离测试报告为 21/21、324/324，但设备复验 NOT RUN；EI-2A 未授权。设计修订分支 blob 670e5a34 与报告分支 blob d79bd124 不一致。
+3. Channel Bridge 550/550 是并发编辑工作树证据，不绑定当前 main HEAD；源码实际存在 group scope 记忆与 raw transcript 写入，README“不写记忆”概述需核对。
+4. Douyin watcher 默认关闭；Autonomy 自动回复路径会调用 dmSend(confirm:true)，notify watcher 也可能与 Autonomy 重复投递。
+5. Autonomy 默认 disabled/dryRun，但源码有 tick.realSafe 真实执行器路径；实际 profile 值未知，先做 DSH 只读核对。
+6. Android/Autonomy 的 60 秒观察窗设计已对齐，但 Android 报告仍 PARTIAL；真实文件系统与后台运行验证仍 NOT RUN。
+
+### 状态与下一步
+
+- Memory minimal-integration：IN_PROGRESS / WAITING REVERIFY。
+- Memory wake-capture、Batch E：READY_FOR_REVIEW（仅隔离代码证据）。
+- Persona EI-1：READY_FOR_REVIEW（仅代码隔离 PASS，设备 NOT RUN）。
+- EI-2A：BLOCKED（等待负责人授权）。
+- Channel Bridge、Douyin：IN_PROGRESS（需精确 HEAD 测试）。
+- Autonomy 真实 tick/自动回复：BLOCKED（默认关闭；未经授权不得启用）。
+- Android 恢复协议真机验证：NOT_STARTED。
+
+### 授权边界
+
+本轮不授权生产记忆写入、EI-2A、真实 tick、Douyin 自动回复、QQ 外发、Home 自动唤醒、profile/权限修改、kill/reboot、staging、部署、重启或生产数据库操作。
