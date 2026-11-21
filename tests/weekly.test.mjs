@@ -22,8 +22,8 @@ test('相似度：近似重复高、无关低；bestMatch 阈值生效', () => {
 })
 
 test('周结 dry-run：相似事实聚成一簇，不写库', async () => {
-  await insertMemory(db, { kind: 'fact', text: '主人喜欢烤生蚝', layer: 'auto', importance: 0.6, createdAt: now - 2 * 86400000, scopeType: 'owner' })
-  await insertMemory(db, { kind: 'fact', text: '主人喜欢吃烤生蚝', layer: 'auto', importance: 0.7, createdAt: now - 86400000, scopeType: 'owner', validTo: now + 86400000 })
+  await insertMemory(db, { kind: 'fact', text: '主人喜欢烤生蚝', layer: 'auto', importance: 0.6, createdAt: now - 2 * 86400000, scopeType: 'owner', validTo: now + 86400000 })
+  await insertMemory(db, { kind: 'fact', text: '主人喜欢吃烤生蚝', layer: 'auto', importance: 0.7, createdAt: now - 86400000, scopeType: 'owner' })
   await insertMemory(db, { kind: 'preference', text: '主人喜欢看AI教程', layer: 'auto', importance: 0.5, createdAt: now - 86400000, scopeType: 'owner' })
   const rows = db.prepare("SELECT * FROM memories WHERE layer='auto'").all()
   assert.equal(clusterMemories(rows, 0.55).length, 1)
