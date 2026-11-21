@@ -116,6 +116,21 @@ test('daily cap blocks additional wake episodes', async () => {
   } finally { f.close() }
 })
 
+test('concurrent wake turns cannot exceed the daily cap', async () => {
+  const f = fixture()
+  try {
+    const make = (turnSeq, vector) => captureWakeEpisode(f.db, {
+      sessionId: 'session-concurrent', turnSeq, sourceKind: source, sourceTs: ts, selfTexts: longSelf,
+      summarize: async () => '汐完成了本轮自主唤醒后的状态核对，并整理了记忆内容。',
+      embed: async () => [new Float32Array(vector)], vectors: new Map(), dailyLimit: 1, log: { warn() {} },
+    })
+    const results = await Promise.all([make(1, [1, 0]), make(2, [0, 1])])
+    assert.equal(results.filter((r) => r.action === 'insert').length, 1)
+    assert.equal(results.filter((r) => r.reason === 'daily-cap').length, 1)
+    assert.equal(f.db.prepare('SELECT count(*) c FROM memories').get().c, 1)
+  } finally { f.close() }
+})
+
 test('unsupported source, short turn, and missing embedding fail closed', async () => {
   const f = fixture()
   try {
