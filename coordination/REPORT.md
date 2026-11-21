@@ -227,3 +227,50 @@ Memory 智能体报告的隔离测试证据：
 - 本轮是只读审查，没有修改源码、测试、生产数据或插件配置。
 - 以上 Batch A–E 均为建议，不视为已授权实施。
 - 推荐下一步先推进 Batch A；需负责人明确授权后，才启动 GPT 隔离分支代码修改与 Memory 智能体本地验证。
+
+
+---
+
+## 2026-11-21 13:22 · GPT 统筹复核 · REPORT-0018（对应 HANDOFF-0061）
+
+### 1. Memory Batch A：preference + remembered 接入统一 current validity
+
+- 仓库：`ba-song/dsh-memory-core`
+- 分支：`feat/memory-validity-unified`
+- 基线：`c437c460d8378cbf6493a5e4e12d673c4334d50f`
+- 验证 HEAD：`5797324175f345ff82337f409d8406e5256ddfc3`
+- compare：ahead 4、behind 0；变更仅四个预期文件。
+- Memory 专项报告：`MEMORY-REPORT-0008`；commit `08835ca19fbeca1823be4b72b32adc7fac128b14`；blob `06515f1fd05ed54483a98c1cf67025caff3e9749`。
+
+GPT 独立核对：
+1. `lib/inject/preference.js` blob `d28bacc5a0c1477a751dada0040243581213b4e5`。
+2. `lib/inject/remembered.js` blob `4d3a5f2af4e61531581ed01fe778dffdd567f14e`。
+3. `tests/preference-inject.test.mjs` blob `08f170ce8ddf7cb4907ebec77c38fc18666454c6`。
+4. `tests/remembered.test.mjs` blob `3bf6dbf49cf6062e9e39e41810bd629219ac8f35`。
+5. helper `lib/store/validity.js` blob `00c4d948ccb2973d48d95aebb07d230c8f44854c` 未变。
+6. compare 确认恰好四个提交、四个文件，无其他变更。
+
+代码语义复核：
+- preference recentRows/stableRows 共用同一个 `validitySql({preset:'current',at:Number(now)})` 结果，参数先 validity 后 scope。
+- remembered 同样接入 current helper，`now` 可注入且默认 `Date.now()`。
+- scope、kind、meta persist、排序、去重、预算、最大条数、跳过原因、DB异常返回结构保持原有约定。
+- future valid_from、已过期、superseded 记录不进入当前注入。
+- Memory 智能体两组负向对照恢复旧过滤后均能复现泄漏与测试失败；恢复后定向测试全绿。
+
+### 2. 测试证据
+
+以下均由 Memory 智能体在隔离 worktree 执行并报告，GPT 未亲自运行 Node 测试：
+- 定向：2/2，exit 0。
+- 相关回归：16/16，exit 0。
+- 全量 `npm test`：**298/298、0 fail、0 skip、exit 0**（恢复后再次运行同样通过）。
+- 两项负向对照按预期失败；逐字节恢复后定向测试通过。
+- `git diff --check` exit 0；工作树与 HEAD 一致。报告中的 `?? node_modules` 为复用依赖目录的符号链接，不是源码修改。
+
+**GPT 裁决：Batch A 隔离开发验证 PASS。** 不等同于生产运行时验证、主线合并或部署通过。
+
+### 3. 非阻塞观察与后续范围
+
+- P3：显式传入非法 `now`（如 0/null）会令 helper 抛出时间戳错误，并被注入调用方捕获为空结果；现有已知调用路径传有效 `Date.now()` 或使用默认值，暂不阻塞本批次。可在后续单独决定是否统一入口防御策略。
+- 尚未接入的调用点：session-index、handoff brief、preference merge、daily、weekly。
+- 下一建议为 Batch B（session-index + handoff brief），**尚未获负责人明确授权，不启动修改**。
+- 未写生产 DB，未修改生产插件/profile/config，未部署/重启/staging，未合并主线；未触碰 EI/Persona、Android、Autonomy。
