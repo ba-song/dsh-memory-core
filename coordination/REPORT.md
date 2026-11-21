@@ -371,3 +371,49 @@ GPT 已回读实际 GitHub 文件并核对 compare/blob；GPT 未运行 Node 测
 - 未部署、重启、启动 staging；未合并主线。
 - 未改 daily/weekly、EI/Persona、Android 或 Autonomy。
 - Batch D、Batch E 需后续独立评估与负责人授权。
+
+
+---
+
+## 2026-11-21 · GPT 统筹复核 · REPORT-0021（对应 HANDOFF-0064）
+
+### 1. Memory Batch C：preference merge 统一有效性接入
+
+- 仓库：`ba-song/dsh-memory-core`
+- 分支：`feat/memory-validity-batch-c`
+- 修复前 HEAD：`906fca93ad92a19dcfe871caf3583596fb72fe2b`
+- 验证 HEAD：`fecbd09eaa5b5745ef02263b1bd506712c256150`
+- Tree：`b770e0b19ce6170c331129dc7f9a731dfcee88f1`
+- compare：ahead 1 / behind 0；仅 `tests/preference-merge.test.mjs` 一文件 +1/−1。
+- Memory 专项报告：`MEMORY-REPORT-0013`；commit `6acfdeb6607c0f0c202b917048af3090adfb5429`；blob `79bb4eb19c7d9a646fae1d7b1723478d94e6dca6`。
+
+### 2. GPT 独立核对
+
+GPT 实际读取专项报告、四个目标文件、修复 commit diff 与 GitHub compare，核对结果：
+
+1. 修复提交仅将 expired-valid_to 测试 fixture 的主题由「咖啡」改为「椰子」，消除与既有 fixture 的主题碰撞。
+2. `merge.js`、`validity.js`、`validity.test.mjs` 的 blob 与修复前一致；业务逻辑未随 fixture 修复变化。
+3. 候选允许 active/pending，但必须满足当前时间窗且未 superseded；候选任何非 NULL valid_to 仍被拒绝。
+4. 旧偏好比较查询使用严格 current helper。
+5. 原有 scope、冲突队列、revision/CAS、writeTx 事务路径在修复提交中未变化。
+
+### 3. 隔离测试证据（由 Memory 智能体执行）
+
+GPT 未亲自运行 Node 测试。Memory 智能体 MEMORY-REPORT-0013 报告：
+
+- 定向 merge + validity：25/25 × 3。
+- preference-merge 单文件：1/1。
+- 8 文件相关回归：42/42。
+- 全量 `npm test`：**301/301 × 3，0 fail、0 skip、exit 0**。
+- 事务/CAS/回滚 P1–P5 在本轮重跑，均符合预期。
+- 八组负向对照全部按预期失败，恢复后逐字节一致。
+- 一次 E2 期间 scratch/变异态污染运行如实记录为 302 项、1 fail；清理后连续三次干净全量均 301/301。
+
+**GPT 裁决：Batch C 隔离代码验证 PASS。** 本结论不代表生产运行时验证、集成、主线合并或部署通过。
+
+### 4. 边界与下一步
+
+- 未写生产 DB，未改生产插件/profile/config；未部署、重启、启动 staging；未合并主线。
+- Batch D（daily）与 Batch E（weekly）尚未授权，不启动。
+- EI/Persona、Android、Autonomy 未触碰；Android/Autonomy v4 真实设备验证仍 NOT RUN，保留在整体计划中。
+- 生产 as-of、生产验证、集成、主线合并与部署均需独立评估及负责人明确授权。
