@@ -453,3 +453,52 @@ GPT 未亲自运行 Node 测试。Memory 智能体 MEMORY-REPORT-0013 报告：
 - 仅隔离分支；不触碰生产 DB / 插件 / profile / config，不部署/重启/staging，不合并主线。
 - 不处理 Batch E weekly、EI/Persona、Android、Autonomy。
 - Android / Autonomy v4 真机后台恢复验证仍保留在项目计划中，需另行安排与授权。
+
+
+---
+
+## 2026-11-21 16:13 · GPT 统筹复核 · REPORT-0023（对应 HANDOFF-0066）
+
+### 1. Memory Batch D：daily 去重候选接入统一 current validity
+
+- 仓库：`ba-song/dsh-memory-core`
+- 分支：`feat/memory-validity-batch-d`
+- 基线：Batch C PASS @ `fecbd09eaa5b5745ef02263b1bd506712c256150`
+- 验证 HEAD：`5500d04e0e49ebb8168e7356de3c082a9e0e722e`
+- tree：`836b260faeed0f5e0540f7d735542a4c491eb455`
+- compare：ahead 2 / behind 0；仅两个预期文件变更。
+- daily.js blob：`394138a185d176e87b789ca23c51f5d1ae16fa13`
+- consolidate.test.mjs blob：`2ce8f5227f896a84261657982111603eea9ba064`
+- validity.js blob：`7aabea0efff2b9d5fe40acea19fcc4609f5e87e6`（未改）
+- Memory 专项报告：`MEMORY-REPORT-0014`；commit `2f4246f4105ae92777adacfcb5ffc94331c448ef`；blob `ec1bb3309eda3e4f545ed85801c01ed05eee48cd`。
+
+### 2. GPT 独立复核
+
+GPT 实际读取报告、daily.js、consolidate.test.mjs、validity.js、最终提交 diff 和 GitHub compare。核对结果：
+
+1. daily 查询通过统一 helper 生成 current validity 谓词，且调用方 `until` 与 helper 时间基准一致。
+2. SQL 参数顺序正确：90 天下限先绑定，随后绑定 helper 的 valid_from / valid_to 时间参数。
+3. 原 SELECT 投影、90 天窗口、`ORDER BY id DESC`、`LIMIT 500` 保留。
+4. helper 仅过滤相似度去重候选；正式写入阶段 exact-text duplicate guard 保持独立。
+5. LLM、style、dryRun、facts/lessons/shortterm/profile/meta 等后续路径未在本批 diff 中改动。
+6. 新测试覆盖当前有效、legacy NULL valid_from、future valid_from、expired valid_to、superseded、archived、90 天窗口和倒序。
+
+### 3. 隔离测试证据（由 Memory 智能体执行）
+
+GPT 未亲自运行 Node 测试。Memory-REPORT-0014 报告：
+
+- 定向 consolidate + validity：28/28 × 3。
+- consolidate 单文件：4/4。
+- 五文件相关回归：47/47。
+- 全量 `npm test`：**302/302 × 3，0 fail、0 skip、exit 0**。
+- 四组负向对照全部按预期失败；恢复后逐字节一致。
+- D2/D3 首次整段删除变异因占位符/参数数量不匹配而失败；随后采用保留占位符的语义变异，确认 future / expired 对应断言失败。
+
+**GPT 裁决：Batch D 隔离代码验证 PASS。** 不代表生产运行时验证、设备验证、集成、主线合并或部署通过。
+
+### 4. 边界与下一步
+
+- 未写生产 DB，未改生产插件/profile/config；未部署、重启、启动 staging；未合并主线。
+- Batch E（weekly）未启动；需独立风险审查及负责人明确授权。
+- 生产 as-of、生产验证、集成、主线合并与部署均需独立评估和授权。
+- EI/Persona 未触碰；Android / Autonomy v4 设计对齐继续保留，真实设备后台恢复验证仍待后续安排与授权。
