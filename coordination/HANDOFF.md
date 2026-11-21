@@ -2,8 +2,8 @@
 
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
-> 版本：`HANDOFF-0061`
-> 更新时间：2026-11-21 13:22（Asia/Shanghai）
+> 版本：`HANDOFF-0066`
+> 更新时间：2026-11-21 16:13（Asia/Shanghai）
 > 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -3705,3 +3705,48 @@ GitHub compare：基线 `2a93031db3dfa1a1c7c34b7376aebe395493c57f` → HEAD `906
 - 不得修改代码或测试；不得修改共享 HANDOFF/REPORT（由 GPT 统一维护）。
 - 不写生产 DB，不修改生产插件/profile/config；不部署、重启、启动 staging；不合并主线；不处理 weekly / EI / Persona / Android / Autonomy。
 - Batch E（weekly）仍需独立评估和授权。Android / Autonomy v4 设计对齐及真机验证计划继续保留，不因 Memory 批次而搁置。
+
+
+---
+
+## 2026-11-21 16:13 · GPT 统筹复核 · HANDOFF-0066（Batch D PASS）
+
+### Memory Batch D：daily 日结去重候选接入统一 current validity
+
+- 仓库：`ba-song/dsh-memory-core`
+- 分支：`feat/memory-validity-batch-d`
+- Batch C PASS 基线：`fecbd09eaa5b5745ef02263b1bd506712c256150`
+- 验证 HEAD：`5500d04e0e49ebb8168e7356de3c082a9e0e722e`
+- tree：`836b260faeed0f5e0540f7d735542a4c491eb455`
+- compare：ahead 2 / behind 0；仅 `lib/consolidate/daily.js`、`tests/consolidate.test.mjs` 两个文件变化。
+- daily.js blob：`394138a185d176e87b789ca23c51f5d1ae16fa13`
+- consolidate.test.mjs blob：`2ce8f5227f896a84261657982111603eea9ba064`
+- validity.js blob：`7aabea0efff2b9d5fe40acea19fcc4609f5e87e6`（未改）
+- Memory 专项报告：`MEMORY-REPORT-0014`；报告 commit `2f4246f4105ae92777adacfcb5ffc94331c448ef`；blob `ec1bb3309eda3e4f545ed85801c01ed05eee48cd`。
+
+GPT 实际读取专项报告、daily.js、测试文件、validity.js、最终提交 diff 与 compare。独立复核确认：
+
+1. `loadDailyDedupCandidates(db, at)` 使用 `validitySql({at:Number(at),preset:'current'})`；调用方传入的 `until` 与该查询使用同一时间基准。
+2. SQL 绑定顺序为先 90 天下限、再 helper 的两个时间参数；未错位。
+3. SELECT 投影、`ORDER BY id DESC`、`LIMIT 500` 和原 90 天窗口保留。
+4. helper 只作用于相似度去重候选；正式写入阶段 exact-text duplicate guard 仍独立存在。
+5. LLM、style、dryRun、facts/lessons/shortterm/profile/meta 后续路径没有在本批次 diff 中改动。
+6. 新测试使用独立临时 DB，覆盖 current、legacy NULL valid_from、future、expired、superseded、archived、90天窗口和倒序。
+
+Memory 智能体报告的隔离测试证据（GPT未亲自运行 Node 测试）：
+
+- 定向 consolidate + validity：28/28 × 3。
+- consolidate 单文件：4/4。
+- 五文件相关回归：47/47。
+- 全量 `npm test`：302/302 × 3，0 fail、0 skip、exit 0。
+- 四组负向对照全部按预期失败；恢复后逐字节一致。D2/D3 首次整段删除变异触发占位符/参数数量错误，随后采用保留占位符的语义变异，确认对应 future/expired 断言失败。
+
+**GPT 裁决：Batch D 隔离代码验证 PASS。**
+
+### 状态边界与下一步
+
+- PASS 仅代表 Batch D 隔离代码验证，不代表生产验证、设备验证、集成、主线合并或部署。
+- 未写生产 DB，未修改生产插件/profile/config；未部署、重启或启动 staging；未合并主线。
+- Batch E（weekly）尚未开始，必须单独审查并等待负责人明确授权；本次 Batch D 授权不延伸至 Batch E。
+- 生产 as-of、生产验证、主线合并和部署仍需独立评估与授权。
+- EI/Persona、Android、Autonomy 未触碰；Android/Autonomy v4 设计对齐及后续真实设备后台恢复验证继续保留在整体计划中，不因 Memory 主线推进而搁置。
