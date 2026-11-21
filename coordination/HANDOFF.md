@@ -2,8 +2,8 @@
 
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
-> 版本：`HANDOFF-0070`
-> 更新时间：2026-11-21 16:35（Asia/Shanghai）
+> 版本：`HANDOFF-0071`
+> 更新时间：2026-11-21 17:10（Asia/Shanghai）
 > 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -3785,3 +3785,30 @@ GPT 已从 GitHub 回读两个目标文件、最终提交 diff 和 compare。当
 下一步等待 Memory 智能体独立复验：核对 HEAD/tree/blob/工作区；weekly 定向测试与 validity 测试连续运行；周结 apply、缺表 rollback、CAS rollback；相关回归与全量 npm test；对 validity 谓词、SQL 参数顺序、事务边界、snapshot/revision/valid_to、失败路径做代码审查和负向对照。
 
 边界：仅隔离开发分支。未写生产 DB、未修改生产插件/profile/config；未部署、重启、启动 staging；未合并主线。Batch E 验证通过前不进入 A–E 统一集成。
+
+
+---
+
+## 2026-11-21 17:10 · GPT 裁决与测试修复 · HANDOFF-0071（Batch E 重新验证）
+
+### Batch E 首轮 BLOCKED 的裁决
+
+Memory-REPORT-0015（commit `8d6beb332aa0cfe783f9a685e9f12793836020be`，blob `d2ef2af45e5f1002517daf0a403cf3b86229b517`）报告的失败根因经 GPT 实际回读目标 HEAD 代码确认：weekly 业务实现的 clamp/snapshot 语义未发现对应缺陷；既有 apply 测试断言要求 `valid_to === now`，但测试调用未显式传入模块级 `now`，且复用的 member fixture 未设置未来 `validTo`。该测试无法稳定证明自己声明的未来 valid_to 场景。
+
+### GPT 已按原 Batch E 隔离授权完成最小测试修复
+
+- 分支：`feat/memory-validity-batch-e`
+- 修复前 HEAD：`e3976101a14356819a15d09b69ee4328f194887b`
+- 修复提交：`37fb441fbe39dee715340f8204c16e3a3fe4782e`
+- 修复后 compare：相对修复前 ahead 1 / behind 0；仅 `tests/weekly.test.mjs` 两行变化（2 additions / 2 deletions）。
+- 修复后测试文件 blob：`c9f998af91a26cc136b294345585bed0de7f8a50`
+- `weekly.js` blob 保持 `61083aaaaff3fbc6927490045a92246ee9b1d05f`，未修改。
+- 修复内容：① apply fixture 的重复 member 明确设置 `validTo: now + 86400000`；② apply 调用显式传入同一模块级 `now`。既有未来 valid_to clamp 与 snapshot 原值断言因此具有一致、可重复的测试前提。
+
+GPT 已实际回读修复后文件与 GitHub compare，确认没有业务代码变化。**当前仍为 IMPLEMENTED / REVERIFYING，不是 PASS。**
+
+### 下一步
+
+等待 Memory 智能体针对修复后 HEAD `37fb441fbe39dee715340f8204c16e3a3fe4782e` 重新独立验证：定向测试、weekly 单文件、相关回归、全量测试三次，以及原 E1–E7 负向对照。验证报告仍由 Memory 智能体提交至 `coordination/Memory 智能体报告.md`；共享 HANDOFF/REPORT 由 GPT 统一维护。
+
+边界不变：不触生产、不部署、不启动 staging、不合并主线、不运行真实 weekly apply。Batch E PASS 后仍须另行进行 A–E 统一集成和生产只读核查；部署需要单独授权。
