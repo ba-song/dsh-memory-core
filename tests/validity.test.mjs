@@ -26,7 +26,7 @@ const D = 24 * H
 /* ─────────────────────────── 1. helper 单元 ─────────────────────────── */
 
 test('validity: 预设与枚举完整', () => {
-  assert.deepEqual(Object.keys(VALIDITY_PRESETS).sort(), ['asOfHistory', 'asOfNeighbor', 'asOfStrict', 'current'])
+  assert.deepEqual(Object.keys(VALIDITY_PRESETS).sort(), ['asOfHistory', 'asOfNeighbor', 'asOfStrict', 'current', 'currentPreferenceCandidate', 'currentTodoActiveEmpty', 'currentTodoLegacy'])
   assert.deepEqual([...VALIDITY_MODES], ['current', 'asof'])
   assert.deepEqual([...SUPERSEDED_POLICIES], ['enforce', 'ignore', 'guard'])
   assert.equal(presetOf('current').superseded, 'enforce')
