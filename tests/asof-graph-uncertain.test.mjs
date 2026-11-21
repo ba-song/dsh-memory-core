@@ -44,3 +44,42 @@ test('as-of recall reports graph-only unknown-validity neighbours as uncertain',
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+
+test('as-of recall does not mislabel approximate-valid keyword hits omitted by top-N', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-asof-topn-approx-'))
+  const { db } = openDb(dir)
+  const at = Date.UTC(2026, 0, 1)
+  try {
+    const seedId = await insertMemory(db, {
+      kind: 'episode',
+      text: '鲸鱼种子记录',
+      scopeType: 'owner',
+      validFrom: at - 2000,
+      temporalKind: 'current',
+      createdAt: at - 2000,
+    })
+    const approximateId = await insertMemory(db, {
+      kind: 'episode',
+      text: '鲸鱼没有显式起点但创建时间早于判定点',
+      scopeType: 'owner',
+      temporalKind: 'unknown',
+      createdAt: at - 1000,
+    })
+    const rows = await recall(db, '鲸鱼', {
+      asOf: at,
+      vectors: null,
+      gate: { semantic: 1, keyword: 0 },
+      limit: 1,
+      trackAccess: false,
+    })
+    assert.equal(rows.length, 1)
+    assert.ok(rows.some((row) => Number(row.id) === seedId), '第一条候选应占据 top-N')
+    assert.ok(!rows.some((row) => Number(row.id) === approximateId), '近似有效行因 top-N 被截断')
+    assert.ok(!rows.uncertain.some((row) => Number(row.id) === approximateId),
+      'top-N 截断不代表 unknown-validity；只有 graph unknownHop 才可产生该 reason')
+  } finally {
+    db.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
