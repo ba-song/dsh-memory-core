@@ -759,3 +759,33 @@ Android / Autonomy v4 设计对齐与真实设备后台恢复验证计划继续�
 ## 7. 边界声明
 
 本报告不构成生产写入、生产迁移、staging、scheduler/executor 启动、合并、部署或重启授权。任何可能改变汐实际记忆、人格、情绪、召回、主动写入或行动行为的修改，均须先向负责人说明影响和后果并取得批准。
+
+
+---
+
+# REPORT-0017 · Memory 最小集成分支测试范围修复（2026-11-21）
+
+- 仓库：ba-song/dsh-memory-core
+- 分支：feat/memory-validity-minimal-integration
+- 原 HEAD：8d0f3adc48b1f30f213ad30c3f0330da54ef1c83
+- 当前 HEAD：a63f994e001da2e6636ed07c75988fa681ecaf7c
+- 相对原 HEAD：ahead 2 / behind 0；仅修改 lib/index.js 与 tests/schema-migration-atomic.test.mjs。
+
+## 修改内容
+
+1. e683e5d6665eacb7c943b8b711994e891a0f358e：dy_memory_auto_list 增加 status、retryCount、lastError 只读诊断字段，保留原有输出字段，不改变记忆状态或写入行为。
+2. a63f994e001da2e6636ed07c75988fa681ecaf7c：最小集成 v4 分支移除 3 个依赖 schema v5 / episode_rewrite_snapshots 的测试块，保留 4 个 v4 适用的迁移/回滚测试。v5 迁移测试仍属于 P0/M1/A–E 分支，不在此分支静默引入 schema 升级。
+
+## 测试与验收
+
+- GPT 未运行 Node 测试。
+- 当前状态 IMPLEMENTED / WAITING REVERIFY。
+- 预期测试数约 191；以 DSH/Memory 智能体在新 HEAD 上的实际输出为准。
+- 待复验全量 npm test、preference-round3、schema-migration-atomic、validity、N9 非 owner 隔离及五项既有修复。
+- 不得把代码提交等同于测试 PASS；不得把隔离测试等同于生产验收。
+
+## 未解决与权限
+
+- 等待 Memory 智能体在全新 worktree 核对 HEAD、diff、Node/npm 版本并提交完整原始测试报告。
+- 如有失败，只报告证据与最小原因；不得弱化断言、升级 schema 或改动生产数据。
+- 本轮无生产写入、迁移、部署、重启、staging、真实调度或执行器启动。
