@@ -502,3 +502,46 @@ GPT 未亲自运行 Node 测试。Memory-REPORT-0014 报告：
 - Batch E（weekly）未启动；需独立风险审查及负责人明确授权。
 - 生产 as-of、生产验证、集成、主线合并与部署均需独立评估和授权。
 - EI/Persona 未触碰；Android / Autonomy v4 设计对齐继续保留，真实设备后台恢复验证仍待后续安排与授权。
+
+
+---
+
+## 2026-11-21 16:25 · GPT 统筹实施 · REPORT-0024（对应 HANDOFF-0067）
+
+### 1. Batch E weekly 实施状态：IMPLEMENTED / VERIFYING
+
+- 仓库：`ba-song/dsh-memory-core`
+- 分支：`feat/memory-validity-batch-e`
+- 基线：Batch D PASS @ `5500d04e0e49ebb8168e7356de3c082a9e0e722e`
+- 当前 HEAD：`4cefcaba79fc5f6e8dc121545fbf10aa569ab60c`
+- compare：ahead 2 / behind 0；仅 weekly.js 与 weekly.test.mjs 两个文件变化。
+- 实现提交：`1bcd2f3f3dbbdcb09a109e81a6d86fec29ca87fb`
+- 测试提交：`4cefcaba79fc5f6e8dc121545fbf10aa569ab60c`
+- weekly.js blob：`f61d70ea9bb58925f3480dd637846d47c2c5f3bf`
+- weekly.test.mjs blob：`0de3aee84934291bcc8f83a82242f6465205018b`
+
+### 2. 代码改动
+
+- 周结候选查询改用统一 current validity helper，保留 lookback、layer、kind 与排序语义。
+- dry-run/apply 共用同一候选集。
+- apply 在写事务内重新检查 keeper/member 的 current validity、业务域和 revision，避免使用事务外扫描的陈旧候选。
+- member revision snapshot 与 supersede 更新处于同一事务；更新使用 revision + validity 条件 CAS。
+- 删除旧 catch 后的 status-only 降级写入。缺失快照表、CAS 未命中或其他写错误均整体回滚。
+- keeper importance 更新增加 revision/current 条件；只有成功 supersede 至少一个 member 时才提升。
+- 新增测试覆盖候选有效性边界、缺 revision 表失败关闭及 CAS 未命中 rollback。
+
+### 3. GPT 静态复核
+
+GPT 已读取最终 weekly.js、weekly.test.mjs、提交 diff 和 compare，核对目标分支只改两个预期文件、ahead 2 / behind 0。当前未运行 Node 测试，因此不标记 PASS。
+
+### 4. 验证计划与边界
+
+等待 Memory 智能体独立执行：
+- weekly 定向测试、validity 测试、连续复验与相关回归；
+- 全量 npm test 连续复跑；
+- 缺少 revision 快照表时失败关闭；
+- CAS 未命中时 snapshot/status/meta 全部回滚；
+- 负向对照证明去除 current validity、revision CAS、snapshot 失败门禁会触发对应断言；
+- 核对工作区无业务改动、无 scratch 残留，恢复后逐字节一致。
+
+本阶段仅隔离开发分支；未写生产 DB、未改生产插件/profile/config；未部署、重启、启动 staging；未合并主线。Batch E PASS 后再规划 A–E 统一集成，仍需生产只读核查及单独部署授权。
