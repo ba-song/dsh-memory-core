@@ -104,10 +104,16 @@ assert.equal(hasOpposition('主人允许汐自主修改，但要求先告知', '
       kind: 'preference', text: '主人希望汐说话带语气词，活泼些，不要冷冰冰',
       status: 'active', confidence: 0.9, layer: 'manual',
     })
+    const futureId = await insertMemory(db, {
+      kind: 'preference', text: '未来才生效的偏好，不应提前参与冲突判断',
+      status: 'active', confidence: 0.9, layer: 'manual',
+      validFrom: Date.now() + 60_000,
+    })
     db.prepare('UPDATE memories SET superseded_by=?, valid_to=? WHERE id=?')
       .run(currentId, Date.now(), staleId)
     const vectors = new Map([
-      [staleId, new Float32Array([1, 0])],
+      [staleId, new Float32Array([0.95, 0.05])],
+      [futureId, new Float32Array([1, 0])],
       [currentId, new Float32Array([0.9, 0.1])],
     ])
     const result = await ingestCandidate(db, {
@@ -121,6 +127,7 @@ assert.equal(hasOpposition('主人允许汐自主修改，但要求先告知', '
     assert.equal(result.action, 'merge')
     assert.equal(result.targetId, currentId)
     assert.notEqual(result.targetId, staleId)
+    assert.notEqual(result.targetId, futureId, '未来生效的记忆不能成为当前 P4 邻居')
     assert.equal(db.prepare('SELECT status FROM memories WHERE id=?').get(staleId).status, 'active',
       '测试只验证候选过滤，不在此处修复历史数据状态')
   } finally {
