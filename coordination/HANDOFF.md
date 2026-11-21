@@ -2,8 +2,8 @@
 
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
-> 版本：`HANDOFF-0067`
-> 更新时间：2026-11-21 16:25（Asia/Shanghai）
+> 版本：`HANDOFF-0068`
+> 更新时间：2026-11-21 16:32（Asia/Shanghai）
 > 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -3761,12 +3761,12 @@ Memory 智能体报告的隔离测试证据（GPT未亲自运行 Node 测试）�
 - 仓库：`ba-song/dsh-memory-core`
 - 分支：`feat/memory-validity-batch-e`
 - 基线：Batch D PASS @ `5500d04e0e49ebb8168e7356de3c082a9e0e722e`
-- 当前实现 HEAD：`4cefcaba79fc5f6e8dc121545fbf10aa569ab60c`
-- compare：ahead 2 / behind 0；仅 `lib/consolidate/weekly.js`、`tests/weekly.test.mjs` 两个文件变化。
+- 当前实现 HEAD：`e3976101a14356819a15d09b69ee4328f194887b`
+- compare：ahead 4 / behind 0；仅 `lib/consolidate/weekly.js`、`tests/weekly.test.mjs` 两个文件变化。
 - 实现提交：`1bcd2f3f3dbbdcb09a109e81a6d86fec29ca87fb`
 - 测试提交：`4cefcaba79fc5f6e8dc121545fbf10aa569ab60c`
-- weekly.js blob：`f61d70ea9bb58925f3480dd637846d47c2c5f3bf`
-- weekly.test.mjs blob：`0de3aee84934291bcc8f83a82242f6465205018b`
+- weekly.js blob：`61083aaaaff3fbc6927490045a92246ee9b1d05f`
+- weekly.test.mjs blob：`42f0234bb5475c740dcdc6c451de7c498659f2b0`
 
 实施内容：
 
@@ -3776,7 +3776,7 @@ Memory 智能体报告的隔离测试证据（GPT未亲自运行 Node 测试）�
 4. 每个 member 先写 revision snapshot，再通过带 revision 与统一 current predicate 的 UPDATE CAS 改为 superseded、写 superseded_by、revision+1、updated_at、valid_to、temporal_kind。
 5. 移除原有 catch 后退回 status-only 的静默降级路径。缺少 revision 表、写入失败或 CAS 未命中时整体 rollback 并返回失败，不允许留下无历史快照的部分状态迁移。
 6. keeper importance 更新也带 revision/current 条件；只有本簇确实有 member 成功 supersede 时才提升 keeper importance。
-7. 新增测试覆盖 current/future/expired/superseded/archived/lookback/layer/kind 候选边界、revision 表缺失失败关闭、CAS 未命中整体回滚。
+7. 新增测试覆盖 current/future/expired/superseded/archived/lookback/layer/kind 候选边界、revision 表缺失失败关闭、CAS 未命中整体回滚，以及 future valid_to 被收敛到实际 supersede 时刻且快照保留旧值。
 
 GPT 已从 GitHub 回读两个目标文件、最终提交 diff 和 compare。当前为 **IMPLEMENTED / VERIFYING**；GPT未运行 Node 测试，尚未授予 PASS。
 
