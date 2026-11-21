@@ -1,10 +1,10 @@
-# MEMORY-REPORT-0017 · Memory 记忆智能体报告
+# MEMORY-REPORT-0018 · Memory 记忆智能体报告
 
 > 会话：Memory 记忆智能体（Memory 领域专业智能体）
-> 任务标识：`MEM-VALIDITY-BATCH-E-REVERIFY-03`
+> 任务标识：`MEM-VALIDITY-BATCH-E-REVERIFY-03`（v17）→ `MEM-WAKE-CAPTURE-DECISION-01`（v18）
 > 覆盖任务：Batch A PASS → Batch B PASS → Batch C PASS → Batch D PASS → **Batch E（weekly）第三次复验**
 > 仓库：`ba-song/dsh-memory-core`｜本文件覆盖式更新、版本号递增
-> 最近更新：2026-11-21 17:4x (Asia/Shanghai) · v17
+> 最近更新：2026-11-21 18:2x (Asia/Shanghai) · v18
 
 ## 版本历史
 
@@ -16,6 +16,7 @@
 | MEMORY-REPORT-0015 | 17:0x | Batch E 首验 BLOCKED |
 | MEMORY-REPORT-0016 | 17:1x | Batch E 二验 BLOCKED（validTo 放错行） |
 | MEMORY-REPORT-0017 | 17:4x | **Batch E 三验：PASS（隔离代码验证）** —— 305/305 ×4、30/30 ×3、53/53、7/7 负向对照 |
+| MEMORY-REPORT-0018 | 18:2x | **新增设计决议：自主唤醒回合自动写入（方案 A，已由负责人拍板，待实现）**；v17 的 Batch E 结论不变 |
 
 ---
 
@@ -194,3 +195,46 @@ HEAD:lib/store/validity.js    = 7aabea0efff2b9d5fe40acea19fcc4609f5e87e6
 | clamp/snapshot 探针 | `/tmp/probe-weekly-clamp3.mjs` | 0 |
 | 负向对照 E1–E7 | 见 §4 | 1（预期）；恢复后 0 |
 | 工作区 | `git status --short`、`git diff --check`、`git diff --stat` | 0 |
+
+
+---
+
+## 9. 设计决议：自主唤醒回合自动写入（`MEM-WAKE-CAPTURE-DECISION-01`）
+
+> 状态：**已由项目负责人拍板（方案 A），待实现与独立验证；未写任何代码、未动生产。**
+> 记录时间：2026-11-21 18:2x；来源：负责人对话「A / 记下来，下次告诉 gpt 就好了」。
+
+### 9.1 背景事实（本轮只读核查，2026-11-21）
+
+- 自主唤醒（`dsh-autonomy` → `home.awake`）的 prompt 走 `source.kind='autonomy-home-wake'`；其内容**会**进 raw 归档（home cwd 在 `trustedDirs` → 归档白名单），**不会**进 memories 表。
+- 证据：唤醒提示在 `raw_meta` 出现 497 次，在 `memories` 中 0 次；P4 入库门控为 `user/message` + `source.kind==='user'` + owner cwd，因此唤醒 prompt 与她自己的 `self` 输出均被跳过。
+- 现状是“归档全量、记忆精选”的设计；自动写入属于**新能力**，不是缺陷修复。
+
+### 9.2 决议（方案 A：回合摘要 episode）
+
+每次**自主唤醒**回合结束后，把该回合她说的话/做的事压成 1–3 句 `episode` 写入 memories：
+
+| 维度 | 决定 |
+|---|---|
+| 触发 | `session/event` 的 `turn/end`；仅当本轮首个 user 消息 `source.kind` 为 `autonomy-home-wake` / `autonomy-home-manual` |
+| 识别前置 | 把 `source.kind` 落进 `raw_meta.extra`（当前未落，需小改 `lib/ingest/archive.js`） |
+| 内容 | 该 turn 的 `self` 行（说出来的话）；`self-thought` 只作摘要输入、不单独成条 |
+| 写入 | `insertMemory({ kind:'episode', subject:'汐', layer:'auto', sourceKey:'wake:<sessionId>:<turnSeq>', meta:{ origin:'autonomy-wake', wakeReason } })` |
+| 幂等 | `sourceKey` 去重，同一 turn 重跑不重复写 |
+| 去重 | 写入前走 `bestMatch`/向量近重复 |
+| 频率 | 每天上限（建议 5–8 条）；“确认一下就走”的极短回合不写 |
+| 作用域 | 仅 `scope_type='owner'`；**不写** fact/relation（避免冒充主人事实） |
+| 失败 | 静默 warn，不影响回合与注入 |
+| 不做 | 不逐条把 self 消息送进 P4（避免自我强化/回音室）、不动 daily/weekly、不动 P4 状态机 |
+
+### 9.3 预计改动点（待授权后实施）
+
+- `lib/ingest/archive.js`：user 消息 `extra` 记录 `sourceKind`；
+- `lib/index.js`：`turn/end` 钩子 + 调用新模块；
+- 新增 `lib/ingest/wake.js`：取回合内容 → 摘要 → 幂等写入；
+- 测试：独立临时库；照 Batch 流程做定向/回归/全量/负向对照。
+
+### 9.4 边界
+
+- 本地未写生产 DB、未改插件/profile/config、未部署、未合并；本节仅为决策记录。
+- 实施需隔离分支（建议 `feat/memory-wake-capture`）+ GPT 协调 + 独立复验；生产部署另需授权。
