@@ -3991,3 +3991,48 @@ A–E 合计为 P4 基线之上 30 个提交；每一段均为纯前进，没有
 - 本轮完成 GitHub 分支、提交、文档和代码静态核查；未修改产品源码、测试或数据库。
 - 本轮未运行 Node 测试；未访问生产 DB；未合并分支；未部署、重启、启动 staging、scheduler 或 executor。
 - 本 HANDOFF-0074 是审计记录，不构成任何生产、运行期或行为变更授权。
+
+
+---
+
+## 2026-11-21 23:5x · Memory 最小集成测试范围修复 · HANDOFF-0075
+
+### 75.1 变更目标与边界
+
+在 HANDOFF-0074 审计后，继续处理最小集成分支的 4 项测试失败。仅进行不改变记忆写入、召回、人格、情绪或自主行动的修复；没有升级 schema，没有接入唤醒自动写入，没有触碰生产数据。
+
+### 75.2 已提交修改
+
+仓库：ba-song/dsh-memory-core  
+分支：feat/memory-validity-minimal-integration  
+基线：8d0f3adc48b1f30f213ad30c3f0330da54ef1c83  
+当前目标 HEAD：a63f994e001da2e6636ed07c75988fa681ecaf7c  
+相对原基线：ahead 2 / behind 0；仅 2 个文件变化。
+
+1. commit e683e5d6665eacb7c943b8b711994e891a0f358e
+   - 文件：lib/index.js
+   - 修改：dy_memory_auto_list 只读输出补充 status、retryCount、lastError；保留原字段，异常 meta 安全回退。
+   - 影响：只增加主人查看自动记忆状态时的诊断信息；不改变记忆写入、删除、召回或汐的自动行为。
+
+2. commit a63f994e001da2e6636ed07c75988fa681ecaf7c
+   - 文件：tests/schema-migration-atomic.test.mjs
+   - 修改：移除 3 个要求 schema v5 / episode_rewrite_snapshots 的测试块；保留 4 个适用于当前 schema v4 分支的迁移回滚与版本拒绝测试，并修正一个测试名称。
+   - 原因：schema-v5 迁移属于独立 P0/M1 工作线；最小集成分支当前冻结在 v4。不能通过悄悄升级 schema 来解决测试范围错配。v5 代码与测试仍保留在相应 P0/M1/A–E 分支，不是从项目中删除。
+
+### 75.3 测试状态
+
+- 本次 GPT 只核对了 GitHub diff 和文件回读；未运行 Node 测试。
+- 新 HEAD 尚未取得 DSH/Memory 智能体复验结果。
+- 预期原 194 项测试因移除 3 个 v5 专属测试而变为约 191 项；最终数量必须以实际 npm test 输出为准，不预设 PASS。
+- 必须复验：全量测试、preference-round3、schema-migration-atomic、validity、N9 非 owner scope 隔离，以及原五项修复。
+- 当前状态：IMPLEMENTED / WAITING REVERIFY，不是 PASS。
+
+### 75.4 未解决事项
+
+- 需 Memory 智能体在全新独立 worktree 核对实际 HEAD、main 基线、diff、Node/npm 版本并运行完整测试。
+- 若仍有失败，只提交原始失败输出和最小原因分析；不得弱化有效性断言，不得自行升级 schema，不得修改生产数据。
+- 需要改变汐实际记忆写入、召回或自动行为的修复，仍须负责人明确批准。
+
+### 75.5 本次授权边界
+
+本次仅扩展只读诊断输出并修正 v4 分支测试范围；没有修改汐的实际记忆状态或自动行为。没有合并 main、部署、重启、启动 staging 或运行真实执行器。
