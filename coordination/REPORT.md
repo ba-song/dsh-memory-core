@@ -283,7 +283,7 @@ GPT 独立核对：
 ### 1. Memory Batch B：session-index + handoff brief 接入统一 current validity
 
 - 仓库：`ba-song/dsh-memory-core`
-- 分支：`feat/memory-validity-b`
+- 分支：`feat/memory-validity-batch-b`
 - 基线：`5797324175f345ff82337f409d8406e5256ddfc3`
 - 验证 HEAD：`2a93031db3dfa1a1c7c34b7376aebe395493c57f`
 - Tree：`3d5e305ecf53f70b6f6090e4514346b8ce54ef91`
