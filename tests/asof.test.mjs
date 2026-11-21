@@ -47,19 +47,25 @@ const newId = await insertMemory(db, {
   validFrom: JUN, temporalKind: 'current',
 })
 const unknownId = await insertMemory(db, { kind: 'preference', text: '主人吃辣会胃疼' })   // 无 valid_from / unknown
+// 2026-11-21 复核修正：unknownId 创建于「现在」（晚于 3 月/11-16/去年 12 月），
+// 按新裁决属于「当时尚未创建」→ 不再进 uncertain。为保留 uncertain 透传覆盖，
+// 追加一条真正判不了的行：valid_from 已过、已替代但没有 valid_to。
+const inconsistentId = await insertMemory(db, { kind: 'preference', text: '主人吃辣会胃疼（已替代但没有终点）', validFrom: JAN, createdAt: JAN })
+db.prepare('UPDATE memories SET superseded_by=? WHERE id=?').run(Number(newId), inconsistentId)
 
 // ── 2 & 3. asOf 只回当时有效的行 ────────────────────────────────
 {
   const march = await recall(db, '吃辣', { asOf: '2026-03-01' })
   assert.deepEqual(texts(march), ['主人喜欢吃辣'], '3 月只应有旧事实')
   assert.equal(march.asOf, normalizeAsOf('2026-03-01'))
-  // 无时间标注的行判不了 → 进 uncertain，不混进结果
-  assert.deepEqual(march.uncertain.map((x) => x.text), ['主人吃辣会胃疼'])
-  assert.equal(march.uncertain[0].reason, 'unknown-validity')
+  // 判不了的行进 uncertain，不混进结果；「当时尚未创建」的 unknownId 不得误报
+  assert.deepEqual(march.uncertain.map((x) => Number(x.id)), [inconsistentId])
+  assert.equal(march.uncertain[0].reason, 'superseded-without-end')
+  assert.ok(!march.uncertain.some((x) => Number(x.id) === unknownId), 'created_at 晚于 as-of → 不是不确定')
 
   const now = await recall(db, '吃辣', { asOf: '2026-11-16' })
   assert.deepEqual(texts(now), ['主人不喜欢吃辣了'], '现在只应有现行事实')
-  assert.equal(now.uncertain.length, 1)
+  assert.deepEqual(now.uncertain.map((x) => Number(x.id)), [inconsistentId])
 
   // 旧事实有效期末尾（5/31）仍算旧；6/1 起换新（半开区间）
   assert.deepEqual(texts(await recall(db, '吃辣', { asOf: '2026-05-31' })), ['主人喜欢吃辣'])
@@ -68,7 +74,7 @@ const unknownId = await insertMemory(db, { kind: 'preference', text: '主人吃�
   // 更早（valid_from 之前）→ 两条都不该回
   const before = await recall(db, '吃辣', { asOf: '2025-12-01' })
   assert.deepEqual(texts(before), [])
-  assert.equal(before.uncertain.length, 1, '只有那条判不了的不确定性行')
+  assert.equal(before.uncertain.length, 0, 'valid_from 晚于 as-of → 已能判定，不得进 uncertain')
   out.asOf = 'ok'
 }
 
@@ -117,7 +123,8 @@ const unknownId = await insertMemory(db, { kind: 'preference', text: '主人吃�
   assert.equal(res.count, 1)
   assert.equal(res.items[0].id, oldId)
   assert.equal(res.uncertain.length, 1)
-  assert.equal(res.uncertain[0].text, '主人吃辣会胃疼')
+  assert.equal(Number(res.uncertain[0].id), inconsistentId)
+  assert.equal(res.uncertain[0].reason, 'superseded-without-end')
   const bad = JSON.parse((await registered.dy_memory_asof.execute({ query: '吃辣', date: '不是日期' }, exec)).detail)
   assert.equal(bad.ok, false)
   assert.equal(bad.code, 'BAD_ARG')

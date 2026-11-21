@@ -24,6 +24,8 @@ test('as-of recall reports graph-only unknown-validity neighbours as uncertain',
       kind: 'episode',
       text: '主人曾经提到一件没有时间标注的往事',
       scopeType: 'owner',
+      // 2026-11-21 复核修正：必须创建于判定时点之前，否则属于「当时尚未创建」而不是「判不了」
+      createdAt: at - 1000,
     })
     linkMemory(db, seedId, '鲸鱼和主人一起讨论了海边旅行', at)
     linkMemory(db, unknownId, '主人曾经提到一件没有时间标注的往事', at)

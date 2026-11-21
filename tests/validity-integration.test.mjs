@@ -241,7 +241,7 @@ test('recall: as-of 包含 archived/expired，排除 pending/merged', async () =
 test('recall: suspect superseded-without-end 进 uncertain，不被当成确定结果', async () => {
   const { db, done } = mkdb('dsh-val-recall-unc-')
   try {
-    const inconsistent = await add(db, { text: '鲸鱼三月的事（替代但没有终点）', validFrom: JAN, supersededBy: 9 })
+    const inconsistent = await add(db, { text: '鲸鱼三月的事（替代但没有终点）', validFrom: JAN, supersededBy: 9, createdAt: JAN })
     const rows = await recall(db, '鲸鱼', { asOf: MAR, vectors: null, trackAccess: false, gate: { semantic: 1, keyword: 0 } })
     assert.ok(!rows.some((r) => Number(r.id) === inconsistent), '不一致行不得进入权威结果')
     const u = (rows.uncertain ?? []).find((x) => Number(x.id) === inconsistent)
