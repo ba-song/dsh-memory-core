@@ -2,8 +2,8 @@
 
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
-> 版本：`HANDOFF-0058`
-> 更新时间：2026-11-21（Asia/Shanghai）
+> 版本：`HANDOFF-0061`
+> 更新时间：2026-11-21 13:22（Asia/Shanghai）
 > 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -3478,3 +3478,44 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - 本轮仅只读审查；没有获得上述新调用点的代码修改授权。
 - 不得把此前 helper + P4/recall/graph/event-chain 的授权解释为自动涵盖这七个调用点。
 - 下一步建议先启动 Batch A；需负责人明确授权后，GPT 才在隔离分支修改源码，并交由 Memory 智能体本地验证。
+
+
+---
+
+## 58. Memory Batch A：preference + remembered 统一 current 有效性接入（HANDOFF-0061）
+
+> 代码分支：`feat/memory-validity-unified` @ `5797324175f345ff82337f409d8406e5256ddfc3`
+> 专项报告：`MEMORY-REPORT-0008`，报告 commit `08835ca19fbeca1823be4b72b32adc7fac128b14`，blob `06515f1fd05ed54483a98c1cf67025caff3e9749`
+> GPT 已重新读取报告、compare 和五个代码文件；测试由 Memory 智能体执行，GPT 未亲自运行 Node 测试。
+
+### 58.1 代码与范围核验
+
+- 基线 `c437c460d8378cbf6493a5e4e12d673c4334d50f` → 验证 HEAD `5797324175f345ff82337f409d8406e5256ddfc3`，GitHub compare：ahead 4、behind 0，恰好四个提交。
+- 提交链：`9546471391117c40668049f32bf8800d4aae8b90` → `0edc81ae0c375305ca885ac7027d2ae6c407788f` → `4bd4644653ffa80dd136c192c9335213352ff81b` → `5797324175f345ff82337f409d8406e5256ddfc3`。
+- 仅修改四个预期文件：`lib/inject/preference.js`、`lib/inject/remembered.js`、`tests/preference-inject.test.mjs`、`tests/remembered.test.mjs`。
+- 四个 blob 与任务预期完全一致；`lib/store/validity.js` blob 仍为 `00c4d948ccb2973d48d95aebb07d230c8f44854c`，未改。
+- preference 两路查询复用同一 current validity 对象与时点；remembered 接入 current helper，新增 `now = Date.now()` 默认参数。scope、kind、meta persist、排序、预算、跳过原因和异常返回结构均经报告及代码核对保持。
+- 负向对照：恢复旧过滤后，preference 与 remembered 均出现 future / superseded 泄漏并触发测试失败；恢复后定向测试通过。
+
+### 58.2 验证结果
+
+| 项目 | Memory 智能体报告结果 |
+|---|---|
+| 定向测试 | 2/2，exit 0 |
+| 回归测试 | 16/16，exit 0 |
+| 全量 `npm test` | **298/298，0 fail，0 skip，exit 0** |
+| 负向对照 | 两组均按预期失败；恢复后全绿 |
+| `git diff --check` | exit 0 |
+| 工作区 | 仅 `?? node_modules` 符号链接；diff为空 |
+
+### 58.3 GPT 复核裁决与残留
+
+- **Batch A：隔离开发验证 PASS。** 这不代表生产验证、主线合并或部署通过。
+- 非阻塞 P3：显式传入非法 `now`（如 0/null）时，`validitySql` 的时间戳校验错误被调用方 try/catch 捕获，返回空块/空结构；现有已知调用路径传入 `Date.now()` 或使用默认值。暂不扩大本批次，后续可单独评估入口防御策略。
+- 其余 session-index / handoff brief、preference merge、daily、weekly 尚未接入；生产 as-of 仍 NOT RUN。
+
+### 58.4 边界与下一步
+
+- 未写生产 DB、未改生产插件/profile/config；未部署、重启或启动 staging；未合并主开发分支。
+- 未修改 EI/Persona、Android、Autonomy 或共享协调文件（本次由 GPT 统一更新）。
+- 下一建议批次为 **Batch B：session-index + handoff brief**，但当前尚未获得负责人对 Batch B 的明确授权；继续等待决定。生产验证、主线合并与部署均需独立授权。
