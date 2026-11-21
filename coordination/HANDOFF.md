@@ -3575,3 +3575,39 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - 未接入调用点仍包括 preference merge、daily、weekly；按风险继续分批处理。
 - **下一批建议 Batch C：preference merge**，需负责人另行明确授权；Batch B 的授权不自动涵盖 Batch C。
 - Android / Autonomy v4 仍为 DESIGN ALIGNED、真实设备验证 NOT RUN；继续保留主线计划，需独立安排与授权。
+
+
+---
+
+## 60. Memory Batch C：preference merge 统一有效性接入（HANDOFF-0063 · 验证中）
+
+> 代码分支：`feat/memory-validity-batch-c`
+> 基线：Batch B PASS @ `2a93031db3dfa1a1c7c34b7376aebe395493c57f`
+> 当前代码 HEAD：`906fca93ad92a19dcfe871caf3583596fb72fe2b`
+> tree：`3da58899395587f8a37f999a63d4f5945412bdc9`
+> 状态：GPT 已完成隔离分支代码修改与只读审查；等待 Memory 智能体独立测试。尚不能标记 PASS。
+
+### 60.1 本批代码范围
+
+GitHub compare：基线 `2a93031db3dfa1a1c7c34b7376aebe395493c57f` → HEAD `906fca93ad92a19dcfe871caf3583596fb72fe2b`，ahead 6 / behind 0；仅四个文件：
+
+- `lib/pref/merge.js` blob `d6d36773a44314030aa8bc65336768c6063e8f6e`
+- `lib/store/validity.js` blob `7aabea0efff2b9d5fe40acea19fcc4609f5e87e6`
+- `tests/preference-merge.test.mjs` blob `54fc93520937d86c3cfa8d865edc8e0a8923d333`
+- `tests/validity.test.mjs` blob `fd00ecff76614f17544e5ac2e244692be38c6089`
+
+### 60.2 当前实现意图
+
+- 新增 `currentPreferenceCandidate` 预设：候选状态允许 active/pending，但必须满足当前 valid_from / valid_to 时间窗并且未被 superseded。
+- 候选原有严格约束保留：任何非 NULL `valid_to`（包括未来时间）仍拒绝。
+- 旧偏好比较集合改用严格 `current` helper：active + 当前时间窗 + 未被替代。
+- 保留 scope_type/scope_id、同极性证据合并、反极性 supersede、pending 激活、冲突队列、revision/CAS、writeTx 事务结构。
+- 新测试覆盖 future/expired/superseded 旧偏好、future/superseded/未来 valid_to 候选，以及 pending 候选兼容。
+
+### 60.3 当前验证门禁
+
+- GPT 已核对四个文件 blob、compare 和关键 SQL 参数传递；尚未执行 Node 测试。
+- 已交由 Memory 智能体执行 `MEM-VALIDITY-BATCH-C-VERIFY-01`，要求定向/相关回归/全量测试、连续三轮稳定性、八组负向对照、事务与 CAS 核查。
+- 等待 Memory 智能体提交 `MEMORY-REPORT-0012`。
+- 本批不触碰生产 DB / 插件 / profile / config，不部署、不重启、不启动 staging、不合并主线。
+- Batch D（daily）和 Batch E（weekly）不在本轮授权范围；必须另行评估和授权。
