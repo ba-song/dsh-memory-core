@@ -1,256 +1,328 @@
-# ANDROID-REPORT-0001 · Android 平台负责人报告（DSHA 平台能力与后台恢复设计）
+# ANDROID-REPORT-0002 · Android 平台负责人报告（平台能力契约 + 后台恢复设计 v2）
 
 > 会话：Android 平台负责人（DSHA Android 平台专业智能体）
-> 覆盖任务：`ANDROID-ARCH-AUDIT-01`（平台能力只读审计）、`ANDROID-BACKGROUND-RECOVERY-DESIGN-01`（后台唤醒与恢复设计）
-> 迭代规则：**本文件覆盖式更新、版本号递增（ANDROID-REPORT-0002…），不新增同类文件**；与 `coordination/HANDOFF.md`、`coordination/REPORT.md` 同一目录。
-> 最近更新：2026-11-21 02:45 (Asia/Shanghai) · v1 首次建档
-> 性质：只读审计 + 只读设计。未改 DSHA 源码/Manifest/服务/配置/权限，未装包、未部署、未重启、未做 kill/reboot 实验、未申请新权限、未启动真实调度、未改生产库。
+> 覆盖任务：`ANDROID-ARCH-AUDIT-01`、`ANDROID-BACKGROUND-RECOVERY-DESIGN-01`、`ANDROID-BACKGROUND-RECOVERY-DESIGN-02`
+> 迭代规则：本文件覆盖式更新、版本号递增（ANDROID-REPORT-0003…），不新增同类文件；与 `coordination/HANDOFF.md`、`coordination/REPORT.md` 同目录。
+> 最近更新：2026-11-21 09:55 (Asia/Shanghai) · v2 按 GPT 12 项裁决修订
+> 性质：只读设计修订。未改 DSHA 源码/Manifest/服务/配置/权限；未装包、未部署、未重启、未 kill/reboot、未启动 staging/调度；未改生产库；未改共享 HANDOFF/REPORT/PROJECT；未改 Autonomy 接口。
 
 ## 版本历史
 
 | 版本 | 时间 | 覆盖任务 | 变更摘要 |
 |---|---|---|---|
-| v1 (ANDROID-REPORT-0001) | 2026-11-21 02:45 | ARCH-AUDIT-01 + BACKGROUND-RECOVERY-DESIGN-01 | 首次建档：平台基线、能力矩阵、权限矩阵、后台可靠性、多智能体条件、后台恢复设计与接口提案 |
+| v1 (ANDROID-REPORT-0001) | 2026-11-21 02:45 | ARCH-AUDIT-01 + RECOVERY-DESIGN-01 | 首次建档：平台基线、19 项能力矩阵、权限矩阵、后台可靠性、恢复设计初稿 |
+| v2 (ANDROID-REPORT-0002) | 2026-11-21 09:55 | + RECOVERY-DESIGN-02 | 按 GPT 12 项裁决修订：恢复入口去掉 tick、文件所有权表、请求消费机制、回执与 nextWake、WakeScheduler 状态机与四段分离、事件日志拆分、能力契约与失败码固化；同步 Autonomy 报告 v1 的两处差异 |
 
 ---
 
 ## 0. 给 GPT 的阅读导航（先看这一节）
 
-**需要 GPT 现在决策（§5.1）**
-1. 接口方向：Android→DSH 单向文件 + Autonomy 回执预约，是否接受（现无 DSH→Android 通道）。
-2. 唤醒精度：接受 15–30 分钟级（不能秒级）。
-3. 事件日志落 `/root`（快、proot 内）还是 `/sdcard/DSHA/诊断/`（可读、FUSE 慢）。
-4. P4 灰度顺序：先 alarm 健康检查，还是先 boot 自启。
+**本轮修订的 8 个要点**
+1. **恢复入口改为 `dyAutonomy.recover({requestId, reason, bootId})`**，彻底删除「`tick({trigger:'resume'})`」——tick 可被关闭，恢复不能依赖它（对应 §3.2/§3.6）。
+2. **文件所有权唯一**：5 个文件各只有一个写入方，禁止两个模块写同一个 JSONL（§3.3）。
+3. **请求消费机制**补齐 8 个问题：运行时通知、启动统一、半写入、去重、过期、恢复中合并、回执判定（§3.6）。
+4. **回执 + nextWake 契约**：`pendingTasks` 拆成 5 类；`nextWake` 由 Autonomy 建议、Android 执行（§3.7）。
+5. **四段分离**：唤醒 Android 进程 / 启动 Harness / 启动 DSH Web / Autonomy 恢复，各自记录状态与错误码，不再合成一步（§3.5）。
+6. **事件日志拆分**：Android 独立 `/root/.dsha-android-events.jsonl`，写失败降级 DiagnosticLog，不写 Memory、不写 FUSE（§3.4）。
+7. **19 项能力矩阵升级为契约**：区分「端点存在 / 可调用 / 权限允许 / 效果已验证」四级，失败码固化（§2）。
+8. **跨报告一致性**：Autonomy 报告 v1 仍用共享 `runtime-events.jsonl` 与 `resumeTick`，需其 v2 同步（§5.3）。
 
-**需要负责人授权（§5.2）**
-1. 安装 DSHA **test 变体 APK**（隔离验证必需）。
-2. 真机 **kill / reboot** 对照实验（验证 `START_STICKY` 与 vivo Freezer）。
-3. 启动 staging（独立 profile/端口）。
-4. 生产灰度与 `WakeScheduler` 开关。
+**仍需 GPT 裁决（§5.1）**
+1. `wake.json` 的消费触发落点：Autonomy 用 `fs.watch('/root')` + 5s 轮询兜底是否接受（Android 侧无跨进程调用能力）。
+2. 回执轮询节奏：1s→30s 指数退避、到 deadline 停，是否接受。
+3. `nextWake` 的钳制范围：Android 侧强制 `[10min, 24h]`，是否接受。
+4. 事件日志轮转：2MB×2（主 + .1），是否接受。
+5. Autonomy 报告 v1 的三处不一致由其 v2 修正，还是由我在 v3 里兼容。
 
-**一句话结论**：DSHA 平台底座可用（无障碍/截图/剪贴板/传感器/文件/前台服务/Doze 白名单/Shizuku-ADB shell 均实测 PASS）；真正的缺口是**重启与进程死亡后的恢复链路**、**录音端点**、**内存余量**、**FUSE 上的 DB 写并发**，以及**生产仍在跑旧版记忆代码**。
+**需负责人授权（§5.2）**
+1. 安装 DSHA **test 变体 APK**；2. 真机 kill/reboot 对照实验；3. 启动 staging；4. 生产灰度与 `WakeScheduler` 开关；5. 是否把「电池优化白名单」作为长期依赖。
 
 ---
 
-## 1. 基线（本轮核对值）
+## 1. 基线（本轮重新核对，2026-11-21 09:43–09:50）
 
 | 对象 | 值 | 核对方式 |
 |---|---|---|
-| `ba-song/dsh-memory-core` main | `7548e49ed0b8d8673818464325d8e72ec7704b27` | `git ls-remote` 01:28 |
-| 本文件所在分支 HEAD（建档前） | `c7401a7d4126a9f1aa373742b53e4e0cb8b05e45` | `git ls-remote` 02:40 |
-| `coordination/HANDOFF.md` blob | `f8ffa40d4c27c04d23ff74b123bf2b7044821976` | `git ls-tree` |
-| `coordination/REPORT.md` blob | `e219f707cc4363c53704fbe389f786148142326e` | 同上 |
-| `dsh-persona-core` main / EI-1 | `a84c7bad…` / `92a763bf…` | `git ls-remote` |
-| `dsh-autonomy` main | `6c4a4753b4737060211955b1f022cab2f1d39521` | 同上 |
-| `DSH-APP/DSHA` main | `36d89b72294348d0482d509109cf8e76d51fc1cb` | `git ls-remote` |
-| 设备本地插件镜像 | `b47fcc2e5148b8a179b11523804a4ff242c2a458`，工作树 clean | `git rev-parse` / `status` |
-| 设备 / 系统 | vivo V2154A · Android 14 (SDK 34) · OriginOS 14.1 · SM8350 8 核 · RAM 11.1GB | `/app/device`、`getprop` |
-| DSHA / DSH | `0.2.1-rc.2-20261022.2100`（code 190，minSdk 30，targetSdk 37）/ DSH `0.2.1-rc.2` | `/app/version` |
-| 运行时 | Ubuntu 24.04.3 LTS arm64 · PRoot `libproot.so --link2symlink -0` · 伪 root（uid 10328，`CapEff=0`，`Seccomp=2`）· Node 24.19.0 · Python 3.12.3 · 内核 5.4.281-qgki | `ps`、`/proc/self/status` |
+| `coordination/project-handoff` HEAD | `8a48e3f08a74eba861d41ff61b44e127af2c41c0` | `git fetch` + `ls-remote` 一致 |
+| 本报告 blob（v1） | `ccecf1dd825271345ee25e5a8040d30840087f81` | `git ls-tree` |
+| `coordination/HANDOFF.md` | `f8ffa40d4c27c04d23ff74b123bf2b7044821976`（3317 行） | 同上，本轮未改 |
+| `coordination/REPORT.md` | `e219f707cc4363c53704fbe389f786148142326e`（172 行） | 同上，本轮未改 |
+| `coordination/Autonomy 自主系统负责人报告.md` | `58b40bf8334c3d59918504deeaf10a74e941cd5b`（367 行，AUTONOMY-REPORT-0001） | 同上，本轮只读 |
+| `DSH-APP/DSHA` main | `36d89b72294348d0482d509109cf8e76d51fc1cb` | `ls-remote`，与本轮只读克隆一致 |
+| `ba-song/dsh-autonomy` main | `6c4a4753b4737060211955b1f022cab2f1d39521` | `ls-remote` |
+| `ba-song/dsh-memory-core` main | `7548e49ed0b8d8673818464325d8e72ec7704b27` | `ls-remote` |
+| `dsh-persona-core` main / EI-1 | `a84c7bad…` / `92a763bf…` | `ls-remote` |
+| 设备 | vivo V2154A · Android 14 (SDK 34) · OriginOS 14.1 · RAM 11.1GB · 存储 105.57GB 可用 | `/app/device` 09:44 |
+| DSHA / 进程 | `0.2.1-rc.2-20261022.2100` · pid 22300 · 连续运行 1d22h12m（同一 pid，未重启） | `dumpsys activity processes` 09:45 |
+| 运行时 | Ubuntu 24.04.3 arm64 · PRoot `libproot.so -0 --link2symlink` · 伪 root uid 10328 · Node 24.19.0 · Python 3.12.3 | `ps` / `/proc/self/status` |
 
 ---
 
-## 2. 平台能力审计（ANDROID-ARCH-AUDIT-01）
+## 2. 能力契约与失败码（原 19 项矩阵升级）
 
-### 2.1 能力矩阵（实测结论）
+### 2.1 四级判定（禁止把前一级写成后一级）
 
-| 能力 | 结论 | 关键证据 |
+| 级别 | 含义 | 判定方式 |
 |---|---|---|
-| 无障碍 UI | **PASS** | `accessibility_enabled=1`，DSHA 服务在列；`/app/ui/dump` 返回语义树；`/app/ui/screenshot` 1080×2400 / displayId 0 / `coordinatesAvailable:true` |
-| 剪贴板读 | **PASS（仅前台）** | `/app/clip` 读成功；Android 10+ 后台不可读 |
-| 传感器 | **PASS** | 37 个传感器；`light` 返回实时 31.79 lux |
-| 文件系统 | **PASS** | `/sdcard` 可写，223G/107G 可用，inode 6% |
-| 设备 shell | **PASS（uid2000）** | `id` = `uid=2000(shell)`；adbd running、USB `charging,adb`；Shizuku pid 13457 + `API_V23` 已授 |
-| 位置 | **DISABLED（产品开关）** | `/app/location` → `DISABLED 位置能力未开启` |
-| 录音 | **权限有、端点无** | `RECORD_AUDIO=true`；`/app/audio`、`/app/record` → `[NO_CMD]` |
-| 虚拟屏 | **存在未运行** | `vscreen/status` = `STOPPED`，protocol 1；Android 14 满足 11+ |
-| `/app/readfile` | **FAIL（文档/实现不一致）** | 对 `/sdcard/*` 一律 `FORBIDDEN` |
-| 应用启动 / 通知 / 震动 / 分享 | 端点存在，**有副作用未执行（NOT RUN）** | Manifest 权限齐全；本轮遵守只读边界 |
-| 短信 | **BLOCKED** | Manifest 未声明 SMS 权限；桥默认关闭；不得绕过 |
-| 虚拟屏创建 / 录音 / 提权 / kill / reboot | **NOT RUN** | 本轮禁止 |
+| L1 端点存在 | 桥/文档/源码里有这个入口 | `/app/help`、源码 grep |
+| L2 可调用 | 真实调用能返回结构化响应（非 404/未知） | 实测调用 |
+| L3 权限允许 | Android 权限与产品开关都放行 | `dumpsys package` + 实测响应 |
+| L4 效果已验证 | 产生预期副作用/数据且可观察 | 实测 + 观察 |
 
-### 2.2 权限矩阵（`dumpsys package dsh.android.client`）
+结论写法：`L1 PASS / L2 PASS / L3 DISABLED / L4 NOT RUN`。
 
-- **已授（20 项）**：`INTERNET`、`ACCESS_NETWORK_STATE`、`ACCESS_WIFI_STATE`、`CHANGE_WIFI_STATE`、`FOREGROUND_SERVICE`(+`SPECIAL_USE`/`DATA_SYNC`/`CONNECTED_DEVICE`)、`RECEIVE_BOOT_COMPLETED`、`WAKE_LOCK`、`VIBRATE`、`POST_NOTIFICATIONS`、`ACCESS_FINE/COARSE_LOCATION`、`RECORD_AUDIO`、`MODIFY_AUDIO_SETTINGS`、`QUERY_ALL_PACKAGES`、**`WRITE_SECURE_SETTINGS`**、`moe.shizuku.manager.permission.API_V23`。
-- **未授**：`MANAGE_EXTERNAL_STORAGE=false`、`SYSTEM_ALERT_WINDOW=false`、`REQUEST_INSTALL_PACKAGES=false`。
-- **未声明**：SMS、通讯录、相机、电话状态、身体传感器。
-- **INCONCLUSIVE**：`/sdcard` 实测可全盘读写但 `MANAGE_EXTERNAL_STORAGE` 未授 → 疑 appops 单独放行；`appops`/`dumpsys appops` 被设备策略拦截（`POLICY_BLOCKED` 126），无法取得 appops 级证据。
+### 2.2 契约表（`capability → endpoint → permission → failureCode → level`）
 
-### 2.3 后台与资源现状
+| # | 能力 | 端点/入口 | 关键权限 | 已知失败码 | 本轮级别 |
+|---|---|---|---|---|---|
+| 1 | 读屏语义树 | `/app/ui/dump` | 无障碍服务已启用 | `NO_PERMISSION` | L4 PASS（返回 `dsha-screen-tree-v1`） |
+| 2 | 截屏 | `/app/ui/screenshot` | 无障碍 + 截图 | `NO_PERMISSION`/`UNKNOWN` | L4 PASS（1080×2400，displayId 0，`coordinatesAvailable:true`） |
+| 3 | 文字点按 | `/app/ui/tap?text=` | 无障碍 | `NO_PERMISSION`/`UNKNOWN` | L2 PASS / L4 NOT RUN |
+| 4 | 输入 | `/app/ui/input` | 无障碍 + 焦点框 | `NO_PERMISSION`/`UNKNOWN` | L2 PASS / L4 NOT RUN |
+| 5 | 按键 | `/app/ui/key` | 无障碍 | `NO_PERMISSION` | L2 PASS / L4 NOT RUN |
+| 6 | 手势（滑动/长按/双击） | `/app/ui/swipe`、`tap?gesture=` | 无障碍 + 最新截图 observationId | `UNAUTHORIZED`（凭据过期）/`UNKNOWN` | L1 PASS / L4 NOT RUN |
+| 7 | 应用启动 | `/app/launch?pkg=` | `QUERY_ALL_PACKAGES` | `NO_CMD`/`UNKNOWN` | L2 PASS（枚举 424 个）/ L4 NOT RUN |
+| 8 | 通知 | `/app/notify` | `POST_NOTIFICATIONS`（已授） | `NO_PERMISSION` | L1 PASS / L4 NOT RUN |
+| 9 | 剪贴板读 | `/app/clip` | 前台 | `NO_PERMISSION`/`UNKNOWN` | L4 PASS（前台读取成功） |
+| 10 | 剪贴板写 | `/app/clip?text=` | 前台 | `NO_PERMISSION` | L1 PASS / L4 NOT RUN |
+| 11 | 位置 | `/app/location` | Android 定位已授 + DSHA 开关 | `DISABLED`/`NO_PERMISSION` | L3 BLOCKED（产品开关关闭） |
+| 12 | 传感器 | `/app/sensors`、`/app/sensor?name=` | 无 | `DISABLED` | L4 PASS（37 个；light=31.79 lux） |
+| 13 | 手电 | `/app/torch?on=` | 相机闪光灯 | `NO_PERMISSION`/`UNKNOWN` | L1 PASS / L4 NOT RUN |
+| 14 | 虚拟屏 | `/app/vscreen/*` | Android 11+ | `VSCREEN_NOT_RUNNING` | L2 PASS（status=STOPPED）/ L4 NOT RUN |
+| 15 | 应用清单 | `/app/apps` | `QUERY_ALL_PACKAGES` | `NO_CMD` | L4 PASS（45 用户 / 424 可见） |
+| 16 | 插件状态 | `/app/plugins` | 无 | `NO_CMD` | L4 PASS（LOADED 清单） |
+| 17 | 设备文件读 | `/app/readfile?path=` | 受 Android 权限 + 白名单 | `FORBIDDEN` | L2 FAIL（对 `/sdcard/*` 一律 FORBIDDEN，与 help 描述不一致） |
+| 18 | 交互类（ask/toast/vibrate/share/open/export） | `/app/ask|toast|vibrate|share|open|export` | 各自 | `NO_CMD`/`UNKNOWN` | L1 PASS / L4 NOT RUN |
+| 19 | 设备 shell | `adb-shell` | uid2000（ADB/Shizuku 通道）+ 设备策略 | `POLICY_BLOCKED`(126)/`UNAUTHORIZED` | L4 PASS（只读命令；写保护生效） |
 
-- 进程 pid 22300，`mHasForegroundServices=true`、`curProcState=4`、后台时 `oom adj=100`、`cached=false`，连续运行 **1d14h+**。
-- `mDeviceIdleWhitelist` **含 uid 10328**（Doze 豁免）。
-- 内存：`MemTotal 11.6GB`、`MemAvailable 2.2–2.9GB`、`Swap 已用 6.5/8GB` → **并发最先崩点是内存**。
-- 端口：3090/38105/9222/7897 **仅回环**；3081 LAN 网关对局域网开放；桥无 token 返回 `[UNAUTHORIZED]`。
-- 多智能体：单 DSH 宿主（`node … bin.js web --host 127.0.0.1 --port 38105`），subagent 进程内运行，共享 `/root/.dsh` 与 `/sdcard`；memory.db 单写锁（12 路写实测 `appended 4–6`、`ELOCKED 6–8`，HANDOFF §19.3）。
+### 2.3 失败码语义（冻结）
 
-### 2.4 风险与 BLOCKED（摘）
+| 失败码 | 含义 | 调用方应做什么 |
+|---|---|---|
+| `UNAUTHORIZED` | 桥缺 token / 坐标凭据过期 / 通道未授权 | 重新取凭据或请用户授权；**不重放** |
+| `NO_CMD` | 该路径/命令不存在 | 视为能力不存在，不做兜底猜测 |
+| `POLICY_BLOCKED` | 设备 shell 策略拒绝（退出码 126） | 停止；不换通道绕过 |
+| `DISABLED` | 产品开关未开（如位置/传感器） | 提示用户去「设备能力授权」勾选；不重试 |
+| `NO_PERMISSION` | Android 系统权限拒绝 | 提示设置路径；不重试 |
+| `VSCREEN_NOT_RUNNING` | 虚拟屏未创建/已回收 | 需显式 create；不隐式回退物理屏 |
+| `FORBIDDEN` | 白名单/凭据区/路径策略拒绝 | 换合法路径或改用导出；不绕过 |
 
-| # | 项 | 等级 | 状态 |
-|---|---|---|---|
-| R1 | 内存/交换紧张 | P0 | 风险 |
-| R2 | Autonomy 定时全在进程内 | P0 | BLOCKED（无 Android 调度桥） |
-| R3 | 短信 | — | BLOCKED（未声明权限） |
-| R4 | 录音 | P1 | BLOCKED（接口缺失） |
-| R5 | 位置 | P1 | BLOCKED（产品开关） |
-| R6 | `/app/readfile` 对 `/sdcard` 全拒 | P2 | FAIL |
-| R7 | `appops` 证据缺失 | P2 | BLOCKED（设备策略） |
-| R8 | 重启自启 / 被杀恢复 | P1 | INCONCLUSIVE |
-| R9 | LAN 网关 0.0.0.0:3081 + `lan-link.txt` 明文 token | P1 | 风险（建议纳入凭据管理） |
-| R10 | 生产插件缺 exporter/permanent，P4 修复未进生产 | P0 | 事实（生产=部署树镜像，非上游 main） |
+> 附加：`EXECUTION_UNKNOWN` 表示「可能已执行」，先核对状态，**不得自动重放**（与 `UNAUTHORIZED` 区分）。
+
+### 2.4 权限矩阵（不变，摘）：已授 20 项（含 `WRITE_SECURE_SETTINGS`、`POST_NOTIFICATIONS`、定位、录音、`QUERY_ALL_PACKAGES`、Shizuku `API_V23`）；未授 `MANAGE_EXTERNAL_STORAGE` / `SYSTEM_ALERT_WINDOW` / `REQUEST_INSTALL_PACKAGES`；未声明 SMS/通讯录/相机；`appops` 级证据仍被设备策略拦截（INCONCLUSIVE）。
+
+### 2.5 风险与 BLOCKED（保留，仅在有新证据时变更）
+
+R1 内存/swap 紧张（`MemAvailable 2.41GB`，swap 曾用 6.5/8GB）｜R2 Autonomy 定时在进程内（本轮设计正在解决唤醒桥）｜R3 短信 BLOCKED（未声明）｜R4 录音 BLOCKED（权限有、端点无）｜R5 位置 BLOCKED（产品开关）｜R6 `readfile` FAIL｜R7 `appops` 证据 BLOCKED｜R8 重启自启/被杀恢复（v2 设计已给出方案，仍为 NOT RUN）｜R9 LAN 网关 0.0.0.0:3081 + `lan-link.txt` 明文 token｜R10 生产=部署树镜像 `b47fcc2`，缺 exporter/permanent，P4 修复未进生产。
+
+**旧 BLOCKED 解除规则**：只有拿到真实证据才能标 RESOLVED；本轮新增证据仅两条——`/proc/sys/kernel/random/boot_id` 可读（值是 UUID）、`fs.watch('/root')` 可用；其余维持原状。
 
 ---
 
-## 3. 后台唤醒与恢复设计（ANDROID-BACKGROUND-RECOVERY-DESIGN-01）
+## 3. 后台恢复设计 v2
 
-### 3.1 当前实现核查表
+### 3.1 12 项裁决 → 设计映射
 
-| # | 机制 | 状态 | 证据 |
-|---|---|---|---|
-| A1 | `HarnessService` FGS（`specialUse\|connectedDevice`） | 已实现且在跑 | `AndroidManifest.xml:246-251`；`HarnessService.java:29`；设备 pid 22300 |
-| A2 | `START_STICKY` | 已实现 | `HarnessService.java:22/231/269` |
-| A3 | 15s 心跳 + 3 次失败 + 120s 冷却 | 已实现 | `:47-49`、`:484-577` |
-| A4 | WakeLock 600s + 每 15s 续期 + WifiLock + 策略放锁 | 已实现 | `:353-405`；设备 `'DSHA:web' DISABLED`（空闲放锁） |
-| A5 | node 死亡自动拉起 | 已实现 | HTTP 探针 3s → `restartWebAutomatically` |
-| A6 | `BootReceiver` | **已实现，但不恢复 DSH** | `BootReceiver.java:51-88` 仅启 DeviceBridge + 备份 + ADB 闹钟 |
-| A7 | AlarmManager | 仅服务 ADB 桥（5min `setAndAllowWhileIdle`） | `AdbKeepAliveReceiver.java:22-33` |
-| A8 | JobScheduler | 仅服务备份（persisted 15min） | `AutomaticBackups.java:49-69` |
-| A9 | WorkManager | 未使用 | 全仓无 `androidx.work` |
-| A10 | 精确闹钟 | 未声明/未使用 | 无 `SCHEDULE_EXACT_ALARM` |
-| A11 | 给 Autonomy 的唤醒入口 | **不存在** | 仅 Autonomy 自身 60s `trigger:'resume'` |
-| A12 | 去重/防重复启动 | 有（分散） | apply 查 current、kick 去抖、job 去重、alarm 同 PendingIntent |
-| A13 | 退出/失败记录 | 部分 | `DiagnosticLog.java:14-36`、崩溃 `:67-89` |
-| A14 | 未正常退出检测 | 有 | `ConfigStore.java:643` + `StartupRecoveryActivity` |
-| A15 | 用户停止语义 | 有且强 | `STOP_SENTINEL`（`WebLifecycleController:1792/1917-1922`）+ `WebLifecycle:53-55` |
-| A16 | 重启后恢复 DSH | **FAIL** | A6 + 进程启动晚于开机约 0.8 天（elapsed） |
-| A17 | 进程被杀恢复 | **INCONCLUSIVE** | 依赖 START_STICKY；未做 kill 实验 |
-| A18 | 被 vivo 冻结 | **INCONCLUSIVE** | `dumpsys power` 出现 `mIsFrozen`；无对照实验 |
-| A19 | 现有 Android↔DSH 契约 | **已存在（反向）** | `app/src/main/assets/app-integration/index.js:16-50` 每 2s 原子写 `/root/.dsha-web-activity.json` |
+| # | 裁决 | 落地位置 |
+|---|---|---|
+| 1 | 保留 FGS + 心跳 | §3.5 的 W3/W4 阶段，本轮不改其行为 |
+| 2 | Alarm 健康检查兜底 | §3.5 `WakeScheduler` 的 `mode=check` |
+| 3 | JobScheduler persisted 跨重启 | §3.5 `mode=job`，与 Alarm 同 single-flight |
+| 4 | BOOT_COMPLETED 启动 Harness 受 stop sentinel 门控 | §3.5 转换 `canAutoStart` |
+| 5 | 不新增精确闹钟/不必要权限 | 只用 `setAndAllowWhileIdle`；无新权限 |
+| 6 | 15–30min 初期目标 | §3.9 参数 |
+| 7 | 顺序：Alarm→Boot→灰度 | §3.10 P2/P3/P4 |
+| 8 | force-stop 不自动恢复 | §3.8 `IRRECOVERABLE_USER_FORCE_STOP` |
+| 9 | 事件日志分离 | §3.3/§3.4 |
+| 10 | Autonomy 唯一裁决方，Android 不碰 DB | §3.3/§3.7 |
+| 11 | `wake-result.json` 由 Autonomy 写 | §3.7 |
+| 12 | Android 不解释任务状态，只传分类数字 | §3.7 `pendingTasks` 五分类 |
 
-**关键发现**：A19 是唯一已落地、可扩展的 Android↔DSH 文件契约（DSH 写 / Android 读），接口设计应顺着它扩展，而不是另造 IPC。
-
-### 3.2 推荐架构
-
-比较六方案后推荐**组合**：现有 FGS + 心跳（保留）+ **AlarmManager 兜底**（新增，只做检查）+ **JobScheduler persisted**（新增/复用，跨重启兜底）+ **BOOT_COMPLETED 启动 Harness**（新增，受 stop sentinel 门控）。
+### 3.2 统一架构图
 
 ```mermaid
 flowchart TD
-  SYS[Android 系统事件] --> B[BOOT_COMPLETED / LOCKED_BOOT / MY_PACKAGE_REPLACED]
-  SYS --> A[AlarmManager setAndAllowWhileIdle<br/>正常 30min / 紧急 15min]
-  SYS --> J[JobScheduler persisted<br/>15min 周期兜底]
-  B --> G[WakeGate<br/>去重 · 节流 · 幂等 attemptId]
-  A --> G
-  J --> G
-  G -->|已运行| H[HarnessService 健康检查]
-  G -->|未运行且允许| F[startForegroundService<br/>合法启动 HarnessService]
-  F --> H
-  H --> C[HarnessController<br/>canAutoRestart / stop sentinel]
-  C -->|允许| N[Restore dsh web<br/>generation+1]
-  C -->|用户已停/阻塞| X[记录 SUPPRESSED 并退出]
-  N --> W[Android 写 wake 请求文件]
-  W --> AU[Autonomy: resume tick<br/>检查未完成任务]
-  AU --> R[回写 wake-result / 事件]
-  R --> LOG[(runtime-events.jsonl + DiagnosticLog)]
+  SYS[Android 系统事件<br/>boot / alarm / job / 用户打开] --> WG[WakeGate<br/>attemptId · 去重 · 节流]
+  WG -->|已运行| W3[W3 HarnessService 健康检查]
+  WG -->|未运行| W2[W2 启动 HarnessService<br/>startForegroundService]
+  W2 --> W3
+  W3 --> W4[W4 DSH Web 就绪 / 必要时重启]
+  W4 --> AW[Android 原子写<br/>/root/.dsha-wake.json]
+  AW --> CONSUME{Autonomy 消费<br/>fs.watch / 启动 / 5s 轮询}
+  CONSUME --> REC[dyAutonomy.recover<br/>requestId · reason · bootId<br/>不是 tick]
+  REC --> VER[Autonomy verifier / 状态恢复<br/>lease → unknown → verify]
+  VER --> WR[AUTONOMY 写<br/>/root/.dsha-wake-result.json]
+  WR --> AR[Android 只读回执<br/>result · pendingTasks 五分类]
+  AR --> NW[按 nextWake 设置 Alarm / Job]
+  NW --> SYS
+  AW -.写失败降级.-> DL[DiagnosticLog]
+  AW --> AL[/root/.dsha-android-events.jsonl/]
+  REC --> AU[/root/.dsha-autonomy-events.jsonl/]
 ```
 
-**为什么这样选**：不新增任何权限（不要 `SCHEDULE_EXACT_ALARM`、不引 WorkManager）；Alarm 只当外部时钟不做保活；JobScheduler 解决 OEM 拦 boot 广播的兜底。目标是把「被杀后恢复」从**永不**变成**分钟级**，不承诺永不被杀。
+**必须明确**：`REC` 是独立 recovery 入口，**不是** `tick({trigger:'resume'})`；`tick.enabled=false` 时恢复仍必须能跑。
 
-**平台依据**（官方文档）：后台启动 FGS 的豁免包含「用户关闭电池优化」「BOOT_COMPLETED 接收器」「精确闹钟」「SYSTEM_ALERT_WINDOW（Android 15 起需可见悬浮窗）」；Android 15 对 `BOOT_COMPLETED` 启动 FGS 的限制类型为 `dataSync/camera/mediaPlayback/phoneCall/mediaProjection/microphone`，**`specialUse`、`connectedDevice` 不在受限列表**（本机 Android 14，该限制尚未适用）。
+### 3.3 文件所有权（唯一写入方）
 
-### 3.3 唤醒与恢复流程
-
-```
-① 系统事件（boot / alarm / job / 用户）
-② WakeGate：attemptId=hash(bootId+reason+window)；同窗口只一次；<10min 直接 THROTTLED；低内存 DEFERRED
-③ 检查运行时：已在 → 健康检查；不在 → startForegroundService（失败记 WAKE_START_DENIED，不换通道、不重放）
-④ HarnessService 恢复：canAutoRestart() = !restoreUnknown && !recovery.blocked && canAutoStart(sentinel)
-   不满足 → SUPPRESSED_USER_STOPPED / RESTART_BLOCKED / RESTORE_UNKNOWN
-⑤ 拉起 dsh web（generation+1）：沿用现有 3 次 + 120s 冷却
-⑥ Android 写 /root/.dsha-wake.json
-⑦ Autonomy 启动后读取 → tick({trigger:'resume'}) → 检查未完成任务（继续/等待/放弃，不重做）→ 回写 result
-⑧ 记录：DiagnosticLog + /root/.dsha-runtime-events.jsonl
-```
-
-关键规定：force-stop **不可恢复**（包 stopped、广播不达、job 取消，只能提示手动打开）；用户点「停止」→ sentinel 永久阻断直到手动启动；Doze 延迟只记录不补偿；唤醒频率硬下限 10min。
-
-### 3.4 Android ↔ Autonomy 接口提案
-
-**原则**：Android 只写事件/请求，不改 Autonomy 任务库；任务判定权在 Autonomy；幂等、可追踪、可恢复。
-
-文件契约（原子 rename、`0600`、schema 版本）：
-- `/root/.dsha-wake.json`：`{schema, attemptId, bootId, reason(boot|alarm|job|user_open|recovery), requestedAt, notBefore, deadline, generation, mode(check|restore|recovery)}`
-- `/root/.dsha-wake-result.json`：`{schema, attemptId, result(accepted|rejected|deferred|done), errorCode, at, autonomy:{resumeTick, pendingTasks}}`
-- `/root/.dsha-runtime-events.jsonl`：追加式单行 JSON，2MB 轮转 1 份
-- 扩展现有 `/root/.dsha-web-activity.json`：**只加字段**（`runtimeId`、`autonomy`），不改语义；Android 现为逐字段读取（`HarnessService:447-451`），向后兼容
-
-Java 侧（DSHA 内部）：
-```java
-WakeRequest requestWake(String reason, long notBefore, long deadline, String mode);
-void cancelWake(String attemptId);
-void onRuntimeStarted(String bootId, long runtimeId, long generation);
-void onRuntimeStopping(String reason);
-void reportWakeResult(String attemptId, WakeResult result, String errorCode);
-void requestRecovery(String reason, CheckpointRef checkpoint);
-```
-> 未照搬 GPT 给的 5 个名字：Android 侧 `requestWake` 是「排一次唤醒」，事件回调用 `onRuntimeStarted/onRuntimeStopping`，文件层用 wake/result/events 三件套更贴合现有 `app-integration` 风格。
-
-### 3.5 资源与可靠性参数
-
-| 参数 | 建议 |
-|---|---|
-| 进程内心跳 | 15s（保持现状） |
-| 自动重启冷却 / 失败阈值 | 120s / 3 次（保持） |
-| Alarm 间隔 | 正常 30min · 紧急 15min · 空闲 60min |
-| 唤醒硬下限 | 10min |
-| 失败退避 | 1/2/4/8/16/32/60min（上限 60） |
-| 24h 唤醒上限 | 48 次（超限只做健康检查） |
-| 重型任务并发 | ≤2 subagent + ≤1 Chromium |
-| 低内存 | `MemAvailable<1.5GB` 跳过新任务；`<1.0GB` 只健康检查 |
-| 唤醒后启动 | single-flight + 10min 冷却 + 串行队列 |
-
-### 3.6 失败场景与恢复策略
-
-| 场景 | 处理 | 错误码 | 重试 |
+| 文件 | 写入方 | 读取方 | 内容 |
 |---|---|---|---|
-| 唤醒时进程不在 | `startForegroundService` | — | 是（退避） |
-| 后台启动 FGS 被拒 | 记录 + 退避，不换通道 | `WAKE_START_DENIED` | 是 |
-| 用户 force-stop | 提示手动打开 | `IRRECOVERABLE_USER_FORCE_STOP` | 否 |
-| 用户点停止 | 不启动 | `SUPPRESSED_USER_STOPPED` | 否 |
-| 连续失败已阻塞 | 不启动，提示恢复页 | `SUPPRESSED_RESTART_BLOCKED` | 否 |
-| 会话状态未知 | 不自动启动 | `SUPPRESSED_RESTORE_UNKNOWN` | 否 |
-| dsh web 起不来 | 现有 3 次 + 120s | `RESTORE_FAILED` | 是 |
-| Doze 延迟 | 记录 delayMs，不补偿 | `WAKE_DELAYED` | 否 |
-| 断网 | 进程保持，任务退避 | `NETWORK_UNAVAILABLE` | 是（Autonomy 侧） |
-| 低内存 | 降级只检查 | `DEFERRED_LOW_MEMORY` | 下次 |
-| 存储不足 | 不启动重任务 | `STORAGE_LOW` | 下次 |
-| 电池优化被撤销 | 提示设置路径 | `PERMISSION_BATTERY` | 是 |
-| OEM 拦自启 | 记录等用户打开 | `BOOT_SUPPRESSED_OEM` | 否 |
-| 重复唤醒 | 丢弃 | `DEDUPED` | 否 |
-| 唤醒风暴 | 退化为健康检查 | `THROTTLED_DAILY` | 否 |
+| `/root/.dsha-wake.json` | **Android** | Autonomy | 唤醒请求（单请求，原子替换） |
+| `/root/.dsha-wake-result.json` | **Autonomy** | **Android 只读** | 回执 + 恢复报告 + nextWake |
+| `/root/.dsha-web-activity.json` | **DSH Host**（现有 `app-integration` 插件） | Android | 2s 心跳（generation/at/idle/plugins） |
+| `/root/.dsha-android-events.jsonl` | **Android** | 诊断工具 | Android 侧事件（见 §3.4） |
+| `/root/.dsha-autonomy-events.jsonl` | **Autonomy** | 诊断工具 | Autonomy 侧事件 |
 
-### 3.7 分阶段实施计划与授权门槛
+**禁止**：两个模块共同写同一个 JSONL；Android 读写 `autonomy.db` 的 `actions`/`action_verifications`/`runtimes`；Autonomy 写 `wake.json`。
+
+### 3.4 Android 事件日志规范
+
+- 路径：`/root/.dsha-android-events.jsonl`（proot 内，f2fs，非 FUSE）
+- 单行 JSON，字段：`schema`(1) / `at`(epoch ms) / `elapsedMs` / `attemptId` / `bootId` / `generation` / `stage`(wake|android|harness|web|receipt) / `event` / `result` / `errorCode` / `delayMs` / `runtimeId`
+- 轮转：单文件 2MB，超过后 rename 为 `.1`（保留 1 份）
+- 写失败 → 降级 `DiagnosticLog.record(...)`，主流程不中断
+- 不写 Memory、不写 `/sdcard` 高频路径；面向用户的诊断摘要按需导出到 `/sdcard/DSHA/诊断/`（低频、手动）
+
+### 3.5 WakeScheduler 状态机（四段分离）
+
+**四段各自独立记录**（不合并）：
+`W1 唤醒判定 → W2 Android 进程 → W3 HarnessService → W4 DSH Web → W5 Autonomy 恢复 → W6 回执`
+
+```
+REQUESTED ──dedupe/throttle──> DEDUPED / THROTTLED
+    │
+    ├─ 允许 ──> ANDROID_STARTING ──ok──> ANDROID_UP
+    │                        └─fail──> DENIED(errorCode) ──退避──> REQUESTED
+    ANDROID_UP ──Harness 已在──> HARNESS_UP
+    ANDROID_UP ──startForegroundService──> HARNESS_STARTING ──ok──> HARNESS_UP
+    HARNESS_UP ──canAutoStart? 否──> SUPPRESSED(reason) [终态]
+    HARNESS_UP ──web 健康/重启──> WEB_UP (generation+1)
+    WEB_UP ──写 wake.json──> REQUEST_SUBMITTED
+    REQUEST_SUBMITTED ──读回执 accepted/done──> RECOVERY_DONE [终态]
+    REQUEST_SUBMITTED ──rejected──> RECOVERY_REJECTED [终态]
+    REQUEST_SUBMITTED ──超时──> RECEIPT_TIMEOUT [终态，不重发同一 attemptId]
+    REQUEST_SUBMITTED ──expired──> REQUEST_EXPIRED [终态]
+```
+
+- **幂等键**：`attemptId = "w-" + bootId.slice(0,8) + "-" + reason + "-" + windowStart + "-" + seq`（windowStart = 15min 对齐时间戳）
+- **同窗口去重**：`attemptId` 已存在 → `DEDUPED`；只保留最近 20 条 attempt 记录
+- **single-flight**：Alarm 与 Job 同一时刻触发 → 进程内 `AtomicBoolean` + 文件锁 `/root/.dsha-wake.lock`（TTL 120s）
+- **启动失败退避**：1/2/4/8/16/32/60min（上限 60），每日封顶 48 次
+- **低内存降级**：`MemAvailable<1.5GB` 只做 W3 健康检查、不拉起 W4 重任务；`<1.0GB` 直接 `DEFERRED_LOW_MEMORY`
+- **stop sentinel**：`STOP_SENTINEL` 存在 → `SUPPRESSED_USER_STOPPED`，直到用户手动启动
+- **force-stop**：`IRRECOVERABLE_USER_FORCE_STOP`，等用户打开
+- **用户手动重开**：`USER_OPEN`，清除本轮退避计数，但不删 sentinel（沿用现有语义：用户主动启动即 `beginStart` 清除）
+- **时间变化**：记录 `bootId` 与 `elapsedMs`；墙钟前后跳只影响窗口判定，不触发补跑
+
+### 3.6 请求消费机制（与 Autonomy 对齐的 8 问）
+
+| 问题 | 机制 |
+|---|---|
+| 1. 已运行时 Android 写请求后 Autonomy 如何收到 | Autonomy 在 `apply()` 注册 `fs.watch('/root', {persistent:false})`，只关心 `dsha-wake.json`；事件去抖 300ms；另设 **5s mtime 轮询**兜底（inotify 丢失/不可用时）。已实测 `fs.watch` 在 `/root` 可用 |
+| 2. 轮询 / 文件变化通知 / Host 内部调用 | 三者分工：**Host 内部调用**用于 boot/DSH 启动（`dyAutonomy.recover(...)`);**fs.watch** 用于运行时新请求；**5s 轮询**做兜底。Android 无法跨进程调 DSH 内部 API，只能写文件 |
+| 3. 启动时读取与运行时新请求如何统一 | 同一个 `consumePendingWake(reason)`：启动入口传 `reason=boot`，watcher 传 `reason=wake`；共用单飞锁与幂等表 `recovery_requests(attempt_id PK, at, report_json)` TTL 1h |
+| 4. 请求被覆盖/半写入 | Android 用 `tmp + rename` 原子替换（同目录），文件权限 0600；Autonomy 只在 JSON 完整、`schema=1`、`attemptId` 非空时消费；解析失败记 `WAKE_FILE_INVALID` 并等下一次变化/轮询；连续 3 次无效 → 回执 `result=rejected, errorCode=INVALID_WAKE_FILE` |
+| 5. 重复 attemptId 去重 | 幂等表主键冲突 → 直接返回缓存报告（不再执行）；回执 `result=done` 带 `duplicate=true` |
+| 6. 请求过期 | `now > deadline` 或 `requestedAt + 10min < now` → `result=expired, errorCode=REQUEST_EXPIRED`，不恢复，仍写回执 |
+| 7. 恢复中收到新请求 | 单飞：inflight 时最多挂 1 个 pending（新的覆盖旧的），当前完成后立即处理；回执 `mergedFrom:[attemptId…]`（≤5），不并发 |
+| 8. Android 如何判断 accepted/rejected/deferred/done | 读 `wake-result.json` 按 `attemptId` 匹配；轮询节奏 1s→2s→4s→…→30s，到 `deadline` 停；终态 `done/rejected/expired/failed`；超时未收到 → `RECEIPT_TIMEOUT`（不重发同一 attemptId，只记录并等下一次唤醒） |
+
+### 3.7 回执与 nextWake 契约（Autonomy 写 / Android 只读）
+
+```json
+{
+  "schema": 1,
+  "attemptId": "w-70301938-wake-1795200000-1",
+  "requestId": "同上（Autonomy 侧同值）",
+  "result": "accepted | rejected | deferred | done | expired | failed",
+  "errorCode": "NO_TASK | LOW_MEMORY | NETWORK | NEEDS_OWNER | REQUEST_EXPIRED | INVALID_WAKE_FILE | null",
+  "runtimeId": "rt_70301938_1234_ab12cd",
+  "bootId": "70301938-bbaf-496a-9d2a-913b7fb60f14",
+  "startedAt": 1795200000123,
+  "finishedAt": 1795200041678,
+  "pendingTasks": { "pending": 0, "unknown": 0, "blocked": 0, "recovering": 0, "running": 0 },
+  "recovery": {
+    "scanned": 0, "claimed": 0,
+    "counts": { "succeeded": 0, "requeued": 0, "compensating": 0, "stillUnknown": 0, "cancelled": 0, "humanRequired": 0 },
+    "results": [], "errors": []
+  },
+  "nextWake": { "at": 1795201800000, "reason": "backoff|lease|budget|none", "mode": "check|recover", "confidence": 0.8 }
+}
+```
+
+- **pendingTasks 五分类映射**（Android 只展示数字，不解释）：
+  - `pending` = `planned` 且无 blocked
+  - `unknown` = `unknown`
+  - `blocked` = `planned` + `blocked_reason` 非空
+  - `recovering` = 当前被 recovery 认领
+  - `running` = `leased` 或 `running`
+- **nextWake**：Autonomy 给建议；Android 只负责设置 Alarm/Job，**不得自行推断任务优先级**；Android 钳制 `[10min, 24h]`，缺失则用默认 30min，并把最终值记进 Android 事件日志（`NEXT_WAKE_SET`）
+- 回执原子写（tmp+rename）、0600、保留最近 1 条 + Android 侧缓存最近 5 条 attemptId 的结果摘要
+
+### 3.8 失败场景（按段，含全部 E 项）
+
+| # | 段 | 场景 | 处理 | 错误码 | 重试 |
+|---|---|---|---|---|---|
+| 1 | W1 | 同窗口重复 | 丢弃 | `DEDUPED` | 否 |
+| 2 | W1 | 频率过高 | 丢弃 | `THROTTLED` | 否 |
+| 3 | W1/W2 | 低内存 | 降级只检查 | `DEFERRED_LOW_MEMORY` | 下次 |
+| 4 | W2 | 后台启动 FGS 被拒 | 记录 + 退避，不换通道 | `WAKE_START_DENIED` | 是 |
+| 5 | W2 | 用户 force-stop | 等用户打开 | `IRRECOVERABLE_USER_FORCE_STOP` | 否 |
+| 6 | W3 | 用户已停止（sentinel） | 不启动 | `SUPPRESSED_USER_STOPPED` | 否 |
+| 7 | W3 | 连续失败已阻塞 | 提示恢复页 | `SUPPRESSED_RESTART_BLOCKED` | 否 |
+| 8 | W3 | 会话状态未知 | 不自动启动 | `SUPPRESSED_RESTORE_UNKNOWN` | 否 |
+| 9 | W4 | dsh web 起不来 | 现有 3 次 + 120s 冷却 | `RESTORE_FAILED` | 是 |
+| 10 | W4/W2 | Android 进程与 node 生命周期不同步 | 分别探测（3090/38105）；node 死→重启，Android 死→W2 | `STAGE_MISMATCH` | 是 |
+| 11 | W5 | wake.json 半写入/损坏 | 忽略，等下次；连续 3 次写回执 | `INVALID_WAKE_FILE` | 否（等新请求） |
+| 12 | W5 | 请求过期 | 不恢复，写回执 | `REQUEST_EXPIRED` | 否 |
+| 13 | W5 | 恢复中收到新请求 | 合并（最多 1 个 pending） | `MERGED` | 否（串行） |
+| 14 | W6 | 回执丢失 | 轮询到 deadline 停 | `RECEIPT_TIMEOUT` | 否（不重发同 attemptId） |
+| 15 | W6 | 旧回执/attemptId 不匹配 | 忽略，继续等 | — | 否 |
+| 16 | W6 | 回执 JSON 损坏 | 忽略并记录 | `RECEIPT_INVALID` | 否 |
+| 17 | 任意 | 时间前跳/回拨 | 只影响窗口判定；不补跑 | `CLOCK_JUMP` | 否 |
+| 18 | 任意 | 存储不足（`/sdcard` 或 `/root` <2GB） | 不启动重任务 | `STORAGE_LOW` | 下次 |
+| 19 | 任意 | 事件日志写失败 | 降级 DiagnosticLog | `EVENTLOG_FALLBACK` | 否 |
+| 20 | 任意 | 电池优化被撤销 | 提示设置路径 | `PERMISSION_BATTERY` | 是 |
+
+### 3.9 资源与参数
+
+| 参数 | 值 |
+|---|---|
+| 心跳 | 15s（现状，不改） |
+| 自动重启冷却 / 失败阈值 | 120s / 3 次（现状） |
+| Alarm | 正常 30min · 紧急 15min · 空闲 60min（`setAndAllowWhileIdle`） |
+| 唤醒硬下限 | 10min |
+| 失败退避 | 1/2/4/8/16/32/60min，日封顶 48 次 |
+| 请求 TTL | 10min（超过即 expired） |
+| 回执轮询 | 1s→30s 指数退避，到 deadline 停 |
+| 事件日志 | 2MB 轮转，保留 1 份 |
+| 重型任务并发 | ≤2 subagent + ≤1 Chromium |
+| 低内存 | <1.5GB 跳过新任务；<1.0GB 仅健康检查 |
+
+### 3.10 分阶段计划与授权门槛
 
 | 阶段 | 内容 | 授权门槛 |
 |---|---|---|
-| P0 源码开发 | DSHA 分支：`WakeScheduler` + Boot 启动 Harness + 文件契约 + 事件日志 | GPT 分配分支；不改生产源码、不合并 main |
-| P1 模拟测试 | Robolectric/仪器测试：boot/alarm 触发、去重、退避、sentinel 门控、force-stop 语义 | 无（本地可跑） |
-| P2 隔离验证 | 装 **test 变体 APK**（不同 applicationId 后缀），真实 boot/alarm 验证 | **负责人授权安装测试包** |
-| P3 staging | 独立 profile + 端口 31873 + 独立 DSH_HOME，端到端验证唤醒→resume | **负责人授权启动 staging** |
-| P4 生产灰度 | 先只开 alarm 健康检查（不自动启动），24h 后再开 boot 自启 | **负责人逐项授权** |
+| P0 | DSHA 分支：`WakeScheduler` + Boot 启动 Harness + wake/receipt/事件日志 | GPT 分配分支；不改生产、不合并 main |
+| P1 | 模拟测试（Robolectric/仪器）：boot/alarm/去重/退避/sentinel/force-stop 语义 | 无 |
+| P2 | **Alarm 健康检查**（不自动启动）— 隔离 test APK 真机验证 | **负责人授权装 test 包** |
+| P3 | **Boot 自启**（受 sentinel 门控）+ JobScheduler 兜底 | 负责人授权 |
+| P4 | staging（独立 profile + 端口 31873）端到端：唤醒→recover→回执→nextWake | 负责人授权启动 staging |
+| P5 | 生产灰度（先只读回执观察 24h，再开自动恢复） | 负责人逐项授权 |
 
-回滚：`WakeScheduler.enabled=false` 即停调度，事件日志保留；P0–P2 只影响测试包。
+回滚：`WakeScheduler.enabled=false` + 删除 alarm/job；事件日志保留。
 
-### 3.8 未验证 / INCONCLUSIVE
+### 3.11 未验证 / INCONCLUSIVE
 
-| 项 | 状态 | 原因 |
-|---|---|---|
-| kill 后 `START_STICKY` 是否真被重启 | NOT RUN | 本轮禁止 kill 实验 |
-| vivo 是否因「电池优化白名单」放行后台启动 FGS | INCONCLUSIVE | 文档说放行，但 DSHA 自身仍在捕获 `IllegalStateException`（`DeviceBridgeService.java:130-140`），说明现实中会遇到拒绝 |
-| vivo Freezer 是否冻结 DSHA、是否停 node | INCONCLUSIVE | 出现 `mIsFrozen`，当前 `isFrozen=false`，无对照实验 |
-| BootReceiver 是否被 OEM 拦截 | NOT RUN | 需真机重启实验 |
-| JobScheduler 备份任务当前是否在跑 | INCONCLUSIVE | `dumpsys jobscheduler` 被策略拦截 |
-| force-stop 真实表现 | INCONCLUSIVE | 结论来自官方语义，未实测 |
-| 事件日志对 `/sdcard` FUSE 的写放大 | NOT RUN | 未做基准 |
+| 项 | 状态 |
+|---|---|
+| kill 后 `START_STICKY` 是否真被重启 | NOT RUN |
+| vivo 是否因 Doze 白名单放行后台启动 FGS | INCONCLUSIVE（DSHA 自身仍在捕获 `IllegalStateException`） |
+| vivo Freezer 是否冻结 DSHA/停 node | INCONCLUSIVE（曾见 `mIsFrozen`） |
+| BootReceiver 是否被 OEM 拦截 | NOT RUN |
+| JobScheduler 备份任务当前是否在跑 | INCONCLUSIVE（`dumpsys jobscheduler` 被策略拦截） |
+| force-stop 真实表现 | INCONCLUSIVE（结论来自官方语义） |
+| Autonomy `fs.watch` 在长时间运行下的稳定性 | INCONCLUSIVE（本轮只验证可注册） |
+| 回执轮询对 node 的额外负载 | NOT RUN |
 
 ---
 
@@ -260,60 +332,90 @@ void requestRecovery(String reason, CheckpointRef checkpoint);
 
 | 文件 | 行 | 内容 |
 |---|---|---|
-| `app/src/main/java/com/deepseekharness/app/BootReceiver.java` | 51-88 | 只启 DeviceBridge + 备份 + 闹钟 |
-| `.../HarnessService.java` | 19-28, 47-49, 199-270, 353-405, 484-577, 608-640, 436-455 | FGS/心跳/重启/WakeLock/健康判定/活动文件读取 |
-| `.../AdbKeepAliveReceiver.java` | 22-33, 54-64 | 5min `setAndAllowWhileIdle`，仅 ADB |
-| `.../DeviceBridgeService.java` | 86-88, 112-160, 228-253, 361-365 | 看门狗周期/退避、后台启动失败处理 |
-| `.../backup/AutomaticBackups.java` | 49-69 | `JobScheduler.setPersisted(true).setPeriodic(15min)` |
-| `.../core/WebLifecycleController.java` | 860-866, 878-895, 1917-1922, 1936-1948 | `startWeb`、`requiresRuntimeProtection`、sentinel、`canAutoRestart` |
-| `.../util/WebLifecycle.java` | 53-55 | `canAutoStart` 四条件 |
-| `.../core/DiagnosticLog.java` | 14-36, 67-89 | 有界诊断日志、崩溃记录 |
-| `.../core/ConfigStore.java` | 643 | `isStartupRecoveryRequested` |
-| `app/src/main/assets/app-integration/index.js` | 16-50 | 现有 Android↔DSH 心跳契约 |
-| `app/src/main/AndroidManifest.xml` | 14-40, 246-251, 268-285 | 权限、HarnessService、BootReceiver/AdbKeepAlive |
+| `BootReceiver.java` | 51-88 | 只启 DeviceBridge + 备份 + 闹钟，不启 Harness |
+| `HarnessService.java` | 19-28 / 47-49 / 199-270 / 353-405 / 484-577 / 608-640 / 436-455 | FGS、心跳、重启、WakeLock、看门狗、活动文件读取 |
+| `AdbKeepAliveReceiver.java` | 22-33 / 54-64 | 5min `setAndAllowWhileIdle`，仅 ADB |
+| `DeviceBridgeService.java` | 86-88 / 112-160 / 228-253 / 361-365 | 看门狗与后台启动失败处理 |
+| `AutomaticBackups.java` | 49-69 | `setPersisted(true).setPeriodic(15min)` |
+| `WebLifecycleController.java` | 860-866 / 878-895 / 1917-1922 / 1936-1948 | `startWeb`、`requiresRuntimeProtection`、sentinel、`canAutoRestart` |
+| `WebLifecycle.java` | 53-55 | `canAutoStart` 四条件 |
+| `DiagnosticLog.java` | 14-36 / 67-89 | 有界诊断日志、崩溃记录 |
+| `ConfigStore.java` | 643 | `isStartupRecoveryRequested` |
+| `app/src/main/assets/app-integration/index.js` | 16-50 | 现有 Android↔DSH 心跳契约（2s 原子写） |
+| `AndroidManifest.xml` | 14-40 / 246-251 / 268-285 | 权限、HarnessService、BootReceiver/AdbKeepAlive |
 
-### 4.2 设备证据（2026-11-21 02:19–02:30）
+### 4.2 设备证据（2026-11-21 09:44–09:50）
 
 | 证据 | 值 |
 |---|---|
-| `/app/device` | android=14、battery=76%、charging=true、`app_foreground=false`、`memory_free=2.24GB` |
-| `dumpsys activity processes` | pid 22300、`oom adj cur=100`、`curProcState=4`、`mHasForegroundServices=true`、`cached=false`、运行 1d14h47m |
-| `dumpsys power` | `mDeviceIdleWhitelist` 含 10328；`'DSHA:web' DISABLED … mIsFrozen`；`'DSHA:runtime-task'` 短持有 |
-| `dumpsys package` | BootReceiver 三 action；HarnessService FGS type；`MANAGE_EXTERNAL_STORAGE=false` |
-| `/root/.dsha-web-activity.json` | `{"generation":"7","at":…,"idle":false,"plugins":[]}`（DSH 侧 2s 写，证明契约在跑） |
-| Autonomy 运行时 | `stage=offline-mock-only`、`tickEnabled=false`、6 executor 全 mock |
+| `/app/device` | android=14、battery=94%、`app_foreground=true`、`memory_free=2.41GB`、存储 105.57GB 可用 |
+| `dumpsys activity processes` | pid 22300、运行 1d22h12m、`mHasForegroundServices=true` |
+| `dumpsys power` | `mDeviceIdleWhitelist` 含 10328 |
+| `cat /proc/sys/kernel/random/boot_id` | `70301938-bbaf-496a-9d2a-913b7fb60f14`（可读，本轮新证据） |
+| `node fs.watch('/root')` | 可注册（本轮新证据） |
+| `df -T /root` | **f2fs**（非 ext4；同一 dm-44 分区） |
+| `/root/.dsha-web-activity.json` | DSH 侧 2s 写，证明既有契约在跑 |
 
-### 4.3 平台文档（外部）
+### 4.3 跨报告引用
+
+- `coordination/Autonomy 自主系统负责人报告.md`，blob `58b40bf8…`，AUTONOMY-REPORT-0001：其 §7 给出的 `dyAutonomy.recover`、`runtimeId`、`RecoveryReport`、`recovery_requests` 幂等表、lease→unknown 语义，本报告已对齐采用。
+
+### 4.4 平台文档
 
 - [前台服务后台启动限制与豁免](https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start)
-- [Android 15 BOOT_COMPLETED 启动 FGS 限制](https://developer.android.com/about/versions/15/behavior-changes-15)
+- [Android 15 BOOT_COMPLETED 限制（受限类型不含 specialUse/connectedDevice）](https://developer.android.com/about/versions/15/behavior-changes-15)
 - [Android 14 前台服务类型必填](https://developer.android.com/about/versions/14/changes/fgs-types-required)
 
 ---
 
-## 5. 决策与授权请求
+## 5. 决策、授权与跨报告一致性
 
-### 5.1 需 GPT 裁决
-1. **接口方向**：Android→DSH 单向（文件）+ Autonomy 在回执里预约下一次，Android 据此调 alarm；是否需要 DSH→Android 主动通道（当前骨架没有）。
-2. **唤醒精度**：15–30 分钟级是否可接受。
-3. **事件日志位置**：`/root/.dsha-runtime-events.jsonl`（快，proot 内）vs `/sdcard/DSHA/诊断/`（可读，FUSE 慢）。
-4. **P4 灰度顺序**：先 alarm 健康检查 vs 先 boot 自启。
-5. **`pendingTasks` 语义**：需 Autonomy 智能体先定义（goal/action/reflection 三类），Android 只传数字。
+### 5.1 仍需 GPT 裁决
+1. 消费触发落点：`fs.watch('/root')` + 5s 轮询是否接受（Android 无跨进程调用）。
+2. 回执轮询 1s→30s 退避是否接受。
+3. `nextWake` 钳制 `[10min, 24h]` 是否接受。
+4. 事件日志 2MB×2 轮转是否接受。
+5. Autonomy 报告 v1 的三处不一致由其 v2 修正，还是我在 v3 兼容。
 
 ### 5.2 需负责人授权
-1. 安装 DSHA **test 变体 APK**（P2）。
-2. 真机 **kill / reboot** 对照实验（验证 A17/A18）。
-3. 启动 staging（P3）。
-4. 生产灰度与 `WakeScheduler` 开关（P4）。
-5. 是否把「电池优化白名单」作为长期依赖（用户撤销后会退化）。
+1. 装 DSHA test 变体 APK（P2）；2. 真机 kill/reboot 实验；3. staging 启动；4. 生产灰度与开关；5. 电池优化白名单作为长期依赖。
 
-### 5.3 与其它领域的接口冲突
-- 与 Autonomy：`pendingTasks` 定义、resume tick 语义（只检查不重做）需与 Autonomy 智能体对齐；Android 不解释任务语义。
-- 与 Memory：事件日志不写记忆库；是否进入 permanent archive 由 Memory 决定。
-- 与 DSH/DSH-ISOLATION：P3 staging 端口 31873、独立 profile 需与 DSH 的 staging 方案一致。
+### 5.3 跨报告一致性（需 Autonomy v2 同步）
+Autonomy 报告 v1（blob `58b40bf8…`）与 GPT 裁决有三处差异：
+1. 其 §7.1 仍用共享 `/root/.dsha-runtime-events.jsonl` → 应改为 `dsha-android-events.jsonl` / `dsha-autonomy-events.jsonl` 分离；
+2. 其 §7.1 `wake-result` 字段含 `resumeTick` → 与「恢复不依赖 tick」冲突，应删除或标注为诊断字段；
+3. 其 §5.1 写「`/root` 为 ext4」→ 实测为 **f2fs**（同一 dm-44），rename 原子性结论不变，但描述需更正。
 
 ---
 
-## 6. 边界声明
+## 6. 本轮变更摘要
 
-本轮只读：未修改 DSHA 源码、Manifest、服务、配置、权限；未安装 APK、未部署、未重启；未执行 kill/reboot；未申请新权限；未启动真实后台调度；未修改生产数据库；未修改 `coordination/HANDOFF.md`、`coordination/REPORT.md`、`PROJECT.md`；未修改 Autonomy 接口。
+### 6.1 新增
+- 统一架构图（含 recover 入口与双事件日志）
+- WakeScheduler 状态机（W1–W6 四段分离 + 状态转移）
+- 文件所有权表（5 文件唯一写入方）
+- 请求消费机制（8 问全答，含单飞/合并/过期/半写入）
+- 回执 + `pendingTasks` 五分类 + `nextWake` 契约
+- 20 条失败场景（按段）
+- 19 项能力契约（L1–L4 四级 + 7 个失败码）
+- 本轮新证据：`boot_id` 可读、`fs.watch('/root')` 可用、`/root` 为 f2fs
+
+### 6.2 修正
+- **删除**「Autonomy 启动后读取 → `tick({trigger:'resume'})`」，改为 `dyAutonomy.recover({requestId, reason, bootId})`
+- `wake-result.json` 写入方明确为 Autonomy，Android 只读
+- 事件日志从单一 `runtime-events.jsonl` 拆为 Android / Autonomy 两条
+- 「唤醒」拆成 Android 进程 / Harness / DSH Web / Autonomy 恢复四段，分别记录状态
+- `pendingTasks` 从单一数字改为五分类
+- 自动恢复顺序按裁决改为 Alarm → Boot → 灰度
+
+### 6.3 未解决
+- 消费触发落点、轮询节奏、钳制范围、轮转大小（§5.1 1–4）
+- Autonomy 报告 v1 的三处不一致（§5.3）
+- 所有真机验证（kill/reboot/FGS 拒绝/OEM 拦截）仍 NOT RUN
+- `appops` 级证据仍 BLOCKED
+
+---
+
+## 7. 边界声明
+
+本轮只读设计修订：未改 DSHA 源码/Manifest/服务/配置/权限；未装包、未部署、未重启；未 kill/reboot；未启动 staging/真实调度；未申请新权限；未碰生产库；未改 `HANDOFF.md`/`REPORT.md`/`PROJECT.md`；未改 Autonomy 接口或其报告。
