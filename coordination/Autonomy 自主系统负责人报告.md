@@ -1,367 +1,511 @@
-# AUTONOMY-REPORT-0001 · Autonomy 自主系统负责人报告（任务恢复、状态语义与结果核实设计）
+# AUTONOMY-REPORT-0002 · Autonomy 自主系统负责人报告（恢复语义正式设计 v2）
 
 > 会话：Autonomy 自主系统负责人（Autonomy 领域专业智能体）
-> 覆盖任务：`AUTO-ARCH-AUDIT-01`（自主能力只读审计，2026-11-21 01:25–02:05）、`AUTONOMY-RECOVERY-SEMANTICS-DESIGN-01`（恢复语义设计，2026-11-21 02:20–02:50）
-> 迭代规则：本文件覆盖式更新、版本号递增（AUTONOMY-REPORT-0002…），不新增同类文件；与 `coordination/HANDOFF.md`、`coordination/REPORT.md` 同目录
-> 最近更新：2026-11-21 09:40 (Asia/Shanghai) · v1 首次建档
-> 性质：只读审计 + 只读设计。未改 Autonomy/Persona/Memory 源码；未写生产 DB/profile；未启动 tick/scheduler/executor/staging；未部署/重启；未改 `HANDOFF.md`/`REPORT.md`/`PROJECT.md`
+> 覆盖任务：`AUTO-ARCH-AUDIT-01`（自主能力只读审计）、`AUTONOMY-RECOVERY-SEMANTICS-DESIGN-01`（v1 设计）、`AUTONOMY-RECOVERY-SEMANTICS-DESIGN-02`（按 GPT 裁决修订）
+> 迭代规则：本文件覆盖式更新、版本号递增，不新增同类文件
+> 最近更新：2026-11-21 09:49 (Asia/Shanghai) · v2
+> 性质：只读设计修订。未改 Autonomy/Persona/Memory 源码；未创建开发分支；未写生产 DB；未启动 tick/scheduler/executor/staging；未部署/重启；未改 `HANDOFF.md`/`REPORT.md`
 
 ## 版本历史
 
 | 版本 | 时间 | 覆盖任务 | 变更摘要 |
 |---|---|---|---|
-| v1 (AUTONOMY-REPORT-0001) | 2026-11-21 09:40 | AUTO-ARCH-AUDIT-01 + AUTONOMY-RECOVERY-SEMANTICS-DESIGN-01 | 首次建档：Autonomy 真实基线、11 项自主闭环矩阵、恢复语义与状态机、lease/verifier/Android 接口设计、P0-a 三项缺陷修复拆分 |
+| v1 (AUTONOMY-REPORT-0001) | 2026-11-21 09:40 | AUTO-ARCH-AUDIT-01 + DESIGN-01 | 首次建档：基线、11 项矩阵、状态机、lease/verifier/Android 接口、P0-a 拆分 |
+| v2 (AUTONOMY-REPORT-0002) | 2026-11-21 09:49 | DESIGN-02 | 落实 GPT 12 项裁决；补齐 heartbeat 续租、executor_started 顺序、fencing token、错误分类、verifier 成功标准、取消并发、迁移方案、请求消费与 nextWake；与 Android v2 对齐并修正 v1 三处不一致 |
 
 ---
 
-## 0. 给 GPT 的阅读导航（先看这一节）
+## 0. 给 GPT 的阅读导航
 
-**结论一句话**：Autonomy 现在是「一个会按时醒来的单步行动器 + 一套审计/暂停/配额骨架」；它没有多步计划、没有执行后验证、没有把失败变成经验；生产 tick 已关 5 天，恢复逻辑随 tick 一起停摆。任务恢复的正确语义是 **lease 过期 → `unknown` → 先 verify → 再决定**，`failed` 只能由有证据的失败产生。
+**一句话**：v2 把"租约过期→unknown→先验证"从原则落成了可实现的机制链：**claim CAS → attempt/fencing → executor_started 提交 → 执行 → 结果 CAS 提交 → 验证**；并给出与 Android v2 完全对齐的单向文件契约。
 
-**需要 GPT 裁决（§6.1）**
-1. 状态命名兼容策略：物理值保留 `done/failed/aborted`、新增 `unknown/cancelled/leased`（本报告建议）。
-2. 历史 `failed(error='stale_lease')` 共 1 行是否一次性重分类为 `unknown`（改历史状态，需授权）。
-3. `action_ledger` 归属 Autonomy 还是 task-core（建议 Autonomy）。
-4. 与 Android 报告的接口统一：传输层用文件契约（Android 已提案），语义层用本报告状态机；`dyAutonomy.recover` 作为 host 进程内入口。
-5. 更正 Android 报告 §3.3 步骤⑦：恢复不应走 `tick({trigger:'resume'})`（tick 关闭时不执行），应走独立 recovery 入口。
+**GPT 12 项裁决落实位置**
 
-**需要负责人授权（§6.2）**
-1. 写 `dsh-autonomy` 开发分支（AUTO-R1…R5）。
-2. 一次性数据重分类（上述第 2 条）。
-3. 后续 DSHA 实机重启/崩溃注入演练（由 DSH 执行）。
-4. 恢复接口冻结后的跨模块联调。
+| 裁决 | 落实章节 |
+|---|---|
+| 1 物理状态兼容 + 映射层 | §2 |
+| 2 过期→unknown | §3、§4 |
+| 3 ledger 归 Autonomy | §5.4、§7 |
+| 4 单向文件契约 | §8.1 |
+| 5 恢复独立入口 | §6.1 |
+| 6 wake-result 由 Autonomy 写 | §8.1 |
+| 7 pendingTasks 五分类 | §8.5 |
+| 8 Android 不解释语义 | §8.1、§8.6 |
+| A 心跳与租约 | §4 |
+| B executor_started 顺序 | §5.1 |
+| C fencing token | §5.2–5.3 |
+| D 错误码与 unknown | §7.2 |
+| E verifier 成功标准 | §7.3 |
+| F 取消并发 | §7.4 |
+| G 迁移 | §9 |
+
+**仍需 GPT/负责人决定（§10）**：消费触发落点（watch+poll）、nextWake 钳制范围、生产 v4 溯源、外部回执型 verifier 的阻塞解除顺序。
+
+**同一句话再强调一次**：本报告通过 ≠ 代码实现。所有实现 NOT RUN，DSH 实机 NOT RUN，staging NOT RUN，生产 DB 未修改（见 §12）。
 
 ---
 
-## 1. 基线（本轮核对值）
+## 1. 基线（2026-11-21 09:47–10:00 重新核对）
 
 | 对象 | 值 | 核对方式 |
 |---|---|---|
-| `ba-song/dsh-autonomy` main | `6c4a4753b4737060211955b1f022cab2f1d39521` | `git fetch` + `git ls-remote` 双向一致，2026-11-21 09:31 |
-| autonomy tag | `v0.4.0` = `84cf56b1`（Release 后 10 commits） | `git tag` / `ls-remote --tags` |
-| autonomy 工作区 | clean（`git status --porcelain` 空） | 本地克隆 |
-| `coordination/project-handoff` 建档前 HEAD | `232b73e2962c162b59475b63841fa461ec5c78fe` | `git log` |
-| `coordination/HANDOFF.md` blob | `f8ffa40d4c27c04d23ff74b123bf2b7044821976`（3317 行） | `git rev-parse HEAD:...` |
-| `coordination/REPORT.md` blob | `e219f707cc4363c53704fbe389f786148142326e`（172 行） | 同上 |
+| `ba-song/dsh-memory-core` `coordination/project-handoff` | `03edfd6257e5f058859ad0aec53b2c1677f4745f`（Android v2 报告） | `git fetch` + `git ls-remote` |
+| 本报修订前 blob | `58b40bf8334c3d59918504deeaf10a74e941cd5b`（v1） | `git rev-parse` |
+| `coordination/HANDOFF.md` | `f8ffa40d4c27c04d23ff74b123bf2b7044821976`（3317 行） | 同上 |
+| `coordination/REPORT.md` | `e219f707cc4363c53704fbe389f786148142326e`（172 行） | 同上 |
+| `ba-song/dsh-autonomy` main | `6c4a4753b4737060211955b1f022cab2f1d39521`（tag v0.4.0 = `84cf56b1`） | 双向核对，无新提交 |
 | `dsh-persona-core` main / EI-1 | `a84c7bad` / `92a763bf` | `ls-remote --heads` |
-| 生产 autonomy | `/root/.dsh/plugin-src/dsh-autonomy`（软链，无 `.git`，早于 GitHub HEAD） | 目录与 diff |
+| 生产 autonomy | `/root/.dsh/plugin-src/dsh-autonomy`（无 `.git`，早于 GitHub HEAD） | 目录/diff |
 | 生产 profile | `tick.enabled=false`、`realSafe=false`、`dryRun=false`、`sendEnabled=true` | `cordis.patch.yml` 只读 |
-| 生产 DB | `user_version=4`；代码 `SCHEMA_VERSION=3`（漂移未解释） | 只读快照 |
+| 生产 DB | `user_version=4`；代码 `SCHEMA_VERSION=3` | 只读快照 |
+
+**与 Android v2 的一致性**：Android 报告 v2（`03edfd6`）§3.3–3.7 已冻结文件所有权、请求消费 8 问、回执与 nextWake 骨架、pendingTasks 五分类。本报§8 与之逐字段对齐，并修正 v1 的三处不一致（§8.7）。
 
 ---
 
-## 2. 事实核查（AUTO-ARCH-AUDIT-01 结论 + 本轮复核）
+## 2. 状态机 v2（裁决 1、2）
 
-### 2.1 状态枚举与生命周期
+### 2.1 物理值与语义映射层（不混用）
 
-| 项 | 事实 | 证据 |
+| 物理值（DB） | 对外语义 | 说明 |
 |---|---|---|
-| 物理状态值 | 仅 `planned/running/done/failed/aborted`，无 CHECK 约束 | `lib/store/schema.js:54` |
-| 领取 | `markRunning` 写 `running/started_at/lease_until`，带 CAS | `lib/run/actions.js:52-56` |
-| 结束 | `finishAction` → `done`/`failed` | `lib/run/actions.js:62-74` |
-| 策略中止 | `abortAction` → `aborted` | `lib/run/actions.js:78` |
-| 租约回收 | 过期 → **`failed`**（`error='stale_lease'`） | `lib/run/actions.js:86-94` |
+| `planned` | `pending` | 待领取 |
+| `leased` | `leased` | 已领取、未开始执行 |
+| `running` | `running` | 已写 `executor_started` 并提交 |
+| `done` | `succeeded` | **新数据**必须 `verify_state='verified_ok'`；旧数据 `legacy_unverified` |
+| `failed` | `failed` | 必须有失败证据（`error_class` 非 unknown 类） |
+| `unknown` | `unknown` | 新增；待核实 |
+| `cancelled` | `cancelled` | 新增；取消 |
+| `aborted` | `blocked`（策略/未执行） | 保留旧值，语义为"策略拦下/未执行"，**不是取消** |
 
-### 2.2 lease
+**映射层约定**：DB 读写只用物理值；对外 API/回执/工具输出映射为语义值，映射表集中在 `lib/state-map.js`（待实现），任何地方不得混用。`done` 在对外 JSON 中一律输出 `succeeded`。
 
-| 项 | 事实 | 证据 |
-|---|---|---|
-| 时长 | tick 用 `leaseSec=90`；手动行动写死 60s | `lib/config.js:165`；`lib/run/tick.js:303,312`；`lib/run/manual-actions.js:172` |
-| 续期/心跳 | **无**（全库 `heartbeat` 0 命中） | `grep -rni heartbeat lib/` → 0 |
-| 单飞判定 | `lease_until IS NULL OR lease_until >= now` 视为活着（NULL 永久阻塞） | `lib/run/actions.js:97-103` |
+### 2.2 转换表（权威，含 CAS 条件）
 
-### 2.3 调度与恢复入口
-
-| 项 | 事实 | 证据 |
-|---|---|---|
-| 定时器 | `tick.enabled=false` 时直接 return，不挂定时器 | `lib/index.js:530-535` |
-| 启动 resume | 延迟 60s 跑 `tick({trigger:'resume'})`，同一分支内，tick 关则不跑 | `lib/index.js:537-545` |
-| 悬挂回收 | 仅 `tick.runOnce` 内调用 `recoverStale` | `lib/run/tick.js:144-149` |
-| 重启后恢复 | **不存在**（生产 tick 关 5 天，无任何扫描） | 组合上述三点 |
-
-### 2.4 审计、结果与验证
-
-| 项 | 事实 | 证据 |
-|---|---|---|
-| 审计先行 | `select/skip/dry_run` 先写 `action_log` | `lib/run/tick.js:284,289,296,305` |
-| 缺少开始事件 | 无 `executor_started`；无法区分"领了租约"与"已调外部" | `grep` 无命中 |
-| 结果结构 | `{ok, code, evidence, result}`；`code` 被丢弃 | `lib/run/tick.js:371-379` |
-| 错误文案 | 生产 67 条 failed 文案完全相同（"executor 未返回 ok"） | 生产只读 DB 聚合 |
-| 外发证据 | 本地 `hash(text)`，不是回执 | `lib/run/real-executors.js:127` |
-| 验证字段 | **不存在**（`actions` 无 verified 列；全库 `verifier` 0 命中） | `lib/store/schema.js:49-73` |
-| `attempt` | 列存在但**从不递增** | `lib/run/actions.js:62` |
-
-### 2.5 排序（生产已致害）
-
-`lib/run/actions.js:166` 用 `ORDER BY id DESC`，而 `id = 'act_' + randomUUID()`（`:14-16`）→ `consecutiveFails` 随机。生产实证：`browse_douyin` 连续失败 **55 次**、间隔 9–20 分钟，熔断（`lib/core/policy.js:88-97`）从未打开。
-
-### 2.6 幂等
-
-只有 kind 级时间窗（`lib/run/actions.js:114`），无幂等键、无执行账本、无执行前外部状态检查。
-
-### 2.7 自主闭环矩阵（11 项）
-
-| # | 能力 | 状态 | 关键证据 | 生产 |
+| # | From | 事件 | To | CAS / 条件 |
 |---|---|---|---|---|
-| 1 | 自主发现 | PARTIAL | 驱力/目的/触发，`NEED_TO_KIND` 硬映射 6 kind（`lib/core/purpose.js:8`） | ON（home） |
-| 2 | 判断是否行动 | PARTIAL | `select/score/policy` 齐全，但 `urge.thetaLow=0`（`lib/config.js:173`） | NOT RUN |
-| 3 | 可追踪目标 | PARTIAL | `goals` 表 + CRUD；`due_at` 从不参与选择 | 半开（2 条） |
-| 4 | 多步计划 | MISSING | 无 plan/step/checkpoint；一次 tick 单 action | NOT RUN |
-| 5 | 能力/工具选择 | PARTIAL | 注册表 + 6 kind；无能力元数据 | mock only |
-| 6 | 执行并记录 | PASS | 三表 + 状态机 + 租约 | 238 条 |
-| 7 | 执行后验证 | MISSING | 无 verified 字段/流程 | — |
-| 8 | 识别失败 | PARTIAL | code 被丢 + 排序错 | 91 条失败 |
-| 9 | 恢复/调整 | PARTIAL | 退避/熔断/租约回收；无重规划/取消 | 失效 |
-| 10 | 复盘 | PARTIAL | 只自动记 pending，正文手动；反思不参与打分 | 4 consumed/7 manual |
-| 11 | 经验→能力 | MISSING | 无建议队列/技能草案通道 | 按设计未建 |
+| T1 | — | 政策通过 | planned | — |
+| T2 | planned | 前置不满足 | planned+blocked_reason | `state_version` CAS |
+| T3 | planned | 领取 | leased | `WHERE id=? AND status='planned' AND state_version=?`；同时 `attempt+=1`、`fencing_token+=1`、写 attempt 行 |
+| T4 | leased | executor_started 提交 | running | `WHERE status='leased' AND lease_owner=? AND fencing_token=?` |
+| T5 | running | 结果 ok + verifier=confirmed | done | `WHERE status='running' AND fencing_token=? AND lease_owner=?` |
+| T6 | running | 结果 ok + verifier=indeterminate | unknown | 同上 |
+| T7 | running | 明确失败 | failed | 同上 |
+| T8 | leased/running | 租约过期/心跳丢失 | unknown | recovery CAS（§4.4） |
+| T9 | unknown | confirmed_succeeded | done | `WHERE status='unknown' AND state_version=?` |
+| T10 | unknown | confirmed_not_executed + retry | planned | 同上；`attempt` 保留 |
+| T11 | unknown | confirmed_not_executed + 不重试 | cancelled | 同上 |
+| T12 | unknown | partially_completed | unknown + compensating | `partial_json`、`human_required=1` |
+| T13 | unknown | indeterminate/verification_error | unknown | 退避重验 |
+| T14 | planned/leased（无开始） | 取消 | cancelled | §7.4 |
+| T15 | running（已开始） | 取消请求 | 不变 + cancel_requested | §7.4，**不能抹掉已发生事实** |
+| T16 | 终态 | 任何事件 | 不可转换 | 重做=新 action |
+
+**禁止**：无证据 `running→failed`、`unknown→failed`、跳过验证的重排、`cancelled→failed`、终态回退。
 
 ---
 
-## 3. 任务状态机（冻结提案）
+## 3. lease 过期处理（裁决 2）
 
-### 3.1 状态与兼容映射
+过期后的唯一合法去向是 `unknown`，**绝不 `failed`**：
 
-| 目标状态 | 物理值 | 与现状 | 说明 |
+```
+1) 检测（§4.4）
+2) CAS：UPDATE actions SET status='unknown', unknown_since=?, unknown_reason='lease_expired',
+        ended_at=NULL, state_version=state_version+1
+     WHERE id=? AND status IN ('leased','running') AND state_version=?
+3) 同一事务写 action_log(event='lease_expired') 与 recovery 队列行
+4) 投递 verifier（§7）
+5) 只有 confirmed_succeeded 才 done；confirmed_not_executed 才重排；
+   indeterminate 保持 unknown；partially_completed 进补偿
+```
+
+`unknown` 是**非终态**：`ended_at` 必须为空，`unknown_since` 必须非空。
+
+---
+
+## 4. 心跳与租约完整规则（A）
+
+### 4.1 参数（一处定义，禁止散落）
+
+```
+heartbeatMs = clamp(floor(leaseMs/3), 15_000, 60_000)
+leaseTtlMs  = 3 * heartbeatMs
+leaseMs     = max(leaseSec*1000, timeoutMs*2 + 15_000)     // 默认 max(90s,135s)=135s
+graceMs     = 60_000
+```
+
+默认：`heartbeatMs=45s`、`leaseTtlMs=135s`。**tick 与手动行动共用同一套计算**（修正 v1 指出的手动行动写死 60s）。
+
+### 4.2 续租（CAS，且必须与心跳同一 UPDATE）
+
+```sql
+UPDATE actions
+   SET heartbeat_at=?, lease_until=?, state_version=state_version+1
+ WHERE id=? AND status IN ('leased','running')
+   AND lease_owner=? AND fencing_token=? AND state_version=?
+```
+
+- `changes===1` → 续租成功；
+- `changes===0` → **所有权已丢失**（被恢复/取消/抢占）→ worker 本地置 `leaseLost=true`，通过 `AbortSignal` 请求停止，**不得再提交任何结果**；
+- 只有当前合法 owner（`lease_owner` + `fencing_token` 双匹配）可以续租；
+- `heartbeat_at` 与 `lease_until` **永远在同一条 UPDATE 写入** ⇒ 不变式 `lease_until = heartbeat_at + leaseTtlMs` 恒成立。
+
+**"心跳还在写、租约已过期"的矛盾状态在机制上不可能出现**：两者同写同改。若观测到（时钟跳变/人工改库），按不变式破坏处理：置 `unknown` + `unknown_reason='invariant_clock'`，交 verifier，不判 failed。
+
+### 4.3 续租失败后的 worker 义务
+
+1. 立即停止提交结果（含 success/failure）；
+2. 若已拿到外部结果，只允许写 `late_result` 诊断事件（`action_log`，不改 status）；
+3. 该结果可作为 verifier 的低置信证据（`source='late_worker'`、`confidence=low`），不能单独证明成功。
+
+### 4.4 心跳丢失与过期判定
+
+```
+deadline = heartbeat_at + leaseTtlMs
+过期     = now > deadline + graceMs
+```
+
+三个独立信号，任一成立即进入待恢复队列：
+
+1. `now > deadline + graceMs`；
+2. `lease_owner` 的 `runtimeId != 当前 runtimeId`（跨重启最可靠）；
+3. `runtimes` 中该 runtime 已 `state='stale'`（`last_heartbeat_at < now - 2*heartbeatMs`）。
+
+### 4.5 旧 runtime 识别
+
+启动时 `registerRuntime()`：写 `runtimes`，把 `last_heartbeat_at` 超过 2 个心跳周期的旧 runtime 标 `stale`；扫描 `lease_owner LIKE '旧runtimeId#%'` 的 leased/running 全部进恢复队列。
+
+---
+
+## 5. executor attempt 与 fencing（B、C）
+
+### 5.1 执行前的持久化顺序（强制）
+
+```
+TX1: planned→leased（CAS）
+     写 action_attempts(action_id, attempt_no, fencing_token, runtime_id, lease_until)
+     写 actions.attempt / fencing_token / lease_owner / lease_until / state_version+1
+     COMMIT
+TX2: leased→running（CAS on owner+token）
+     写 actions.started_at、action_log(event='executor_started')
+     COMMIT
+—— 以上两次提交成功后，才允许调用 executor 产生外部副作用 ——
+```
+
+- **禁止**在 TX2 提交前产生任何外部副作用；违反者记 `EARLY_SIDE_EFFECT` 事件，action 直接置 `unknown` + 人工复核。
+- 例外：`class='read_only'` 的 executor 无副作用，可跳过 TX2 的顺序约束，但**仍须先写 `executor_started` 再返回结果**（保证审计完整）。
+- 若进程在 TX2 提交后、结果写回前退出 → `running` → 过期后 `unknown` → verifier（这是正常路径）。
+
+### 5.2 fencing token 规则
+
+- `fencing_token`：每个 action 每次领取 `+1`（单调递增，不复用）；
+- `attempt_no`：`actions.attempt` 同步 `+1`，`UNIQUE(action_id, attempt_no)`；
+- `state_version`：每次状态变更 `+1`，用于所有 CAS；
+- **结果提交 CAS**：
+
+```sql
+UPDATE actions SET status=?, ..., state_version=state_version+1
+ WHERE id=? AND status='running' AND lease_owner=? AND fencing_token=? AND state_version=?
+```
+
+`changes===0` → `FENCED_OUT`：旧 worker 的迟到结果被拒绝，**但结果不丢弃**，转 verifier 作为低置信证据（因为外部副作用可能已发生）。
+
+### 5.3 边界（必须如实说明）
+
+- fencing token **只能阻止重复提交状态**，**不能撤销已经发出的外部请求**；
+- 外部副作用去重只能依赖：目标系统的幂等键、执行前查证、以及"unknown 不自动重试"；
+- 因此：**未知结果一律先验证**，不因 fencing 成功就重试。
+
+### 5.4 单次执行的证明链
+
+`claim CAS（status='planned'）` + `UNIQUE(action_id, attempt_no)` + `fencing_token` 单调 + `action_ledger(idempotency_key)` 唯一 + 结果 CAS。
+→ 可证明"同一 action 至多一个 attempt 能提交终态"；**不能证明"外部副作用只发生一次"**（见 5.3）。
+
+### 5.5 verifier 如何识别执行尝试
+
+verifier 入参必须含 `{action_id, attempt_no, fencing_token, action_kind, idempotency_key}`；`action_verifications` 行记录 `attempt_no`；证据必须能绑定到 attempt（回执 id / 文件 mtime 落在该 attempt 窗口 / 目标系统按幂等键可查）。
+
+---
+
+## 6. 恢复入口（裁决 5）
+
+### 6.1 入口
+
+```ts
+dyAutonomy.recover({ requestId, reason:'boot'|'wake'|'android_resume'|'manual', bootId?, source? })
+  → RecoveryReport
+```
+
+- **不依赖 tick**：`apply()` 中无条件 `scheduleRecovery({delay:10s})`，即使 `tick.enabled=false` 也执行；
+- `tick({trigger:'resume'})` 保留但**不承担恢复**，只做常规 tick；
+- 单飞：`recovery.lock`（meta，TTL 120s，CAS）+ 每 action `recovery_owner` CAS；
+- 审计：`recovery_started` / `recovery_finished` 事件写 `action_log` 与 `dsha-autonomy-events.jsonl`。
+
+### 6.2 处理顺序
+
+```
+取锁 → 扫描 → 逐条 CAS 认领 → 分类（有 executor_started?）→ verifier → 落状态 → 写回执
+```
+
+---
+
+## 7. 错误分类、验证与取消（D、E、F）
+
+### 7.1 错误分类（`error_class` 与 status 解耦）
+
+| 情形 | error_class | status | retry_class |
 |---|---|---|---|
-| pending | `planned` | 已有 | 待领取 |
-| leased | `leased` | 新增 | 已领取、未开始执行 |
-| running | `running` | 已有 | 执行器已开始（写 `executor_started`） |
-| succeeded | `done` | 已有，语义收紧 | 必须有 `verified_ok`；旧行标 `legacy_unverified` |
-| failed | `failed` | 已有，语义收紧 | 必须有失败证据 |
-| unknown | `unknown` | 新增 | 无法判断，等待 verifier |
-| cancelled | `cancelled` | 新增 | 取消，不得写成 failed |
-| blocked | `planned`+`blocked_reason` | 新增列 | 前置不满足 |
-| （策略未执行） | `aborted` | 已有 | 保留，不等同取消 |
+| 未发出请求（连接拒绝/DNS/策略拒绝） | `not_sent` | `failed`（明确） | auto（transient） |
+| 已发出、无权威结果（超时/进程死/回执丢） | `sent_unconfirmed` | **`unknown`** | none（先验证） |
+| 远端明确拒绝（4xx/业务码） | `rejected` | `failed` | none / manual |
+| 本地内部错误（序列化/DB） | `internal` | `failed` | auto once |
+| verifier 失败/超时 | `verification` | `unknown` | 只重验 |
 
-### 3.2 转换表
+- `TRANSIENT` 是 **retry_class**，不是 status；`failed` 只用于"确认失败"。
+- **unknown 不计入失败率、连续失败、熔断**（统计 SQL 排除 `status='unknown'`）。
+- verifier 错误绝不写成执行失败（`failure_class='verification'`）。
 
-| From | 事件 | To | 副作用 |
-|---|---|---|---|
-| — | 政策通过 | planned | `action_log:select` |
-| planned | 前置不满足 | planned+blocked | `blocked_reason` |
-| planned | CAS 认领 | leased | `lease_owner=runtime#attempt`、`attempt+=1` |
-| leased | executor 开始 | running | `started_at`、首心跳 |
-| running | ok + verifier=confirmed_succeeded | succeeded | 写验证记录 |
-| running | ok + verifier=indeterminate | unknown | `unknown_reason` |
-| running | 明确失败+证据 | failed | `error_code`、`failure_class=execution` |
-| leased/running | 超时/崩溃/心跳中断/租约过期 | unknown | **不得 failed** |
-| unknown | confirmed_succeeded | succeeded | |
-| unknown | confirmed_not_executed + retryPermitted | planned | 保留 attempt |
-| unknown | confirmed_not_executed + 不重试 | cancelled | |
-| unknown | partially_completed | unknown + compensating | human_required |
-| unknown | indeterminate/verification_error | unknown（保持） | 退避重验 |
-| planned/leased/running | 取消 | cancelled | 记取消者/时间；running 先 abort |
-| succeeded/failed/cancelled | 任何事件 | 不可转换 | 重做=新 action |
+### 7.2 unknown 的统计与处置
 
-**禁止**：`running→failed`（无证据）、`unknown→failed`、`leased/running→planned`（跳过验证）、`cancelled→failed`、终态回退。
+- `unknown` 单列统计（`unknownCount` / `unknownByKind`）；
+- 连续失败只数 `status='failed' AND failure_class='execution'`；
+- `unknown` 不阻塞同 kind 新行动？——**软阻塞**：同 `idempotency_key` 未决时禁止再领取；不同 key 允许，但同 kind 的 `unknown` 超过 3 条时降权（不硬停）。
 
-### 3.3 正交轴与不变式
+### 7.3 verifier 成功标准（E）
 
-- `verify_state`：`not_required/pending/verified_ok/verified_not_executed/verified_partial/indeterminate/verification_error/legacy_unverified`
-- `resolution`：`null/requeued/compensating/waiting_owner/abandoned`
-- `failure_class`：`execution/verification/unknown/policy/timeout`
-- 不变式：`done` ⇒ 存在 `confirmed_succeeded` 验证行；`failed` ⇒ `failure_class=execution` 且 `error_code` 非空；`unknown` ⇒ `unknown_since` 非空且 `ended_at` 为空；`leased/running` ⇒ `lease_owner` 非空。
+`succeeded` 必须同时满足四条：
 
----
+1. **确实执行**：attempt 行存在 + `executor_started` 已提交 +（副作用类）产物/回执绑定该 attempt；
+2. **符合目标**：kind 级 postcondition 谓词成立（不是"对象格式正确"）；
+3. **可绑定**：证据含 `action_id/attempt_no/fencing_token/idempotency_key`；
+4. **可追溯**：`ref + sha256 + at + source(verifier@version)`。
 
-## 4. lease 过期规则
+**默认 `read_only` verifier 升级为 `result_binding`**：
 
-```
-lease_owner  = runtimeId#attempt
-leaseMs      = max(leaseSec*1000, timeoutMs*2 + 15_000)   // 默认 max(90s,135s)=135s
-heartbeat    = leaseMs/3；写 actions + action_attempts
-graceMs      = 60s
-过期判定     = lease_until < now-grace
-             OR 心跳超过 2 个周期未更新且 runtime 已不在
-             OR lease_owner 的 runtimeId != current（跨重启最可靠）
-```
+- 必须校验 attempt 绑定与 payload hash；
+- 本地可重读（`read_archive`/`organize_memory`/`find_sticker`）：重读源并比 hash → `confirmed_succeeded(high)`；
+- 远端不可重读（`browse_douyin`）：只有拿到稳定外部 id 且与证据一致 → `confirmed_succeeded(medium)`；否则 `indeterminate`；
+- **禁止**仅凭"返回对象字段齐全"判成功。
 
-- 过期 → CAS 置 `unknown`（`unknown_reason='lease_expired'`），**绝不 failed**，同事务投递验证任务。
-- 不允许"过期即重排"；重排只允许在 `confirmed_not_executed` 之后。
-- 墙钟回拨 → 延迟但安全；前跳 → 进 unknown → 先验证，不盲重试。
-- `lease_until IS NULL` 的 running 视为异常行，进恢复队列并记 `ORPHAN_LEASE`，不得永久阻塞单飞。
-- 双 worker：每 action CAS 认领 + 全局 `recovery.lock`（TTL 120s）。
+### 7.4 取消与并发（F）
+
+| 时点 | 取消行为 |
+|---|---|
+| planned / leased（无 started） | CAS → `cancelled`，立即生效 |
+| running（已 started） | 只置 `cancel_requested_at/by`，**status 不变**；发 AbortSignal；结果到达后按真实结果落 `done/failed/unknown`，并标 `cancel_after_effect=1` |
+| unknown | 置 cancel_requested；verifier=`confirmed_not_executed` → `cancelled`；`confirmed_succeeded` → `done`（事实优先）；indeterminate → 保持 unknown |
+| 终态 | 拒绝取消（返回 409 语义），不再改状态 |
+
+- 取消与恢复的 CAS：两者都带 `state_version` + `WHERE status IN (...)`；先提交者赢，输家重读；
+- 恢复认领时若发现 `cancel_requested_at` 非空 → 记录 `RECOVERY_ABORTED_BY_CANCEL`，不恢复；
+- 部分完成：`verify_state='verified_partial'` + `partial_json`（已完成/未完成清单）+ `resolution='compensating'`，status 保持 unknown；
+- `unknown` 可长期保留；连续 5 次重验仍 indeterminate → `resolution='waiting_owner'`（status 仍 unknown）。
 
 ---
 
-## 5. 重启恢复流程
+## 8. Android ↔ Autonomy 文件契约（裁决 4、6、7、8）
 
-### 5.1 runtime 身份
+### 8.1 所有权（与 Android v2 §3.3 完全一致）
+
+| 文件 | 写入方 | 读取方 |
+|---|---|---|
+| `/root/.dsha-wake.json` | Android | Autonomy |
+| `/root/.dsha-wake-result.json` | **Autonomy** | Android 只读 |
+| `/root/.dsha-web-activity.json` | DSH Host | Android |
+| `/root/.dsha-android-events.jsonl` | Android | 诊断工具 |
+| `/root/.dsha-autonomy-events.jsonl` | Autonomy | 诊断工具 |
+
+禁止：Android 读写 `autonomy.db`；Autonomy 写 `wake.json`；两模块共写同一 JSONL。
+
+### 8.2 请求字段（Android 写）
+
+`schema, attemptId, bootId, reason(boot|alarm|job|user_open|recovery), requestedAt, notBefore, deadline, generation, mode(check|recover)`。
+`attemptId` 即 Autonomy 的 `requestId`。
+
+### 8.3 回执字段（Autonomy 写）
+
+`schema, attemptId, requestId, result(accepted|rejected|deferred|done|expired|failed), errorCode, runtimeId, bootId, startedAt, finishedAt, pendingTasks{5 类}, recovery{scanned,claimed,counts,results,errors}, nextWake`。
+
+### 8.4 请求消费机制（关键：不能只靠启动读一次）
+
+**三通道分工**：
+
+1. **Host 内部调用**（boot/DSH 启动）：host 读 `wake.json` 后直接 `dyAutonomy.recover(...)`；
+2. **文件变化通知**：`fs.watch('/root', {persistent:false})`，只关心 `dsha-wake.json`，去抖 300ms（Android v2 已实测可用）；
+3. **5s mtime 轮询兜底**（inotify 丢失/溢出/不可用）。
+
+**为什么不是单一方案**：纯轮询延迟与 IO 成本高；纯 watch 可能丢事件；纯 host 调用无法覆盖 Android 跨进程写文件。三者组合，任一路径成功即可，幂等由 `attemptId` 保证。
+**Autonomy 自己的兜底**：每 60s 维护循环顺带比对一次 `wake.json` 的 `attemptId`，确保 DSH host 适配器缺失时也能消费。
+
+### 8.5 pendingTasks 五分类（裁决 7）
+
+| 字段 | 定义 |
+|---|---|
+| `pending` | `planned` 且无 blocked_reason |
+| `unknown` | `unknown` |
+| `blocked` | `planned` 且 `blocked_reason` 非空 |
+| `recovering` | 当前被 recovery 认领（`recovery_owner` 非空） |
+| `running` | `leased` 或 `running` |
+
+### 8.6 nextWake 契约（裁决：至少 notBefore/reason/mode/窗口/可否推迟）
+
+```json
+{ "notBefore": 1795201800000, "latest": 1795205400000, "reason": "backoff|lease|budget|none",
+  "mode": "check|recover", "allowDefer": true, "confidence": 0.8, "at": 1795201800000 }
+```
+
+- `at` 保留为 `notBefore` 的兼容别名；
+- Android 钳制 `[10min, 24h]`，缺失用 30min 默认；Autonomy 只给建议，不调度；
+- `allowDefer=false` 表示"尽快验证"，仍受 Android 硬下限约束。
+
+### 8.7 与 Android v2 的三处修正（v1 遗留）
+
+1. 事件日志拆分：`dsha-android-events.jsonl` / `dsha-autonomy-events.jsonl`（不再用共享 `runtime-events.jsonl`）；
+2. 回执删除 `resumeTick` 字段（恢复不依赖 tick；如需观测另设诊断字段）；
+3. `/root` 为 **f2fs**（Android 实测），rename 原子性结论不变，仅描述更正。
+
+### 8.8 原子写、权限、半写、过期、幂等、覆盖、并发
+
+| 问题 | 规则 |
+|---|---|
+| 原子写 | 同目录 `tmp + rename`，`0600`，`fsync` 文件与目录 |
+| 半写入 | 只消费"JSON 完整 + schema=1 + attemptId 非空"的请求；解析失败记 `WAKE_FILE_INVALID`，等下次变化/轮询；连续 3 次无效 → 回执 `rejected/INVALID_WAKE_FILE` |
+| 旧请求过期 | `now > deadline` 或 `requestedAt+10min < now` → 回执 `expired/REQUEST_EXPIRED`，不恢复 |
+| 重复请求 | `recovery_requests(attempt_id PK)` TTL 1h，命中直接回缓存报告，`duplicate=true` |
+| 覆盖 | 单飞；恢复中最多挂 1 个 pending（新覆盖旧），完成后处理；回执 `mergedFrom[]`（≤5） |
+| 并发读取 | Android 只读完整文件；校验 schema+attemptId；解析失败重试；保留最近 1 条回执 |
+
+---
+
+## 9. 数据库迁移（G）
+
+### 9.1 版本链
+
+| 版本 | 内容 | 说明 |
+|---|---|---|
+| 1 | meta/drives/goals/actions/action_log/tick_runs | 现有 DDL |
+| 2 | reflections | 现有 MIGRATIONS[2] |
+| 3 | purpose_hypotheses + home_activities | **补显式迁移**（修当前 `SCHEMA_VERSION=3` 但 `MIGRATIONS` 无 3 的缺口） |
+| 4 | no-op 标记 | 生产已有；不得 drop；不猜测来源（INCONCLUSIVE） |
+| 5 | runtimes / action_attempts / action_verifications / action_ledger / recovery_requests + actions 新列 | 本设计 |
+
+### 9.2 规则
+
+1. **全新库**：执行完整 DDL 后按 2..5 走一遍迁移（保证 DDL 与迁移一致），最后 `PRAGMA user_version=5`；
+2. **逐级**：`from=2 → 3,4,5`；`from=3 → 4,5`；`from=4 → 5`；
+3. **重复迁移**：所有 DDL `IF NOT EXISTS`；列用 `PRAGMA table_info` 判断后再 `ALTER`（SQLite 不支持 `ADD COLUMN IF NOT EXISTS`）；
+4. **中断恢复**：每个版本一个 `BEGIN IMMEDIATE … COMMIT`，`user_version` 在同一事务内更新；失败 `ROLLBACK`，版本保持旧值，可重跑；
+5. **未来版本**：`from > 5` → 拒绝迁移，进入只读降级，错误码 `SCHEMA_TOO_NEW`，**禁止降级**；
+6. **前后校验**：前 `PRAGMA quick_check` + 备份文件；后检查期望表/列/索引集合 + `PRAGMA foreign_key_check` + `user_version`；
+7. **不修改生产 DB**：本设计只在隔离临时库演练。
+
+### 9.3 隔离演练证据（/tmp，非生产）
+
+命令：`node /tmp/audit/mig-probe/probe.mjs`（2026-11-21 09:48，exit 0）
 
 ```
-bootId    = /proc/sys/kernel/random/boot_id        （实测可用）
-pidStart  = /proc/self/stat 第 22 字段             （实测可用）
-runtimeId = rt_<bootId8>_<pidStart>_<rand6>
-表 runtimes(runtime_id PK, boot_id, pid, started_at, last_heartbeat_at, state, plugin_version, schema_version)
+from=0 / 2 / 3 / 4  → version=5, tables_missing=[], cols_missing=[], fk=0  PASS
+每个 from 重复迁移一次  → PASS
+中断（事务内抛错后 ROLLBACK）→ version 3->3, runtimes_created=0  PASS
+中断后重跑 → version=5, 全项 PASS
+from=6（未来版本）→ 迁移器必须拒绝（设计约束）
+ALL PASS
 ```
 
-### 5.2 启动入口（关键修复：与 tick 解耦）
+> 这是**临时库演练**，不是生产迁移，也不是 DSH 实机验证。
 
-```
-apply() → openDb/migrate → registerRuntime()
-        → scheduleRecovery(10s)          // 无条件挂载，即使 tick.enabled=false
-        → 其余（tick 定时器/home/mail）按原开关
-```
+---
 
-恢复是"账本对账"，不是"新的自主行动"，必须有独立单飞与审计事件（`recovery_started/finished`）。
-
-### 5.3 扫描与处理
-
-scanned = `status IN ('leased','running','unknown')` 且（owner 非当前 runtime 或租约过期）；CAS 认领 `recovery_owner`；分类（有 `executor_started`/`started_at` → 需 verify；仅 leased 且无开始痕 → 可判未执行）；调 verifier；按结论落状态；写报告。
-
-### 5.4 13 类故障场景
+## 10. 13 类故障场景（修订版）
 
 | # | 场景 | 状态 | 恢复动作 | 自动重试 | 人工 |
 |---|---|---|---|---|---|
-| 1 | 执行前退出 | leased→unknown | 无开始痕+契约保证 → 判未执行 → planned | 是（满足门槛） | 否 |
-| 2 | 执行中退出 | running→unknown | verify；成功→succeeded；不可判→unknown | 否 | 视结论 |
-| 3 | 外部完成、写库前退出 | running→unknown | verify=confirmed_succeeded → succeeded | 否（不重做） | 否 |
-| 4 | 部分完成 | running→unknown | partially_completed → 补偿队列 | 否 | 是 |
-| 5 | verifier 不可用 | unknown 保持 | verification_error，退避重验 | 不重试执行 | 连续 3 次→是 |
-| 6 | lease 重复领取 | 第二 CAS 失败 | 记 LEASE_LOST，不执行 | — | 否 |
-| 7 | 双 worker 恢复 | 一个拿锁+CAS | 输家跳过并记录 | — | 否 |
-| 8 | Android 重复唤醒 | 无变化 | requestId 幂等+全局锁 → 同一报告 | — | 否 |
-| 9 | 系统时间变化 | 见 §4 | 只影响"是否怀疑"，验证兜底 | 否 | 否 |
-| 10 | 手机重启 | leased/running→unknown | bootId 变 → 全部进恢复 | 视结论 | 视结论 |
+| 1 | 执行前退出（TX1 后、TX2 前） | leased→unknown | 无 executor_started + 契约保证 → 判未执行 → planned | 是（满足门槛） | 否 |
+| 2 | 执行中退出（TX2 后） | running→unknown | verifier；成功→done；不可判→unknown | 否 | 视结论 |
+| 3 | 外部完成、结果未提交 | running→unknown | verifier=confirmed_succeeded → done | 否 | 否 |
+| 4 | 部分完成 | running→unknown | partial_json + compensating | 否 | 是 |
+| 5 | verifier 不可用 | unknown | verification_error，退避重验 | 只重验 | 3 次后是 |
+| 6 | lease 重复领取 | 第二 CAS 失败 | LEASE_LOST，不执行 | — | 否 |
+| 7 | 双 worker 恢复 | 一个拿锁+CAS | 输家 RECOVERY_LOCK_LOST | — | 否 |
+| 8 | Android 重复唤醒 | 无变化 | attemptId 幂等 + 单飞 → 同报告 | — | 否 |
+| 9 | 系统时间变化 | 见 §4.2 | 只影响"是否怀疑"；验证兜底 | 否 | 否 |
+| 10 | 手机重启 | leased/running→unknown | bootId 变 → 全部恢复 | 视结论 | 视结论 |
 | 11 | DB 短暂锁定 | 无变化 | BEGIN IMMEDIATE + busy 重试 + 流程重试 | 是（事务） | 否 |
-| 12 | 网络不可用 | failed(TRANSIENT) 或 unknown | 网络类标 TRANSIENT 退避；外发中断=unknown | 仅 TRANSIENT | 否 |
-| 13 | 取消与恢复并发 | cancelled 优先 | CAS 时检查 cancel_requested_at，直接 cancelled | — | 否 |
+| 12 | 网络不可用 | failed(not_sent) 或 unknown(sent_unconfirmed) | 按 §7.1 分类 | 仅 not_sent | 否 |
+| 13 | 取消与恢复并发 | cancelled 或保留 running/unknown | state_version CAS；先提交者赢 | — | 副作用已发生时可能需要 |
 
 ---
 
-## 6. Verifier 体系
+## 11. 验收矩阵（GPT 指定 13 项）
 
-### 6.1 注册与强制
-
-```js
-reg.register('write_diary', {name:'diary_file', version:'1', timeoutMs:3000,
-  class:'local_write', verify: async (ctx) => ({conclusion, evidenceRefs, retryPermitted, humanRequired})})
-```
-
-- 非 `read_only` 且未提供 verifier → **executor 注册失败**；read_only 挂默认 `result_shape` verifier。
-- verifier 只读、无副作用、3s 超时；超时/抛错 → `verification_error`。
-
-### 6.2 结论与证据
-
-结论：`confirmed_succeeded | confirmed_not_executed | partially_completed | indeterminate | verification_error`。
-证据：`{type, ref, sha256, at, observed, source}`；落 `action_verifications`（追加式，含 verifier 名称/版本/时间/结论/错误码/retry_permitted/human_required/confidence/duration/runtime_id）。
-
-**`confirmed_not_executed` 的严格门槛**：权威否定回执，或"本地产物不存在且时间窗内无任何写入痕迹"，或"executor 契约保证副作用在 `executor_started` 之后且该 action 无开始痕"。否则一律 `indeterminate`（没找到 ≠ 没发生）。
-
-### 6.3 按 kind 的 verifier 清单
-
-| kind | class | verifier | 现状 |
+| # | 验收点 | 测试层 | 断言 |
 |---|---|---|---|
-| read_archive / organize_memory / find_sticker / browse_douyin | read_only | result_shape | 可立即实现 |
-| write_diary | local_write | file_artifact（stat+sha256+mtime+当日唯一） | 部分 BLOCKED：需 Memory 按 id 读回或明确落盘路径 |
-| send_qq | external_send | channel_receipt | **BLOCKED**：dyChannel 无发送查询 API；现证据是本地 hash |
-| Android UI 类（未来） | ui_action | ui_post_state（操作后 ui/dump 节点变化） | NOT RUN（需授权） |
-| 文件写（未来） | local_write | fs_artifact | 可立即实现 |
+| 1 | tick.enabled=false 仍恢复 | 集成 | 无 tick 定时器时 `recover()` 仍扫描并处理 |
+| 2 | lease 过期不产生 failed | 单元/集成 | `failed` 计数增量 = 0 |
+| 3 | 心跳续租不能被旧 owner 执行 | 单元 | 非当前 owner 续租 changes=0 |
+| 4 | 旧 worker 迟到提交被 fencing 拒绝 | 单元 | 结果 CAS changes=0，记 FENCED_OUT |
+| 5 | 副作用已发生、DB 未提交 → verifier | 集成（kill 注入） | 进 `unknown` 并调用 verifier |
+| 6 | verifier 不可用保持 unknown | 集成 | 无终态变更、无重试执行 |
+| 7 | 双 worker 同时恢复不重复领取 | 集成 | 仅 1 条 attempt、1 次状态转换 |
+| 8 | 重复 Android 请求不重复恢复 | 集成 | 同一 attemptId 返回缓存报告 |
+| 9 | succeeded 必须有验证证据 | 单元 | 无 verification 行则拒绝 done |
+| 10 | cancelled 与恢复并发不覆盖真实结果 | 集成 | 取消后 succeeded 仍记事实（cancel_after_effect=1） |
+| 11 | 请求已发出、回执丢失不盲重试 | 集成 | `sent_unconfirmed` → unknown，不重排 |
+| 12 | unknown 不计入 failed 熔断 | 单元 | 连续 failed 计数不受 unknown 影响 |
+| 13 | 迁移中断可安全恢复 | 隔离演练 | 已 PASS（§9.3）；需补 v5 生产副本演练（NOT RUN） |
 
 ---
 
-## 7. Android ↔ Autonomy 接口（与 Android 报告对齐）
+## 12. AUTO-R1…R7（更新后）
 
-### 7.1 传输层：沿用 Android 已提案的文件契约（不另造通道）
-
-- `/root/.dsha-wake.json`：`{schema, attemptId, bootId, reason, requestedAt, notBefore, deadline, generation, mode}`
-- `/root/.dsha-wake-result.json`：`{schema, attemptId, result, errorCode, at, autonomy:{runtimeId, resumeTick, pendingTasks, recovery}}`
-- `/root/.dsha-runtime-events.jsonl`：追加式
-- 扩展 `/root/.dsha-web-activity.json`：只加 `runtimeId` / `autonomy` 字段
-- `attemptId`（Android）= `requestId`（Autonomy）；同窗口只一次；Autonomy 幂等表 `recovery_requests(attempt_id PK, at, report_json)` TTL 1h
-
-### 7.2 语义层：本报告状态机
-
-- Android **不得**直接读写 `autonomy.db` 的 `actions`；任务判定权在 Autonomy。
-- Autonomy 读 `wake.json` 或由 host 调 `dyAutonomy.recover({requestId, reason, bootId})` → 返回 `RecoveryReport` → 由 Autonomy 原子写 `wake-result.json`（`/root` 为 ext4，rename 原子；`/sdcard` 不用 rename）。
-- 报告结构：`{ok, requestId, runtimeId, bootId, startedAt, finishedAt, scanned, claimed, counts{succeeded,requeued,compensating,stillUnknown,cancelled,humanRequired}, results[], errors[]}`
-
-### 7.3 接口提案（进程内）
-
-```ts
-dyAutonomy.runtimeInfo() → {runtimeId, bootId, startedAt, state, lastHeartbeatAt, recovery:{inflight,lastAt,lastRequestId,lastReport}}
-dyAutonomy.recover({requestId, reason:'boot'|'wake'|'android_resume'|'manual', bootId?, source?}) → RecoveryReport
-dyAutonomy.heartbeat() → {ok, runtimeId, at, state}
-```
-
-### 7.4 与 Android 报告的两处差异（需 GPT 统一）
-
-1. **步骤⑦**：Android 报告写"Autonomy 启动后读取 → `tick({trigger:'resume'})` → 检查未完成任务"。**必须改为独立 recovery 入口**：tick 可被 `tick.enabled=false` 整体关闭，恢复不能依赖它。
-2. **结果落盘**：Android 报告未写清 `wake-result.json` 的写入方。本报告建议由 Autonomy 写（语义单一来源），Android 只读。
+| 编号 | 内容 | 依赖 | 验收标准 |
+|---|---|---|---|
+| AUTO-R1 | F1 排序 + 连续失败纯函数 + 索引 | — | 乱序 id 下 3 连败计数正确；生产副本重放一致 |
+| AUTO-R2 | F2 错误分类（error_class/failure_class/retry_class）+ unknown 语义 | R1 | 6 种错误断言分类正确；unknown 不进失败统计 |
+| AUTO-R3 | verifier 框架 + `action_verifications` + read_only 升级为 result_binding | R2 | 无 verifier 不得注册副作用类 executor；仅格式正确不得 succeeded |
+| AUTO-R4 | lease + heartbeat 续租 + 过期→unknown | R1–R3 | 验收 2/3/12；矛盾状态不可构造 |
+| AUTO-R5 | attempt + fencing token + 迟到结果拒绝 | R4 | 验收 4/7；UNIQUE(action_id,attempt_no) 生效 |
+| AUTO-R6 | 恢复独立入口 + Android 文件消费/回执/nextWake | R4、R5 | 验收 1/6/8/10/11 |
+| AUTO-R7 | 迁移 v5 + 前后校验 + 中断演练 | R2、R3 | 验收 13；迁移器拒绝降级 |
+| （R8） | `write_diary` verifier | R3 + Memory 读回 | 目前 BLOCKED |
+| （R9） | `send_qq` verifier | R3 + 通道回执 | 目前 BLOCKED |
 
 ---
 
-## 8. P0-a 三项缺陷修复设计
+## 13. 仍未解决的问题
 
-### 8.1 F1 排序
+1. **外部回执能力缺失**：`send_qq` 无发送查询 API，`write_diary` 无按 id 读回；R8/R9 需 Memory 与 channel-bridge 先提供读接口。当前这类行动的诚实终态是 `unknown`。
+2. **消费触发落点**：`fs.watch('/root')` + 5s 轮询需 GPT 确认（Android v2 §5.1 也列为待裁决）。
+3. **nextWake 钳制范围**：Android 提议 `[10min,24h]`，需统一。
+4. **生产 `user_version=4` 来源**：无法从现有证据判定（INCONCLUSIVE）；迁移 5 设计为纯增量，不依赖来源，但溯源仍缺证据。
+5. **跨进程时钟**：墙钟只作提示；monotonic 仅进程内。跨重启的时间判定依赖 `boot_id` + 心跳，需 DSH 实机验证时钟行为。
+6. **unknown 与同 kind 新行动的软阻塞阈值**（建议 3 条）需产品侧确认。
+7. **DSH host 适配器归属**：谁实现 `wake.json` 的宿主侧调用与事件转发（Autonomy 自身的 60s 兜底可应急，但不是长期方案）。
 
-- 根因：`lib/run/actions.js:166` 按随机 uuid 排序。
-- 修复：`ORDER BY COALESCE(ended_at, created_at) DESC, rowid DESC`；新增索引 `idx_actions_kind_terminal(self_id, kind, ended_at DESC)`；抽纯函数 `countConsecutiveFails(rows)`。
-- 回归：乱序 id 下断言 3 连败；生产副本重放 `browse_douyin` 序列，计数应与实际一致。
+---
 
-### 8.2 F2 错误码
+## 14. 实现状态声明（必须原样保留）
 
-- 根因：`lib/run/tick.js:372` 只取 `out.error`；executor 返回 code-only。
-- 修复：契约 v2 `{ok:false, code, message?, retryable?, evidence?}`；`finishAction` 接收 `code`；新增 `error_code`/`failure_class`。
-- 区分：`execution`（明确失败）/`verification`（验证失败）/`unknown`（超时/崩溃/租约）/`policy`/`timeout`。
+- **设计通过 ≠ 代码实现**；本报告全部为设计。
+- 所有源码实现 **NOT RUN**（未创建分支、未改 `dsh-autonomy`）。
+- DSH 实机验证 **NOT RUN**（未做 kill/reboot/崩溃注入）。
+- staging **NOT RUN**。
+- **生产数据库未修改**；未修 `user_version` 漂移。
+- 迁移演练仅在 `/tmp` 临时库完成（§9.3），不代表生产可安全迁移。
 
-### 8.3 F3 验证字段
+## 15. 证据索引
 
-- 根因：`actions` 无验证列；`out.ok===true` 即终态。
-- 修复：`action_verifications` 表 + `actions.verify_state/verified_at/verified_by/verification_id`；`markSucceeded` 内部断言 `confirmed_succeeded`；未验证的成功只能落 `unknown`。
-- 证明链：`succeeded → verification_id → action_verifications → evidenceRefs → 外部可复核对象`。
-
-### 8.4 任务拆分
-
-| 编号 | 内容 | 依赖 |
+| 证据 | 位置/命令 | 结果 |
 |---|---|---|
-| AUTO-R1 | F1 排序 + 索引 + 回归 | — |
-| AUTO-R2 | F2 契约 v2 + 错误码 + 迁移骨架 | R1 |
-| AUTO-R3 | F3 验证字段 + verifier registry + read_only verifier | R2 |
-| AUTO-R4 | lease→unknown + recoverExpiredLeases + runtime 身份 | R1–R3 |
-| AUTO-R5 | 启动恢复入口 + 全局锁 + RecoveryReport + Android 接口 | R4 |
-| AUTO-R6 | write_diary verifier | R3 + Memory 读回 |
-| AUTO-R7 | send_qq verifier | R3 + channel 回执 |
+| 基线 | `git ls-remote`、`git rev-parse`（09:47） | autonomy `6c4a4753`；handoff `03edfd62`；v1 blob `58b40bf8` |
+| 心跳缺失 | `grep -rni heartbeat lib/` | 0 命中 |
+| 验证缺失 | `grep -rni verifier lib/`；`schema.js:49-73` | 0 命中；无 verified 列 |
+| 排序缺陷 | `actions.js:14-16,166` | uuid 当时间轴 |
+| 迁移演练 | `node /tmp/audit/mig-probe/probe.mjs` | from 0/2/3/4、重复、中断、重跑 全 PASS，exit 0 |
+| fencing 演练 | `node /tmp/audit/mig-probe/fencing.mjs` | claimB=0、renewB=0、lateA=0、verified=1，PASS |
+| Android 对齐 | `coordination/Android 平台负责人报告.md` @ `03edfd6` §3.3–3.7 | 文件所有权/消费/回执/nextWake 一致 |
 
-迁移：`SCHEMA_VERSION=5`；补 `MIGRATIONS[3]`（purpose/home_activities 显式化，修当前 `MIGRATIONS` 无 3 的缺口）；`[4]` no-op（生产已 4）；`[5]` 新增 recovery 表与列。不修生产 `user_version`。
+## 16. 边界声明
 
----
-
-## 9. 测试矩阵
-
-| 层 | 编号 | 内容 | 断言 |
-|---|---|---|---|
-| 单元 | U1–U8 | 排序/错误码/转换矩阵/lease/verifier 映射/幂等/时间跳变/未执行门槛 | 见设计正文 §8.1 |
-| 集成 | I1–I8 | 6 个 kill 点、部分完成、verifier 不可用、双 worker、重复唤醒、DB 锁、取消并发 | 0 重复外部动作；succeeded 必有验证行；unknown 不落 failed |
-| 故障注入 | — | 100 次/场景 | 同上 |
-
-验收判据：`succeeded` 可追溯验证行；`failed` 有 error_code+failure_class；lease 过期产生 0 条 failed；同 action 执行 ≤1 次；unknown 可长期存在且不计失败。
-
----
-
-## 10. 分阶段与授权门槛
-
-D0 设计（本轮）→ D1 F1（授权写分支）→ D2 F2 → D3 F3+verifier 骨架 → D4 lease/unknown+恢复入口 → D5 Android 接口+实机重启 → D6 diary verifier → D7 send verifier。
-每阶段：GPT 评审 → DSH 隔离实跑 → 证据 → 下一阶段。**任何阶段不得自动开启 tick。**
-
----
-
-## 11. 未执行（NOT RUN）与边界声明
-
-- 未改任何源码/DB/profile/配置；未启动 tick/scheduler/executor/staging；未部署/重启/切插件。
-- 未执行迁移 v5、未做重启/崩溃演练、未调用 Android 接口、未做 verifier 真实回读。
-- 未修改 `HANDOFF.md`/`REPORT.md`/`PROJECT.md`；未与 DSH 直接联系；未单方面冻结跨模块接口。
-- 本报告所有源码结论基于 `dsh-autonomy@6c4a475`；运行时结论均为 NOT RUN / INCONCLUSIVE，不得当作实机结果。
-
-## 12. 证据索引
-
-| 证据 | 位置 |
-|---|---|
-| Autonomy 14 项矩阵全文 | `/tmp/audit/findings/autonomy-code.md`（本地，本轮未随报告上传） |
-| Persona/Memory 接口全文 | `/tmp/audit/findings/persona-memory-iface.md`（同上） |
-| Android 台账全文 | `/tmp/audit/findings/android-platform.md`（同上） |
-| 测试日志 411/411 | `/tmp/audit/findings/test-run.log`（同上） |
-| 生产 DB 只读快照 | `/tmp/audit/db/`（同上，非生产路径） |
-| 关键命令 | `git ls-remote`（09:31）、`grep -rni heartbeat lib/`=0、`grep verifier`=0、生产 `GROUP BY kind,error` |
-
-> 说明：本地 `/tmp` 证据 GPT 不可见，已在本报告内转为结论摘要；如需原始日志，由 DSH 按项目协议提供。
+本轮只读设计修订：未改任何源码/DB/profile/配置；未创建分支；未启动 tick/scheduler/executor/staging；未部署/重启；未改 `HANDOFF.md`/`REPORT.md`/`PROJECT.md`；未与 DSH 直接联系；未单方面冻结跨模块接口（§8 为与 Android v2 对齐后的提案，仍待 GPT 冻结）。
