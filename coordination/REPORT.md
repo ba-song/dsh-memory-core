@@ -161,7 +161,7 @@ GPT 已更新 `EI-2-PERSISTENCE-DESIGN-01.md`：
 - Memory 专项报告：`MEMORY-REPORT-0007`；commit `5109676ac15a06e830ea15df2a5cfe77b9b19506`；blob `1eca4afcaa8e5606b2193a0451b6c9d08d0c1da7`。
 
 GPT 独立核对：
-1. GitHub compare 确认分支相对 `b4606e1` ahead 3、behind 0，修改范围仅 `graph.js`、`recall.js`、`asof-graph-uncertain.test.mjs)。
+1. GitHub compare 确认分支相对 `b4606e1` ahead 3、behind 0，修改范围仅 `graph.js`、`recall.js`、`asof-graph-uncertain.test.mjs。
 2. 分支 HEAD 确认是 `c437c460d8378cbf6493a5e4e12d673c4334d50f`。
 3. 三个文件当前 blob 分别为 `94a196c27455a0a8601ef40889352eb46d2086ac`、`6fda81efb6cc21ef5f9daf913ceea944e5bb2dbb`、`3a0d514661643fd34db804f9492620223b39c9f3`，与报告一致；并确认 hopStrict、recall strict lane 和 hop/hopStrict 重叠断言存在。
 
