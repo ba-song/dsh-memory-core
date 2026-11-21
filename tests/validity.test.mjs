@@ -26,7 +26,7 @@ const D = 24 * H
 /* ─────────────────────────── 1. helper 单元 ─────────────────────────── */
 
 test('validity: 预设与枚举完整', () => {
-  assert.deepEqual(Object.keys(VALIDITY_PRESETS).sort(), ['asOfHistory', 'asOfNeighbor', 'asOfStrict', 'current'])
+  assert.deepEqual(Object.keys(VALIDITY_PRESETS).sort(), ['asOfHistory', 'asOfNeighbor', 'asOfStrict', 'current', 'currentTodoActiveEmpty', 'currentTodoLegacy'].sort())
   assert.deepEqual([...VALIDITY_MODES], ['current', 'asof'])
   assert.deepEqual([...SUPERSEDED_POLICIES], ['enforce', 'ignore', 'guard'])
   assert.equal(presetOf('current').superseded, 'enforce')
@@ -48,6 +48,21 @@ test('validity: current SQL 形状与参数顺序', () => {
   assert.match(r.sql, /superseded_by IS NULL OR superseded_by=0 OR superseded_by=''/)
   // 参数顺序固定：时间起点子句必须出现在时间终点子句之前
   assert.ok(r.sql.indexOf('valid_from<=') < r.sql.indexOf('valid_to>'))
+})
+
+
+test('validity: legacy todo presets preserve distinct status domains with current time/supersede rules', () => {
+  const activeEmpty = validitySql({ at: T, preset: 'currentTodoActiveEmpty' })
+  const legacy = validitySql({ at: T, preset: 'currentTodoLegacy' })
+  assert.match(activeEmpty.sql, /status='active' OR status=''/)
+  assert.doesNotMatch(activeEmpty.sql, /status IS NULL/)
+  assert.match(legacy.sql, /status='active' OR status='' OR status IS NULL/)
+  for (const r of [activeEmpty, legacy]) {
+    assert.deepEqual(r.params, [T, T])
+    assert.match(r.sql, /valid_from IS NULL OR valid_from<=\\?/)
+    assert.match(r.sql, /valid_to IS NULL OR valid_to>\\?/)
+    assert.match(r.sql, /superseded_by IS NULL OR superseded_by=0 OR superseded_by=''/)
+  }
 })
 
 test('validity: as-of 三种预设的差异', () => {
