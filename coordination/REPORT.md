@@ -417,3 +417,39 @@ GPT 未亲自运行 Node 测试。Memory 智能体 MEMORY-REPORT-0013 报告：
 - Batch D（daily）与 Batch E（weekly）尚未授权，不启动。
 - EI/Persona、Android、Autonomy 未触碰；Android/Autonomy v4 真实设备验证仍 NOT RUN，保留在整体计划中。
 - 生产 as-of、生产验证、集成、主线合并与部署均需独立评估及负责人明确授权。
+
+
+---
+
+## 2026-11-21 · GPT 统筹实施记录 · REPORT-0022（对应 HANDOFF-0065 · Batch D 验证中）
+
+### 1. Batch D：daily 去重候选接入统一 current validity
+
+- 仓库：`ba-song/dsh-memory-core`
+- 分支：`feat/memory-validity-batch-d`
+- 基线：Batch C PASS @ `fecbd09eaa5b5745ef02263b1bd506712c256150`
+- 当前 HEAD：`5500d04e0e49ebb8168e7356de3c082a9e0e722e`
+- compare：ahead 2 / behind 0；仅两个预期文件变更。
+- `daily.js` blob：`394138a185d176e87b789ca23c51f5d1ae16fa13`
+- `consolidate.test.mjs` blob：`2ce8f5227f896a84261657982111603eea9ba064`
+
+### 2. 实施与 GPT 只读复核
+
+- 将原 status='active' 的相似去重候选查询抽为 `loadDailyDedupCandidates(db, at)`，使用 `validitySql({at:Number(at),preset:'current'})`。
+- 保留原 90 天创建时间下限、id DESC、LIMIT 500、投影列及候选去重流程。
+- 只改相似度候选集；正式写入阶段 exact-text duplicate guard 不变。
+- LLM、style 文件、dryRun、facts/lessons/shortterm/profile/meta 等后续流程未改。
+- 测试新增独立临时 DB，覆盖当前有效、valid_from NULL、future valid_from、expired valid_to、superseded、archived 和 90 天外记录。
+- GPT 已读取目标文件、commit diff、compare、tree/blob；未发现根目录 AGENTS.md。GPT 未运行 Node 测试。
+
+### 3. 验证门禁
+
+- 等待 Memory 智能体独立验证定向、相关回归、全量测试及负向对照。
+- 负向对照需确认撤掉 helper 的 valid_from / valid_to / superseded 条件时，对应测试失败；恢复后文件逐字节一致。
+- 当前裁决：**IMPLEMENTED / VERIFYING；尚非 PASS**。
+
+### 4. 授权边界
+
+- 仅隔离分支；不触碰生产 DB / 插件 / profile / config，不部署/重启/staging，不合并主线。
+- 不处理 Batch E weekly、EI/Persona、Android、Autonomy。
+- Android / Autonomy v4 真机后台恢复验证仍保留在项目计划中，需另行安排与授权。
