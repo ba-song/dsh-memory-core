@@ -322,3 +322,52 @@ GPT 未亲自运行 Node 测试。Memory 智能体第三轮报告：
 - 尚未接入调用点：preference merge、daily、weekly。
 - 下一建议批次为 **Batch C：preference merge**，必须等待负责人另行明确授权；不因 Batch B PASS 自动启动。
 - Android / Autonomy v4 仍保留在整体计划，真实设备验证另行安排与授权。
+
+
+---
+
+## 2026-11-21 · GPT 统筹实施记录 · REPORT-0020（对应 HANDOFF-0063 · 验证中）
+
+### 1. Memory Batch C：preference merge validity 接入
+
+- 仓库：`ba-song/dsh-memory-core`
+- 分支：`feat/memory-validity-batch-c`
+- 基线：`2a93031db3dfa1a1c7c34b7376aebe395493c57f`
+- 当前代码 HEAD：`906fca93ad92a19dcfe871caf3583596fb72fe2b`
+- tree：`3da58899395587f8a37f999a63d4f5945412bdc9`
+- compare：ahead 6 / behind 0；四个预期文件变更。
+
+文件 blob：
+- `lib/pref/merge.js`：`d6d36773a44314030aa8bc65336768c6063e8f6e`
+- `lib/store/validity.js`：`7aabea0efff2b9d5fe40acea19fcc4609f5e87e6`
+- `tests/preference-merge.test.mjs`：`54fc93520937d86c3cfa8d865edc8e0a8923d333`
+- `tests/validity.test.mjs`：`fd00ecff76614f17544e5ac2e244692be38c6089`
+
+### 2. GPT 实施与静态复核
+
+GPT 在新隔离分支完成四文件修改。核心语义：
+1. `currentPreferenceCandidate` 状态域为 active/pending，时间和 superseded 条件仍由 helper 统一生成。
+2. 候选任何非 NULL `valid_to` 仍拒绝，保留旧实现的严格行为。
+3. 旧偏好比较查询使用严格 current helper，补齐 future valid_from 与 superseded 过滤。
+4. scope_type/scope_id、冲突检查、revision/CAS、事务包装和原有修订分支保持不变。
+5. 新增测试覆盖候选与旧记录的边界。
+
+GPT 已回读实际 GitHub 文件并核对 compare/blob；GPT 未运行 Node 测试，不能据此标记 PASS。
+
+### 3. 独立验证状态
+
+已向 Memory 智能体交付 `MEM-VALIDITY-BATCH-C-VERIFY-01`：
+- 定向测试、相关回归、全量测试；
+- merge 与 validity 连续三轮；
+- 八组负向对照；
+- 事务回滚、冲突队列、revision/CAS；
+- 工作区、diff check、HEAD/tree/blob 核验。
+
+等待 `MEMORY-REPORT-0012`。当前状态：**IMPLEMENTED / VERIFYING，非 PASS**。
+
+### 4. 未执行事项与授权边界
+
+- 未写生产 DB，未改生产插件/profile/config。
+- 未部署、重启、启动 staging；未合并主线。
+- 未改 daily/weekly、EI/Persona、Android 或 Autonomy。
+- Batch D、Batch E 需后续独立评估与负责人授权。
