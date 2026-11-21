@@ -100,10 +100,11 @@ handlers['agent/created']({
     ctx: { systemPrompt: { context: (cfg) => { captured.push(cfg); return () => {} } } },
   },
 })
-assert.equal(captured.length, 1, 'home 会话应挂上常驻块')
-assert.equal(captured[0].name, 'dy-memory-stable')
-assert.equal(captured[0].interpolate, false, 'context 必须带 interpolate:false（否则宿主遇 {{}} 会抛）')
-const text = captured[0].text()   // 有占位符也不许抛
+assert.equal(captured.length, 2, 'home 会话应挂长期偏好块和常驻块')
+const stable = captured.find((c) => c.name === 'dy-memory-stable')
+assert.ok(stable, '必须挂上常驻块')
+assert.equal(stable.interpolate, false, 'context 必须带 interpolate:false（否则宿主遇 {{}} 会抛）')
+const text = stable.text()   // 有占位符也不许抛
 assert.ok(!text.includes('{{'))
 assert.ok(text.includes('喜欢看海'))
 out.interpolate = 'ok'
