@@ -1,9 +1,10 @@
-# MEMORY-REPORT-0013 · Memory 记忆智能体报告
+# MEMORY-REPORT-0014 · Memory 记忆智能体报告
 
 > 会话：Memory 记忆智能体（Memory 领域专业智能体）
-> 覆盖任务：v1 P4 → v2 R5 → v3 helper+P4 → v4 recall/graph/event-chain → v5 FTS/uncertain → v6/v7 复核 → v8 Batch A → v9/v10/v11 Batch B → v12 Batch C（BLOCKED）→ **v13 Batch C fixture 修复后复验**
+> 覆盖任务：v1 P4 → v2 R5 → v3 helper+P4 → v4 recall/graph/event-chain → v5 FTS/uncertain → v6/v7 复核 → v8 Batch A → v9/v10/v11 Batch B → v12/v13 Batch C → **v14 Batch D（daily 日结候选）**
+> 任务标识：`MEM-VALIDITY-BATCH-D-VERIFY-01`
 > 仓库：`ba-song/dsh-memory-core`｜迭代规则：本文件覆盖式更新、版本号递增，不新增同类文件
-> 最近更新：2026-11-21 16:0x (Asia/Shanghai) · v13
+> 最近更新：2026-11-21 16:3x (Asia/Shanghai) · v14
 
 ## 版本历史
 
@@ -11,148 +12,147 @@
 |---|---|---|
 | MEMORY-REPORT-0001~0007 | 10:15–13:0x | P4 / R5 / helper / 三调用点 / FTS+uncertain / 两次复核 / strict lane |
 | MEMORY-REPORT-0008 | 13:3x | Batch A：PASS，298/298 |
-| MEMORY-REPORT-0009 | 13:5x | Batch B 首验：BLOCKED（NULL fixture） |
-| MEMORY-REPORT-0010 | 14:0x | Batch B 二验：BLOCKED（共享 DB 污染） |
-| MEMORY-REPORT-0011 | 14:1x | Batch B 三验：PASS，300/300 |
-| MEMORY-REPORT-0012 | 14:4x | Batch C 首验：BLOCKED（fixture 主题碰撞，1 fail） |
-| MEMORY-REPORT-0013 | 16:0x | **Batch C fixture 修复后复验：PASS（隔离代码验证）** —— 301/301 ×3，25/25 ×3，8 组负向对照复核成立 |
+| MEMORY-REPORT-0009~0011 | 13:5x–14:1x | Batch B：两轮 BLOCKED → 三验 PASS，300/300 |
+| MEMORY-REPORT-0012~0013 | 14:4x–16:0x | Batch C：首验 BLOCKED → 修复后 PASS，301/301 ×3 |
+| MEMORY-REPORT-0014 | 16:3x | **Batch D（daily 日结候选）：PASS（隔离代码验证）** —— 302/302 ×3、4 组负向对照全部按预期失败 |
 
 ---
 
-## 1. 最终结论：**PASS（BATCH C ISOLATED CODE VERIFICATION PASS）**
+## 0. 最终结论
+
+**BATCH D ISOLATED CODE VERIFICATION PASS**
 
 | 项 | 判定 | 证据 |
 |---|---|---|
-| 目标 HEAD / tree / compare | **PASS** | `fecbd09e…`、tree `b770e0b1…`、相对修复前 `906fca93` ahead **1** / behind **0** |
-| 修复提交只改一行、且只改测试文件 | **PASS** | `fecbd09`：`tests/preference-merge.test.mjs` +1/−1（`咖啡`→`椰子`） |
-| 业务文件与修复前逐字节一致 | **PASS** | `merge.js` / `validity.js` / `validity.test.mjs` diff 均为 **0 行** |
-| 定向测试 ×3 | **PASS** | 每次 25/25、0 fail、0 skip、exit 0 |
-| preference-merge 单文件 | **PASS** | 1/1、exit 0（顺序执行到 pending 兼容段） |
-| 8 文件相关回归 | **PASS** | 42/42、0 fail、0 skip、exit 0 |
-| 全量 `npm test` | **PASS** | **301/301 ×3（干净运行）**、0 fail、0 skip、exit 0 |
-| 事务/CAS/回滚复核 | **PASS** | P1–P5 本轮在该 HEAD 重跑，全部符合预期 |
-| 8 组负向对照复核 | **PASS** | 全部按预期失败，恢复后逐字节一致 |
-| 生产 / 部署 / 合并 / staging | **未触碰** | 见 §9 |
+| 目标 HEAD / tree / compare | **PASS** | `5500d04e…`、tree `836b260f…`、相对 `fecbd09e` ahead **2** / behind **0** |
+| 仅两个预期文件变更 | **PASS** | `lib/consolidate/daily.js`、`tests/consolidate.test.mjs`；`validity.js` 未改 |
+| 两个目标 blob | **PASS** | `394138a1…`、`2ce8f522…`（与任务一致） |
+| 定向测试 ×3 | **PASS** | 28/28 ×3、0 fail、0 skip、exit 0 |
+| consolidate 单文件 | **PASS** | 4/4，含新增「日结去重候选」测试实际执行 |
+| 五文件回归 | **PASS** | 47/47、0 fail、0 skip、exit 0 |
+| 全量 `npm test` | **PASS** | **302/302 ×3**、0 fail、0 skip、exit 0 |
+| 四组负向对照 | **PASS** | 全部按预期失败，恢复后逐字节一致 |
+| 生产 / 部署 / 合并 | **未触碰** | 见 §7 |
 
-**本轮为隔离代码验证 PASS；不代表生产验证、集成、主线合并或部署通过。**
+**本 PASS 仅代表 Batch D 隔离代码验证；不代表生产验证、集成、主线合并或部署通过。**
 
 ---
 
-## 2. 基线与修复提交
+## 1. 基线与文件
 
 | 项 | 值 |
 |---|---|
-| 分支 | `feat/memory-validity-batch-c` |
-| 目标 HEAD（实测） | **`fecbd09eaa5b5745ef02263b1bd506712c256150`**（与指定一致，未前进） |
-| 树 SHA | **`b770e0b19ce6170c331129dc7f9a731dfcee88f1`** |
-| 修复前 HEAD | `906fca93ad92a19dcfe871caf3583596fb72fe2b`；ahead 1 / behind 0 |
-| 修复提交 | `fecbd09` `test(memory): isolate expired preference fixture`，1 file changed, **1 insertion / 1 deletion** |
-| 精确 diff | `['expired valid_to', '咖啡', …]` → `['expired valid_to', '椰子', …]` |
-| 环境 | Node **v24.19.0**、`node:sqlite`；独立 worktree `/tmp/memaudit/batchC2`（detached @ fecbd09）；未安装/升级依赖 |
-| 文档 | 已重读工作区 AGENTS.md；仓库树内**无 AGENTS.md**（`git ls-tree -r`）；`HANDOFF.md` blob `2923ba9b…`、`REPORT.md` blob `9a9c0bdb…`（均未变，Batch C 仍标"验证中"）；本轮未改共享文件 |
+| 分支 | `feat/memory-validity-batch-d` |
+| 目标 HEAD（实测） | **`5500d04e0e49ebb8168e7356de3c082a9e0e722e`**（未前进） |
+| tree | **`836b260faeed0f5e0540f7d735542a4c491eb455`** |
+| 基线（Batch C PASS） | `fecbd09eaa5b5745ef02263b1bd506712c256150`；ahead 2 / behind 0 |
+| 本批提交 | `7684b1f`（daily 接入）、`5500d04e`（仅澄清测试标题） |
+| 环境 | Node **v24.19.0**、`node:sqlite`；独立 worktree `/tmp/memaudit/batchD`（detached @ 5500d04e）；未安装/升级依赖 |
+| 仓库 AGENTS.md | `git ls-tree -r` 确认**仓库树内无 AGENTS.md**；已遵循工作区 AGENTS.md 与本报告/提示词路径规则 |
+| 协调文档 | 已读最新 `HANDOFF.md`（blob `04e8d690…`：§61 HANDOFF-0064 = Batch C PASS、§62 HANDOFF-0065 = Batch D IMPLEMENTED/VERIFYING）与 `REPORT.md`（blob `d6c24696…`）；本轮未修改 |
 
-### 四个文件 blob
+| 文件 | 实际 blob |
+|---|---|
+| `lib/consolidate/daily.js` | `394138a185d176e87b789ca23c51f5d1ae16fa13` |
+| `tests/consolidate.test.mjs` | `2ce8f5227f896a84261657982111603eea9ba064` |
+| `lib/store/validity.js`（未改） | `7aabea0efff2b9d5fe40acea19fcc4609f5e87e6` |
 
-| 文件 | blob | 对比修复前 |
+## 2. 独立代码审查结论
+
+| # | 检查项 | 结论 |
 |---|---|---|
-| `lib/pref/merge.js` | `d6d36773a44314030aa8bc65336768c6063e8f6e` | 不变 |
-| `lib/store/validity.js` | `7aabea0efff2b9d5fe40acea19fcc4609f5e87e6` | 不变 |
-| `tests/preference-merge.test.mjs` | `3907e7d948a743987e14c563a98b1195c43ac3c4` | 仅此文件变更（与任务给定一致） |
-| `tests/validity.test.mjs` | `fd00ecff76614f17544e5ac2e244692be38c6089` | 不变 |
+| 1 | helper `at` 与 daily `until` 同一基准 | `const until = Number(now)`（daily.js:119）；`loadDailyDedupCandidates(db, until)`（:139）；helper `at: Number(at)` → **同一时间基准** |
+| 2 | SQL 参数顺序 | SQL：`created_at_epoch >= ? AND ${validity.sql}`（含 2 个 `?`）；绑定 `[Number(at) - 90*86400000, ...validity.params]` → **顺序正确** |
+| 3 | 90 天下限未错位 | 下限仍是 `at - 90*86400000`，作为第一个参数绑定 |
+| 4 | SELECT 字段未变 | 新旧投影逐字相同：`id, kind, text, importance, created_at_epoch, last_access_epoch, access_count, pinned, meta` |
+| 5 | 排序 / LIMIT 未变 | `ORDER BY id DESC LIMIT 500` 保持 |
+| 6 | 只影响 bestMatch 相似去重 | `existing` 仅在 `for (const f of candidates)` 中交给 `bestMatch`；无其他引用 |
+| 7 | exact-text duplicate guard 原样 | 仍为独立 `SELECT id FROM memories WHERE text=? LIMIT 1`（facts 写入段），未接入 helper |
+| 8 | dryRun / 正式写入未重构 | dryRun 报告、facts/lessons/shortterm/profile/meta 写入路径均无 diff |
+| 9 | 无循环依赖 / 导入问题 | `validity.js` 无任何 import（纯函数模块）；`daily.js` 单向导入 helper |
+| 10 | 未改其他调用点 | `git diff --name-only fecbd09e 5500d04e` 仅两个文件；weekly / 其他调用点未动 |
 
 ## 3. 定向测试（本轮实测）
 
-```
-node --test tests/preference-merge.test.mjs tests/validity.test.mjs
-
-run1: tests 25 / pass 25 / fail 0 / skipped 0   EXIT=0
-run2: tests 25 / pass 25 / fail 0 / skipped 0   EXIT=0
-run3: tests 25 / pass 25 / fail 0 / skipped 0   EXIT=0
-```
-
-单文件：
+### 3.1 连跑三次
 
 ```
-node --test tests/preference-merge.test.mjs
-✔ tests/preference-merge.test.mjs
-tests 1 / pass 1 / fail 0 / skipped 0   EXIT=0
-```
-该文件为顺序断言脚本，末尾停在 pending 兼容段（`at=9000`，断言 `ok:true`、`action:'inserted'`、状态变 active），通过即证明 expired / future / superseded / 候选侧 / pending 全部执行并通过。
+node --test tests/consolidate.test.mjs tests/validity.test.mjs
 
-## 4. 相关回归（8 文件）
+run1: tests 28 / pass 28 / fail 0 / skipped 0   EXIT=0
+run2: tests 28 / pass 28 / fail 0 / skipped 0   EXIT=0
+run3: tests 28 / pass 28 / fail 0 / skipped 0   EXIT=0
+```
+新测试使用独立 `mkdtempSync` 临时 DB，`finally` 中关闭并删除 → **无共享 fixture 污染**（三轮结果完全一致可佐证）。
+
+### 3.2 consolidate 单文件
 
 ```
-node --test preference-merge preference-lifecycle preference-evolution \
-             preference-classify preference-second-round preference-round3 \
-             validity-integration validity-review-fix
-tests 42 / pass 42 / fail 0 / skipped 0   EXIT=0
+node --test tests/consolidate.test.mjs
+✔ 日结解析：过滤临时状态/隐私/坏主语，保留合法条目
+✔ 对话摘录：只收 user/self，排除工具事件与群聊，取最近 N 条
+✔ 日结去重候选：只比较 current 记忆，同时保留 90 天窗口和倒序语义
+✔ 多因子：最近访问/情绪/关系都会加权重
+tests 4 / pass 4 / fail 0 / skipped 0   EXIT=0
+```
+
+## 4. 相关回归
+
+```
+node --test tests/consolidate.test.mjs tests/validity.test.mjs \
+             tests/validity-integration.test.mjs tests/validity-review-fix.test.mjs \
+             tests/preference-merge.test.mjs
+tests 47 / pass 47 / fail 0 / skipped 0   EXIT=0
 ```
 
 ## 5. 全量测试（本轮实测，干净运行）
 
 ```
-npm test  →  tests 301 / pass 301 / fail 0 / skipped 0 / EXIT=0   （×3）
+npm test → tests 302 / pass 302 / fail 0 / skipped 0 / EXIT=0   （×3）
 ```
+两次在负向对照前、一次在全部恢复后。每轮执行前均确认：`git status` 无 scratch 文件、`tests/*.test.mjs` = 143、代码未处于变异状态。测试总数较 Batch C（301）增加 1，即本批新增的「日结去重候选」测试。
 
-**如实记录一次受污染的运行**：在负向对照 E2 期间（scratch 文件 `tests/_e2.test.mjs` 存在于 `tests/` 且代码处于变异状态）启动的一次 `npm test` 得到 `302 tests / 301 pass / 1 fail`，失败项即 `tests/_e2.test.mjs`。该文件是负向对照用的临时副本、已删除；清理后重新连续运行 **3 次**均为 **301/301、0 fail、0 skip、exit 0**。此前的污染不影响最终结论。
+## 6. 四组负向对照（worktree 内临时修改，恢复后逐字节一致）
 
-## 6. 事务 / CAS / 回滚（本轮在该 HEAD 重跑，非引用）
+| # | 变异内容 | 结果 | 恢复 |
+|---|---|---|---|
+| D1 | daily 候选退回旧版 `WHERE status='active' AND created_at_epoch >= ?` | **FAIL**：`无效/超窗记录不应参与日结去重：#3`（future valid_from） | `diff -q` 一致 |
+| D2 | helper 去除 `valid_from` 时间条件 | **FAIL**：`#3`（future 泄漏） | `diff -q` 一致 |
+| D3 | helper 去除 `valid_to` 时间条件 | **FAIL**：`#4`（expired 泄漏） | `diff -q` 一致 |
+| D4 | helper 去除 `superseded` 条件 | **FAIL**：`#5`（已替代泄漏） | `diff -q` 一致 |
 
-| 探针 | 本轮结果 |
-|---|---|
-| P2 正常合并 | `action=merged`；旧行 revision **2**；候选 `status=merged`；`memory_revisions` 两条快照 |
-| P1 中途失败（`memory_revisions` 不可写） | 抛 `no such table: memory_revisions`；旧行 revision 1、importance 0.6、evidence 1 未变；候选 active → **整体回滚** |
-| P3 pending + 开放冲突 | `{ok:true, action:'pending', reason:'open-conflict'}`，状态仍 pending |
-| P4 外部写锁（BUSY） | 约 **16.2 s** 后 `database is locked`；无 revision、候选 active → fail-closed |
-| P5 CAS 冲突（注入 `changes=0`） | 抛 `E_REVISION_CONFLICT`；revision 行 0、旧行 revision 1、候选 active → 回滚 |
+补充如实记录：D2/D3 第一次采用「整段替换为 `1=1` / 删除子句」的变异，测试以 `Error: column index out of range`（占位符与绑定参数数量不匹配）失败；为验证**语义断言**本身有效，改为保留占位符的 `? IS NOT NULL` 变异后，分别以 `#3`、`#4` 断言失败。两次都属预期失败，且后者直接证明新测试能捕获时间条件缺失。
 
-## 7. 八组负向对照复核（本轮重跑，均在 worktree 内临时修改并恢复）
+D2/D3/D4 的 helper 变异同时作用于 `current` 预设，但本轮只在隔离 worktree 内执行定向测试后立即恢复，未污染正式验证状态。
 
-| # | 变异 | 结果 |
-|---|---|---|
-| 1 | 旧偏好查询恢复旧过滤 | FAIL：`future valid_from old preference must not be merged`（line 47） |
-| 2 | 同上 + 仅保留 superseded 案例（scratch） | FAIL：`superseded old preference must not be merged`（line 45） |
-| 3 | 移除候选有效性检查 | FAIL：line 58（future 候选 `ok` 期望 false 实得 true） |
-| 4 | 候选预设改为严格 `current`（active-only） | FAIL：line 84（pending 期望 `ok:true` 实得 false） |
-| 5 | 移除 `current.valid_to != null` 严格检查 | FAIL：line 73（未来 `valid_to` 候选期望 false 实得 true） |
-| 6 | helper 去掉 `valid_from` | FAIL：`preference merge candidate preset…` |
-| 7 | helper 去掉 `superseded` | FAIL：同上 |
-| 8 | 候选查询参数顺序破坏 | FAIL：line 18（首个合并断言 `same.action` 变 undefined） |
-
-恢复校验：`merge.js`、`validity.js`、`preference-merge.test.mjs` 与备份 `diff -q` 全部一致；scratch 文件已删除。八组对照与当前代码/测试仍一一对应，无失效。
-
-## 8. 工作区与静态检查
+## 7. 工作区 / 静态检查 / 边界
 
 ```
 git status --short → ?? node_modules（仅符号链接）
 git diff --check   → 无输出 EXIT=0
 git diff --stat    → 空
-HEAD=fecbd09eaa5b5745ef02263b1bd506712c256150
-tree=b770e0b19ce6170c331129dc7f9a731dfcee88f1
-tests/*.test.mjs 数量 = 143（无 scratch 残留）
+HEAD=5500d04e0e49ebb8168e7356de3c082a9e0e722e
+tree=836b260faeed0f5e0540f7d735542a4c491eb455
+tests/*.test.mjs = 143（无 scratch 残留）
 ```
 
-## 9. 边界声明
-
-- 未修改任何业务代码或测试文件（负向对照均临时修改并逐字节恢复；scratch 副本已删除）。
-- 未写生产 DB 或生产只读副本；未修改生产插件目录、`profile`/`config`。
+- 未修改代码或测试（负向对照均临时修改并逐字节恢复）。
+- 未写生产 DB、未修改生产插件目录 / `profile` / `config`。
 - 未部署、未重启、未启动 staging；未合并 `feat/m1-preference-memory` 或 `main`。
-- 未修改其他 Memory 调用点（daily/weekly 属 Batch D/E，未授权）。
-- 未修改 Persona/EI/Autonomy/Android；未修改共享 `HANDOFF.md` / `REPORT.md`。
+- 未修改 weekly、其他 Memory 调用点、Persona/EI/Autonomy/Android。
+- 未修改共享 `HANDOFF.md` / `REPORT.md`（blob `04e8d690…` / `d6c24696…` 未变）。
 - 未 force push、未覆盖他人提交。
-- **本轮 PASS 仅代表「Batch C 隔离代码验证」通过；不代表生产验证、集成、主线合并或部署通过。**
+- **本轮 PASS 仅代表 Batch D 隔离代码验证；不代表生产验证、集成、主线合并或部署通过。**
 
-## 10. 证据索引
+## 8. 证据索引
 
 | 内容 | 命令 | 退出码 |
 |---|---|---|
-| HEAD / tree / compare / diff | `git ls-remote`、`git rev-parse`、`git rev-list --left-right --count`、`git show fecbd09` | 0 |
-| 四 blob | `git rev-parse fecbd09:<path>` | 0 |
-| 定向 ×3 | `node --test tests/preference-merge.test.mjs tests/validity.test.mjs` | 0（25/25 ×3） |
-| 单文件 | `node --test tests/preference-merge.test.mjs` | 0（1/1） |
-| 回归 8 文件 | 见 §4 | 0（42/42） |
-| 全量 ×3 | `npm test` | 0（301/301 ×3） |
-| 事务 P1/P2/P3/P5 | `/tmp/probe-batchC2-tx.mjs` | 0 |
-| BUSY P4 / P3b | `/tmp/probe-batchC2-tx2.mjs` | 0 |
-| 负向对照 1–8 | 见 §7 | 1（预期）；恢复后 0 |
+| HEAD / tree / compare / 文件 | `git ls-remote`、`git rev-parse`、`git rev-list --left-right --count`、`git diff --name-only` | 0 |
+| 两 blob | `git rev-parse 5500d04e:<path>` | 0 |
+| 定向 ×3 | `node --test tests/consolidate.test.mjs tests/validity.test.mjs` | 0（28/28 ×3） |
+| 单文件 | `node --test tests/consolidate.test.mjs` | 0（4/4） |
+| 五文件回归 | 见 §4 | 0（47/47） |
+| 全量 ×3 | `npm test` | 0（302/302 ×3） |
+| 负向对照 D1–D4 | 见 §6 | 1（预期）；恢复后 0 |
 | 工作区 | `git status --short`、`git diff --check`、`git diff --stat` | 0 |
