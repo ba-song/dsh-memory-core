@@ -50,7 +50,7 @@ out.pickPin = 'ok'
 
 // ── ② buildStable 传 db →「记得的事」 ────────────────────────────
 const { db } = openDb(DATA_DIR)
-await insertMemory(db, { kind: 'preference', text: '喜欢看海', importance: 0.8, layer: 'manual' })
+await insertMemory(db, { kind: 'relation', text: '喜欢看海', importance: 0.8, layer: 'manual' })
 const noDb = buildStable(join(DATA_DIR, 'empty-cwd'), {})
 assert.equal(noDb, '', '没有卡/便签、也没传 db → 空块（行为不变）')
 const withDb = buildStable(join(DATA_DIR, 'empty-cwd'), { db })
@@ -108,9 +108,11 @@ handlers['agent/created']({
     ctx: { systemPrompt: { context: (cfg) => { captured.push(cfg); return () => {} } } },
   },
 })
-assert.equal(captured.length, 1)
-assert.equal(captured[0].interpolate, false)
-const text = captured[0].text()
+assert.equal(captured.length, 2, 'owner 应挂长期偏好块和常驻记忆块')
+const stable = captured.find((c) => c.name === 'dy-memory-stable')
+assert.ok(stable)
+assert.equal(stable.interpolate, false)
+const text = stable.text()
 assert.ok(text.includes('名字：汐'), '端到端应渲染成真名')
 assert.ok(!text.includes('{{'), '块里不许残留占位符')
 assert.ok(text.includes('喜欢看海'))
