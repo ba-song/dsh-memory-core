@@ -1,153 +1,196 @@
-# MEMORY-REPORT-0016 · Memory 记忆智能体报告
+# MEMORY-REPORT-0017 · Memory 记忆智能体报告
 
 > 会话：Memory 记忆智能体（Memory 领域专业智能体）
-> 任务标识：`MEM-VALIDITY-BATCH-E-REVERIFY-02`
-> 覆盖任务：Batch A PASS → Batch B PASS → Batch C PASS → Batch D PASS → **Batch E（weekly，本轮为修复后第二次复验）**
+> 任务标识：`MEM-VALIDITY-BATCH-E-REVERIFY-03`
+> 覆盖任务：Batch A PASS → Batch B PASS → Batch C PASS → Batch D PASS → **Batch E（weekly）第三次复验**
 > 仓库：`ba-song/dsh-memory-core`｜本文件覆盖式更新、版本号递增
-> 最近更新：2026-11-21 17:1x (Asia/Shanghai) · v16
+> 最近更新：2026-11-21 17:4x (Asia/Shanghai) · v17
 
 ## 版本历史
 
 | 版本 | 时间 | 变更 |
 |---|---|---|
-| MEMORY-REPORT-0001~0007 | 10:15–13:0x | P4 / R5 / helper / 三调用点 / FTS+uncertain / 两次复核 / strict lane |
-| MEMORY-REPORT-0008~0011 | 13:3x–14:1x | Batch A PASS；Batch B 两轮 BLOCKED → PASS |
+| MEMORY-REPORT-0001~0011 | 10:15–14:1x | P4 / R5 / helper / 三调用点 / FTS+uncertain / 复核 / Batch A PASS / Batch B PASS |
 | MEMORY-REPORT-0012~0013 | 14:4x–16:0x | Batch C 首验 BLOCKED → 修复后 PASS |
 | MEMORY-REPORT-0014 | 16:3x | Batch D PASS，302/302 ×3 |
-| MEMORY-REPORT-0015 | 17:0x | Batch E 首验 BLOCKED（测试断言/fixture 不一致） |
-| MEMORY-REPORT-0016 | 17:1x | **Batch E 修复后复验：仍 BLOCKED** —— `now` 已修，但 `validTo` 加在 keeper 行而非被 supersede 的 member 行 |
+| MEMORY-REPORT-0015 | 17:0x | Batch E 首验 BLOCKED |
+| MEMORY-REPORT-0016 | 17:1x | Batch E 二验 BLOCKED（validTo 放错行） |
+| MEMORY-REPORT-0017 | 17:4x | **Batch E 三验：PASS（隔离代码验证）** —— 305/305 ×4、30/30 ×3、53/53、7/7 负向对照 |
 
 ---
 
 ## 0. 最终结论
 
-**BATCH E BLOCKED**
+**BATCH E ISOLATED CODE VERIFICATION PASS**
 
 | 项 | 判定 | 证据 |
 |---|---|---|
-| HEAD / tree / compare | **PASS** | `37fb441f…`、tree `d4616122…`、相对 `e3976101` ahead **1** / behind **0** |
-| 仅测试文件变化、业务代码未动 | **PASS** | `weekly.js` blob 仍 `61083aaa…`；`validity.js` 仍 `7aabea0e…` |
-| 目标 blob | **PASS** | `tests/weekly.test.mjs` = `c9f998af91a26cc136b294345585bed0de7f8a50` |
-| 修复 1：apply 传入固定 `now` | **PASS（已生效）** | diff 显示 `weeklyConsolidate({…, now, dataDir: DIR })` |
-| 修复 2：member fixture 设未来 `validTo` | **FAIL（放错行）** | 加在了 keeper（importance 0.7）行；被 supersede 的是 member（0.6）行 |
-| 定向测试 ×3 | **FAIL（确定性）** | 30 / 29 / 1 ×3 |
-| weekly 单文件 | **FAIL（确定性）** | 6 / 5 / 1 |
-| 六文件回归 | **FAIL** | 53 / 52 / 1 |
-| 全量 `npm test` ×3 | **FAIL** | **305 / 304 / 1 / skip 0** ×3 |
+| HEAD / tree / compare | **PASS** | `4bf92aad…`、tree `efff01dc…`、相对 `e3976101` ahead **2** / behind **0** |
+| 仅测试文件变化、业务代码未动 | **PASS** | `weekly.js` 仍 `61083aaa…`；`validity.js` 仍 `7aabea0e…` |
+| 三个目标 blob | **PASS** | 与任务给定完全一致 |
+| fixture 修复（validTo 移到 member 行） | **PASS** | diff 仅 2 行，断言与业务代码均未改 |
+| 定向测试 ×3 | **PASS** | 30/30 ×3，0 fail，0 skip，exit 0 |
+| weekly 单文件 | **PASS** | **6/6**，line 53/55 等关键断言未放宽 |
+| 六文件回归 | **PASS** | 53/53，0 fail，0 skip，exit 0 |
+| 全量 `npm test` ×3（+恢复后 1 次共 4 次） | **PASS** | **305/305、0 fail、0 skip、exit 0** |
 | 七组负向对照 E1–E7 | **PASS** | 全部由语义断言失败证明；恢复后逐字节一致 |
-| 生产 / 部署 / 合并 | **未触碰** | 见 §6 |
+| 生产 / 部署 / 合并 | **未触碰** | 见 §7 |
 
-**唯一失败**：`tests/weekly.test.mjs` 用例「周结 apply：只把重复条标 superseded，保留 keeper，不删正文」line 55：
-`AssertionError: revision 快照必须保留迁移前的未来 valid_to`（`actual false` / `expected true`）。
-
-**根因**：
-- `clusterMemories` 的 keeper 取 **importance 最高** 的行（0.7 = `主人喜欢吃烤生蚝`），member 是 0.6 那行。
-- 本轮把 `validTo: now + 86400000` 加在了 **keeper** 行（0.7），而被 supersede、写快照的是 **member**（0.6，原 `valid_to = NULL`）。
-- 因此 line 53（`valid_to === now`，NULL→now）已通过，line 55（快照保留「迁移前未来 valid_to」）仍失败。
-
-**独立验证**：把同一 `validTo` 从 keeper 行移到 member 行后整文件 **6/6 PASS**；业务实现无需改动。
+**本 PASS 仅代表 Batch E 隔离代码验证；不代表生产验证、集成、主线合并或部署。**
 
 ---
 
-## 1. 基线与修复内容
+## 1. 基线与文件
 
 | 项 | 值 |
 |---|---|
 | 分支 | `feat/memory-validity-batch-e` |
-| 目标 HEAD（实测） | **`37fb441fbe39dee715340f8204c16e3a3fe4782e`** |
-| tree | **`d4616122fbe968ae7921c95a250603b2b8c72844`** |
-| 修复前 HEAD | `e3976101…`；ahead 1 / behind 0 |
-| 环境 | Node **v24.19.0**；独立 worktree `/tmp/memaudit/batchE2`（detached @ 37fb441f）；未安装/升级依赖 |
-| 仓库 AGENTS.md | 仓库树内**无 AGENTS.md**（`git ls-tree -r`） |
-| 协调文档 | HANDOFF blob `4c9c2314…`、REPORT blob `23c9cdcb…`；coord HEAD `3e337d6`（记录 Batch E 测试修复与复验门禁）；本轮未修改 |
+| 目标 HEAD（实测） | **`4bf92aad8c069e92f3521e6a7cdf4c7b79559e3c`** |
+| tree | **`efff01dc63e8bddcdbeb79c430692cf4e26f18aa`** |
+| 基线（Batch E 原始实现） | `e3976101…`；ahead **2** / behind **0** |
+| 本轮修复提交 | `4bf92aa` `test(memory): place future valid_to on weekly member fixture`（仅 1 文件、2 行） |
+| 环境 | Node **v24.19.0**；独立 worktree `/tmp/memaudit/batchE3`（detached @ 4bf92aad）；未安装/升级依赖 |
+| 仓库 AGENTS.md | 仓库树内**无 AGENTS.md**（`git ls-tree -r`）；已遵循工作区 AGENTS.md |
+| 协调文档 | HANDOFF blob `4c9c2314…`、REPORT blob `23c9cdcb…`；本轮未修改 |
 
-| 文件 | blob | 对比修复前 |
-|---|---|---|
-| `lib/consolidate/weekly.js` | `61083aaaaff3fbc6927490045a92246ee9b1d05f` | 未变 |
-| `tests/weekly.test.mjs` | `c9f998af91a26cc136b294345585bed0de7f8a50` | 唯一变更 |
-| `lib/store/validity.js`（未改） | `7aabea0efff2b9d5fe40acea19fcc4609f5e87e6` | 未变 |
-
-修复 diff（仅测试）：dry-run 用例的 0.7 行加 `validTo: now + 86400000`；apply 调用加 `now`；clamp 与 snapshot 断言均保留。
-
-## 2. 代码审查（本轮复核，未发现缺陷）
-
-| 检查项 | 结论 |
+| 文件 | blob |
 |---|---|
-| 统一 current validity 候选过滤 | `loadWeeklyCandidates` 使用 `current`；valid_from NULL 兼容；future/expired/superseded/archived 排除（E1–E4 证明） |
-| dry-run / apply 候选集一致 | 同一 `loadWeeklyCandidates` |
-| 事务内重读 + revision 检查 | `BEGIN IMMEDIATE` 后 `SELECT *` keeper/member，复核 `isValidAt`、layer、kind、lookback、revision |
-| snapshot 与 CAS 同事务 | 同事务 INSERT + 带 `revision=?`/validity 的 UPDATE |
-| `valid_to = min(原值, now)`，NULL→now | `CASE WHEN valid_to IS NULL OR valid_to>? THEN ? ELSE valid_to END`（探针验证） |
-| snapshot 保留迁移前原值 | snapshot 在 UPDATE 前写入 `JSON.stringify(row)`（探针：未来值保留） |
-| 缺表/写入失败/CAS 未命中整体 rollback | 外层 catch → ROLLBACK → `ok:false`；无 status-only fallback（E6/E7 证明） |
-| keeper importance 带 revision/current、仅成功后提升 | `clusterApplied > 0` 才 bump，`changes !== 1` 抛错 |
+| `lib/consolidate/weekly.js` | `61083aaaaff3fbc6927490045a92246ee9b1d05f`（未变） |
+| `tests/weekly.test.mjs` | `a8cf3cdb362a76a6fe29072840b495325994471a` |
+| `lib/store/validity.js` | `7aabea0efff2b9d5fe40acea19fcc4609f5e87e6`（未变） |
 
-## 3. 测试统计（本轮实测）
+## 2. fixture 修复前后差异
 
-| 命令 | tests | pass | fail | skip | exit |
-|---|---|---|---|---|---|
-| `node --test weekly validity`（×3） | 30 ×3 | 29 ×3 | **1** ×3 | 0 | **1** |
-| `node --test tests/weekly.test.mjs` | 6 | 5 | **1** | 0 | **1** |
-| 六文件回归 | 53 | 52 | **1** | 0 | **1** |
-| `npm test`（×3） | **305** | 304 | **1** | 0 | **1** |
+```diff
+-  await insertMemory(db, { …, text: '主人喜欢烤生蚝', importance: 0.6, …, scopeType: 'owner' })
+-  await insertMemory(db, { …, text: '主人喜欢吃烤生蚝', importance: 0.7, …, scopeType: 'owner', validTo: now + 86400000 })
++  await insertMemory(db, { …, text: '主人喜欢烤生蚝', importance: 0.6, …, scopeType: 'owner', validTo: now + 86400000 })
++  await insertMemory(db, { …, text: '主人喜欢吃烤生蚝', importance: 0.7, …, scopeType: 'owner' })
+```
+- 未来 `validTo` 已从 **keeper（0.7）** 行移到 **member（0.6）** 行，符合 `clusterMemories` 按 importance 选 keeper 的规则。
+- 上一轮已修好的 `weeklyConsolidate(..., now)` 固定时间参数保留。
+- 断言（line 53 clamp、line 55 snapshot）**逐字未改**；业务代码未改。
 
-三轮全量完全一致，无环境 flake。
+## 3. 测试结果（本轮实测）
+
+### 3.1 定向测试 ×3
+
+```
+node --test tests/weekly.test.mjs tests/validity.test.mjs
+run1: tests 30 / pass 30 / fail 0 / skipped 0   EXIT=0
+run2: tests 30 / pass 30 / fail 0 / skipped 0   EXIT=0
+run3: tests 30 / pass 30 / fail 0 / skipped 0   EXIT=0
+```
+
+### 3.2 weekly 单文件
+
+```
+tests 6 / pass 6 / fail 0 / skipped 0   EXIT=0
+```
+关键断言原文（未放宽/未删除）：
+```js
+assert.equal(Number(full.valid_to), now, '原有未来 valid_to 必须收敛到实际 supersede 时刻')
+assert.ok(Number(JSON.parse(snapshot.previous_json).valid_to) > now, 'revision 快照必须保留迁移前的未来 valid_to')
+assert.equal(Number(full.revision), 2, …); assert.equal(full.temporal_kind, 'historical'); assert.equal(Number(snaps), 1)
+```
+
+### 3.3 六文件回归
+
+```
+node --test weekly validity validity-integration validity-review-fix preference-merge consolidate
+tests 53 / pass 53 / fail 0 / skipped 0   EXIT=0
+```
+
+### 3.4 全量 `npm test`
+
+```
+run1: 305 / 305 / 0 fail / 0 skip / EXIT=0
+run2: 305 / 305 / 0 fail / 0 skip / EXIT=0
+run3: 305 / 305 / 0 fail / 0 skip / EXIT=0
+（负向对照全部恢复后再跑 1 次：305/305/0/0，EXIT=0）
+```
 
 ## 4. 七组负向对照（本轮重跑，全部由语义断言失败证明）
 
-| # | 变异 | 实际失败断言 |
+| # | 变异 | 实际失败断言 | exit |
+|---|---|---|---|
+| E1 | 候选退回 `status='active'` | `must not be a weekly candidate: #3` | 1 |
+| E2 | helper 去 `valid_from`（保留占位符） | `must not be a weekly candidate: #3` | 1 |
+| E3 | helper 去 `valid_to`（保留占位符） | `must not be a weekly candidate: #4` | 1 |
+| E4 | helper 去 `superseded` | `must not be a weekly candidate: #5` | 1 |
+| E5 | 收敛恢复 `COALESCE(valid_to, ?)` | `原有未来 valid_to 必须收敛到实际 supersede 时刻`（actual 未来值 / expected now） | 1 |
+| E6 | 恢复 status-only fallback | `missing history table must not fall back to legacy status-only write` | 1 |
+| E7 | 移除 member/keeper CAS 检查 | `assert.equal(r.ok,false)`：`true !== false`（line 134） | 1 |
+
+恢复证据：`lib/consolidate/weekly.js`、`lib/store/validity.js`、`tests/weekly.test.mjs` 与备份 `diff -q` 全部一致；最终 SHA256：
+```
+02c036b3a08bafa93329ac974dda012a0c57e9900ef79869534b5004e5bc8e0e  lib/consolidate/weekly.js
+f4edb5cc43089784674666ca32e8af55cb4a275f66c31f96253e98e8f294442e  tests/weekly.test.mjs
+dbbc453c032cbd0cbf0739989cbe8ede204c8a0a1f4f3d9eb5fbdbc20d34390f  lib/store/validity.js
+```
+scratch 文件已全部删除，`tests/*.test.mjs` = 143。
+
+## 5. 业务代码审查（本轮复核，未发现缺陷）
+
+| # | 检查项 | 结论 |
 |---|---|---|
-| E1 | 候选退回 `status='active'` | `must not be a weekly candidate: #3` |
-| E2 | helper 去 `valid_from` | `#3` |
-| E3 | helper 去 `valid_to` | `#4` |
-| E4 | helper 去 `superseded` | `#5` |
-| E5 | 收敛恢复 `COALESCE(valid_to, ?)` | `原有未来 valid_to 必须收敛到实际 supersede 时刻`（在 validTo 位于 member 行的 scratch 上触发；该 scratch 原状态 6/6 PASS） |
-| E6 | 恢复 status-only fallback | `missing history table must not fall back to legacy status-only write`（`true !== false`） |
-| E7 | 移除 member/keeper CAS 检查 | `assert.equal(r.ok,false)`：`true !== false`（line 134） |
+| 1 | current validity 候选过滤 | `loadWeeklyCandidates` 用 `current`；valid_from NULL 兼容；future/expired/superseded/archived 排除（E1–E4） |
+| 2 | dry-run 与 apply 同源 | 同一 `loadWeeklyCandidates` |
+| 3 | `BEGIN IMMEDIATE` 后重读 keeper/member | 是，`SELECT *` 后复核 |
+| 4 | revision 与 validity 复核 | 扫描时 revision 不一致 → `continue`；validity 用 `isValidAt(…, 'current')` |
+| 5 | snapshot 与 CAS 同事务 | 同一事务内 INSERT + 带 revision/validity 的 UPDATE |
+| 6 | `valid_to = min(原值, now)` | `CASE WHEN valid_to IS NULL OR valid_to>? THEN ? ELSE valid_to END`；探针：NULL→now、future→now |
+| 7 | snapshot 保存迁移前原值 | UPDATE 前写入 `JSON.stringify(row)`；探针：快照保留 `now+1d` |
+| 8 | 缺表/写入失败/CAS 未命中整体 rollback | 外层 catch → ROLLBACK → `ok:false`（E6/E7） |
+| 9 | keeper importance 仅成功后更新 | `clusterApplied > 0` 才 bump，且带 revision/current 条件 |
+| 10 | 无 status-only 静默降级 | 已移除；E6 对照证明恢复 fallback 会立即失败 |
 
-恢复校验：`weekly.js`、`validity.js`、`weekly.test.mjs` 与备份 `diff -q` 全部一致；scratch 文件已删除。
+独立探针（本轮在验证 HEAD 重跑）：
+```
+validTo=NULL → valid_to=now；快照 valid_to=null
+validTo=now+1d → valid_to=now；快照保留 now+1d
+validTo=now-1s → 不进候选，superseded=0，无快照
+```
 
-## 5. 工作区与静态检查
+## 6. 工作区与静态检查
 
 ```
-git status --short → ?? node_modules
+git status --short → ?? node_modules（既有符号链接）
 git diff --check   → 无输出 EXIT=0
 git diff --stat    → 空
-HEAD=37fb441fbe39dee715340f8204c16e3a3fe4782e
-tree=d4616122fbe968ae7921c95a250603b2b8c72844
+HEAD=4bf92aad8c069e92f3521e6a7cdf4c7b79559e3c
+tree=efff01dc63e8bddcdbeb79c430692cf4e26f18aa
 HEAD:lib/consolidate/weekly.js = 61083aaaaff3fbc6927490045a92246ee9b1d05f
-HEAD:tests/weekly.test.mjs    = c9f998af91a26cc136b294345585bed0de7f8a50
-tests/*.test.mjs = 143（无 scratch 残留）
+HEAD:tests/weekly.test.mjs    = a8cf3cdb362a76a6fe29072840b495325994471a
+HEAD:lib/store/validity.js    = 7aabea0efff2b9d5fe40acea19fcc4609f5e87e6
 ```
 
-## 6. 风险与未执行事项
+## 7. 未执行事项与边界声明
 
 | 项 | 状态 |
 |---|---|
-| **测试 fixture 放错行（P0，本轮阻塞）** | 未修（无授权）。建议：把 `validTo: now + 86400000` 从 0.7 的 keeper 行移到 0.6 的 member 行（`主人喜欢烤生蚝`），断言无需改动；已验证此改动使 6/6 PASS |
-| weekly 业务代码 | 未改动，且经代码审查与探针验证正确 |
 | 真实 weekly 调度 / apply | **NOT RUN**（生产行为，未授权） |
-| 生产 DB / 插件 / profile / config | **未触碰**，未连接生产库 |
+| 生产 DB / 插件 / profile / config | **未触碰**；未连接生产库 |
 | 部署 / 重启 / staging / 合并 | **NOT RUN** |
+| Batch A–E 统一集成 | **NOT RUN**（待 GPT 安排） |
 
-## 7. 边界声明
-
-- 未修改业务代码或测试代码；负向对照均临时修改并逐字节恢复；scratch 已清理。
-- 未写生产 DB；未修改生产插件目录 / `profile` / `config`。
-- 未部署、未重启、未启动 staging；未合并主线；未执行真实 weekly 调度/apply。
-- 未修改其他调用点、Persona/EI/Autonomy/Android；未修改共享 `HANDOFF.md` / `REPORT.md`。
-- 未 force push。
-- **本轮 BLOCKED；即使后续修复通过，也只能标记 Batch E 隔离代码验证 PASS，不代表生产验证、集成、主线合并或部署。**
+- 本轮只修改了 scratch/隔离 worktree 内的临时文件用于负向对照，全部逐字节恢复；正式分支代码与测试从未被修改。
+- 未写生产 DB；未改生产插件目录、`profile`/`config`；未部署、未重启、未启动 staging；未合并主线；未执行真实 weekly 调度/apply。
+- 未修改其他调用点、Persona/EI/Autonomy/Android；未修改共享 `HANDOFF.md` / `REPORT.md`；未 force push。
+- **明确区分**：
+  - 测试代码修复：GPT 在 `tests/weekly.test.mjs` 完成（本轮复验其效果）；
+  - 隔离代码验证：本轮 PASS；
+  - 生产验证、集成、主线合并、部署：**均未执行**。
 
 ## 8. 证据索引
 
 | 内容 | 命令 | 退出码 |
 |---|---|---|
 | HEAD / tree / compare / blob | `git ls-remote`、`git rev-parse`、`git rev-list --left-right --count` | 0 |
-| 定向 ×3 | `node --test tests/weekly.test.mjs tests/validity.test.mjs` | **1**（30/29/1 ×3） |
-| weekly 单文件 | `node --test tests/weekly.test.mjs` | **1**（6/5/1） |
-| 六文件回归 | 见 §3 | **1**（53/52/1） |
-| 全量 ×3 | `npm test` | **1**（305/304/1 ×3） |
-| 正确放置 scratch | 临时副本（已删除） | 0（6/6） |
+| 定向 ×3 | `node --test tests/weekly.test.mjs tests/validity.test.mjs` | 0（30/30 ×3） |
+| weekly 单文件 | `node --test tests/weekly.test.mjs` | 0（6/6） |
+| 六文件回归 | 见 §3.3 | 0（53/53） |
+| 全量 ×3 + 恢复后 1 | `npm test` | 0（305/305 ×4） |
+| clamp/snapshot 探针 | `/tmp/probe-weekly-clamp3.mjs` | 0 |
 | 负向对照 E1–E7 | 见 §4 | 1（预期）；恢复后 0 |
 | 工作区 | `git status --short`、`git diff --check`、`git diff --stat` | 0 |
