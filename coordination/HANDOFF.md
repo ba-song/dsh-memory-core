@@ -2,8 +2,8 @@
 
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
-> 版本：`HANDOFF-0066`
-> 更新时间：2026-11-21 16:13（Asia/Shanghai）
+> 版本：`HANDOFF-0067`
+> 更新时间：2026-11-21 16:25（Asia/Shanghai）
 > 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
@@ -3750,3 +3750,36 @@ Memory 智能体报告的隔离测试证据（GPT未亲自运行 Node 测试）�
 - Batch E（weekly）尚未开始，必须单独审查并等待负责人明确授权；本次 Batch D 授权不延伸至 Batch E。
 - 生产 as-of、生产验证、主线合并和部署仍需独立评估与授权。
 - EI/Persona、Android、Autonomy 未触碰；Android/Autonomy v4 设计对齐及后续真实设备后台恢复验证继续保留在整体计划中，不因 Memory 主线推进而搁置。
+
+
+---
+
+## 2026-11-21 16:25 · GPT 统筹实施 · HANDOFF-0067（Batch E IMPLEMENTED / VERIFYING）
+
+### Memory Batch E：weekly 周结候选统一有效性与事务/CAS 加固
+
+- 仓库：`ba-song/dsh-memory-core`
+- 分支：`feat/memory-validity-batch-e`
+- 基线：Batch D PASS @ `5500d04e0e49ebb8168e7356de3c082a9e0e722e`
+- 当前实现 HEAD：`4cefcaba79fc5f6e8dc121545fbf10aa569ab60c`
+- compare：ahead 2 / behind 0；仅 `lib/consolidate/weekly.js`、`tests/weekly.test.mjs` 两个文件变化。
+- 实现提交：`1bcd2f3f3dbbdcb09a109e81a6d86fec29ca87fb`
+- 测试提交：`4cefcaba79fc5f6e8dc121545fbf10aa569ab60c`
+- weekly.js blob：`f61d70ea9bb58925f3480dd637846d47c2c5f3bf`
+- weekly.test.mjs blob：`0de3aee84934291bcc8f83a82242f6465205018b`
+
+实施内容：
+
+1. 新增 `loadWeeklyCandidates(db,{at,since})`，使用统一 `validitySql({at,preset:'current'})`；保留原 lookbackDays、auto layer、fact/preference/relation kind 域及 ID ASC 顺序。
+2. dry-run 与 apply 使用同一有效候选集；排除 future valid_from、expired valid_to、superseded、archived 等非 current 记录，同时兼容 valid_from NULL 的旧记录。
+3. apply 在 `BEGIN IMMEDIATE` 后重新读取 keeper/member，复核 current validity、layer、kind、lookback 和扫描时 revision；过期/被替代/修订变化的候选不会沿用事务外旧快照执行。
+4. 每个 member 先写 revision snapshot，再通过带 revision 与统一 current predicate 的 UPDATE CAS 改为 superseded、写 superseded_by、revision+1、updated_at、valid_to、temporal_kind。
+5. 移除原有 catch 后退回 status-only 的静默降级路径。缺少 revision 表、写入失败或 CAS 未命中时整体 rollback 并返回失败，不允许留下无历史快照的部分状态迁移。
+6. keeper importance 更新也带 revision/current 条件；只有本簇确实有 member 成功 supersede 时才提升 keeper importance。
+7. 新增测试覆盖 current/future/expired/superseded/archived/lookback/layer/kind 候选边界、revision 表缺失失败关闭、CAS 未命中整体回滚。
+
+GPT 已从 GitHub 回读两个目标文件、最终提交 diff 和 compare。当前为 **IMPLEMENTED / VERIFYING**；GPT未运行 Node 测试，尚未授予 PASS。
+
+下一步等待 Memory 智能体独立复验：核对 HEAD/tree/blob/工作区；weekly 定向测试与 validity 测试连续运行；周结 apply、缺表 rollback、CAS rollback；相关回归与全量 npm test；对 validity 谓词、SQL 参数顺序、事务边界、snapshot/revision/valid_to、失败路径做代码审查和负向对照。
+
+边界：仅隔离开发分支。未写生产 DB、未修改生产插件/profile/config；未部署、重启、启动 staging；未合并主线。Batch E 验证通过前不进入 A–E 统一集成。
