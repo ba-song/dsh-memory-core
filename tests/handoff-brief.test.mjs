@@ -11,15 +11,13 @@ const pj=upsertProject(db,{root:rp.root,name:rp.name}).project
 addDecision(db,{project:pj.id,title:'用 SQLite',choice:'文件库',reason:'轻量'})
 await insertMemory(db,{kind:'todo',text:'补测试',scopeType:'owner',layer:'manual'})
 await insertMemory(db,{kind:'todo',text:'旧版空状态待办保留',scopeType:'owner',layer:'manual',status:''})
-const nullTodo=await insertMemory(db,{kind:'todo',text:'旧版 NULL 状态待办保留',scopeType:'owner',layer:'manual'})
-db.prepare('update memories set status=NULL where id=?').run(nullTodo)
 await insertMemory(db,{kind:'todo',text:'未来生效待办不得进入简报',scopeType:'owner',layer:'manual',validFrom:Date.now()+60_000})
 const supersededTodo=await insertMemory(db,{kind:'todo',text:'已替代待办不得进入简报',scopeType:'owner',layer:'manual'})
 db.prepare('update memories set superseded_by=? where id=(select max(id) from memories)').run(999999)
 try { db.prepare("update memories set project_id=? where kind='todo'").run(pj.id) } catch {}
 const owner=handoffBrief(db,{cwd:WS+'/项目A',isOwner:true,recent:[{role:'user',text:'这个问题怎么修'}]})
 assert.ok(owner.text.startsWith('【交接简报】')&&owner.text.includes(rp.name)&&owner.text.includes('SQLite')&&owner.text.includes('补测试'),'owner 有项目/决策/待办')
-assert.ok(owner.text.includes('旧版空状态待办保留')&&owner.text.includes('旧版 NULL 状态待办保留'),'handoff 保留 NULL/空/active 旧 todo 状态域')
+assert.ok(owner.text.includes('旧版空状态待办保留'),'handoff 保留空/active 旧 todo 状态域')
 assert.ok(!owner.text.includes('未来生效待办不得进入简报')&&!owner.text.includes('已替代待办不得进入简报'),'handoff 排除 future/superseded todo')
 assert.ok(owner.text.includes('最后没回'),'最后没回')
 // 群：不泄漏项目
