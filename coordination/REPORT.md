@@ -1,172 +1,148 @@
-# REPORT-0013 · EI-1 第三轮复验 + 记忆冲突误判记录
-## 2026-11-21 00:45 · DSHA 隔离 worktree · HANDOFF-0056
+# REPORT-0015 · Memory 有效性复核、EI-2 设计裁决与平台状态同步
 
-> Persona 分支 `feat/ei1-emotion-composition` @ `92a763bfc096c490ba65878f7593961f982ea20a`
-> 基线 `a84c7ba...`；main 未变；工作树 `/tmp/ei1c`，不是生产目录。
-> 只读/隔离测试；未改源码/DB/profile；未启动 staging/host；未部署/重启。
+## 2026-11-21 · GPT 统筹复核 · HANDOFF-0058
 
-## 1. EI-1 版本与文件
+> 本轮覆盖 Memory 的 validity review-fix 后续复核、EI-1/EI-2A 前置审查，以及 Android/Autonomy v4 状态保留。
+> 只修改 GitHub 隔离开发分支源码/设计文档与协调报告；未访问或修改生产 DB、生产插件目录、profile/config；未部署、未重启、未启动 staging。
 
-- HEAD：`92a763bfc096c490ba65878f7593961f982ea20a`
-- diff vs baseline：仅新增 `lib/emotion-compose.js`、`tests/emotion-compose.test.mjs`
-- Git blob：
-  - source `4f460b2b10f0dea87cffaf550d2fbe66dde591c0`（与任务一致）
-  - tests `9f813b973546d41fe933b75b1f18178b2e8418a4`（与任务一致）
-- SHA256：
-  - source `44828deb5303257b0233d5d93f62afc5af093d71c948cff90690f940410ab20d`
-  - tests `9abd115a9304b6adc482b0069ce502da873993cd72475be125e339a26e3467c1`
+## 1. Memory：统一有效性谓词与 uncertain 语义
 
-## 2. EI-1 测试
+### 1.1 Memory 智能体本轮交付
 
-### 新增
-命令：`node --test tests/emotion-compose.test.mjs`
-日志：`/tmp/ei1c-compose.log`
-```
-tests 14 / pass 14 / fail 0 / skipped 0 / exit 0
-```
+- 仓库：`ba-song/dsh-memory-core`
+- 分支：`feat/memory-validity-unified`
+- Memory 智能体提交：`4b4f92751b6c8cc41c0935fc2b4c267cd9cbd4c9`
+- 专项报告：`MEMORY-REPORT-0005`
+- 报告 commit：`9f04ed3ef9c5ab8073f6fc3f417617007de1ea65`
+- 报告 blob：`949e2512893445db778443b3988acc5927668c73`
 
-### 全量
-命令：`npm test`
-日志：`/tmp/ei1c-full.log`
-```
-tests 317 / pass 317 / fail 0 / skipped 0 / exit 0
-```
+已完成修正：
+1. FTS bigram/trigram 子查询移除额外硬编码 `status='active'`，状态域由统一 validity helper 决定；as-of 可查 archived/expired，pending/merged 仍排除。
+2. `uncertainRows` 增加 as-of 时间窗口：`created_at_epoch<=at`、`valid_from IS NULL OR valid_from<=at`、`valid_to IS NULL OR valid_to>at`。
+3. 新增 FTS-only 与 uncertain 时间边界回归测试。
 
-## 3. confidence 修复复核
+Memory 智能体提供的隔离测试证据：
+- 新增定向测试 5/5；
+- 受影响 8 个测试文件 46/46；
+- 全量 `npm test`：297/297、0 fail、0 skip；
+- 负向对照：恢复 FTS 硬编码 1 例失败；移除 uncertain 时间窗 2 例失败。
+- 这些是 Memory 智能体报告的本地隔离证据，不是 GPT 在本轮亲自执行的测试，也不是生产验证。
 
-`lib/emotion-compose.js:16-28`：
-```js
-if (!finite(confidence)) return 'unknown'
-const numericConfidence = Number(confidence)
-if (numericConfidence < 0 || numericConfidence > 1) return 'unknown'
-const value = numericConfidence
-```
-- `-0.1/1.1/NaN/Infinity/-Infinity` → unknown；
-- `0` → uncertain；`1` → active_candidate；
-- 不再先 clamp 后分类；
-- `normalizeEpisode` 仍把越界 confidence 转 null，未被破坏。
+### 1.2 GPT 复核发现与后续修正
 
-**PASS。**
+GPT 检查 `lib/recall/recall.js`、`lib/store/graph.js` 后确认：
 
-## 4. 旧问题回归检查
+- `asOfHistory` 允许用 `created_at_epoch` 近似缺失的 `valid_from`，并通过 `validFromApproximated` 明确标记。
+- 图谱 `unknownHop` 是单独的保守候选路径，不能与普通关键词 top-N 候选混为一谈。
+- 旧逻辑把普通关键词候选也交给 `TEMPORAL_UNKNOWN_SQL`；因此一条仅因 top-N 截断未进入结果、但可按 created_at 近似的记录，可能被错误标为 `unknown-validity`。
 
-- sourceIds：仍收集 `id/episodeId/appraisalId/appraisal_id/sourceIds[]`，去重 codepoint 排序；测试覆盖双 ID 混合。
-- codepoint 排序：`compareCodepoint` 仍用于 sourceIds/target/emotion/experiencer/cause；无 `localeCompare`。
-- 异常输入：null/缺字段/NaN/Infinity/expiry/intensity 越界/未来时间测试通过。
-- legacy/displayLimit/allEmotions：测试通过。
-- 架构边界：仅两个新文件；未改 composeEmotionView/activeEpisodes/appraisal/db/service/注入；未改 345 条生产 episode。
+GPT 已在同一隔离分支提交两项修改：
 
-## 5. 结论
-
-**EI-1 IMPLEMENTATION REVIEW PASS（纯函数层）。**
-
-只代表纯函数层通过；不代表 EI-2/EI-3/生产集成通过。
-
-## 6. 记忆冲突误判（并行问题，未修数据）
-
-用户报告“记忆冲突又误判了”。只读核对：
-
-- pending 冲突 #8：memory_a=185、memory_b=355，原因 `sim=0.677 opposition`。
-- #185：`status=active`，但 `superseded_by=320`、`valid_to` 有值、meta `supersedeReason=duplicate-of-320`；数据状态不一致。
-- #355：`主人喜欢带有语气词的句子`；#185：`主人希望汐说话带语气词、活泼些，不要冷冰冰的`。
-- `lib/ingest/p4.js` 邻居查询只取 `id,text,kind`，未过滤 `status/superseded_by/valid_to`；向量表也包含旧记录，所以拿 #355 与已废弃的 #185 比较。
-- `lib/ingest/conflict.js` 按整段文本取极性；“不要冷冰冰”被当成负极性，和“喜欢语气词”共享“语气词” → 误判 opposition。
-
-负责人决定：**先修代码，数据后修**。
-- 代码（GPT）：P4 邻居/向量只考虑 active + 未 superseded + valid_to 为空；冲突极性按分句/同一对象判定；补回归测试。
-- 数据（后修，需负责人单独授权）：#185 状态与 superseded_by 一致；#8 置 resolved/stale；#355 与 #320 合并/处理。
-- 本轮未写生产 DB/冲突队列。
-
-## 7. 状态
-| 项 | 状态 |
+| Commit | 内容 |
 |---|---|
-| EI-1 目标 commit/blob | PASS |
-| 新增 14/14 | PASS |
-| 全量 317/317 | PASS |
-| confidence 边界 | PASS |
-| sourceIds/codepoint/异常输入 | PASS |
-| 架构边界 | PASS |
-| 记忆冲突 #8 误判 | 已确认，代码待 GPT 修；数据未修 |
-| EI-2/EI-3/生产 | NOT RUN/禁止 |
+| `697de1ee11ec12fb41d2d5a701851635c9192827` | `unknown-validity` 只适用于 graph 明确产生的 `unknownHop`；`superseded-without-end` 仍检查全部相关候选 |
+| `b4606e1c66f1afb94cb154b7ec96423103477029` | 新增 top-N 回归测试，防止近似有效关键词候选因排名截断而误报 uncertain |
 
-## 8. 副作用
-只读/隔离 worktree；未改生产源码/DB/profile；未启动 staging/host；未部署/重启。
+最新已核对的文件 blob：
+- `lib/recall/recall.js`：`75b4fb7f184e1c614d8056ce7ab39f6d650a6f28`
+- `tests/asof-graph-uncertain.test.mjs`：`28425c24c1f516305dd69bc9dc5ab4b63da13edb`
 
+### 1.3 当前状态
 
----
+<badge>等待 Memory 本地复验</badge>
 
-# REPORT-0014 · Memory P4 邻居过滤与语义冲突误判修复
+GPT 两个新提交尚未经过 Memory 专项本地复跑，不能标记 PASS。预期测试数约 298 项，以实际执行结果为准。
 
-## 2026-11-21 · GPT 开发分支修改 · 等待 DSH 隔离验证
+已向负责人提供转交给 Memory 智能体的验证提示词（WritingBlock ID `62041`），要求：
+- 定向与全量测试；
+- 两组负向对照：top-N 误报守卫、graph unknownHop 保留；
+- 工作区与 blob 核验；
+- 通过后更新 Memory 专项报告为 MEMORY-REPORT-0006。
 
-## 1. 背景与决策
+未合并主开发分支，未写生产 DB，未部署、未启动 staging。
 
-依据 HANDOFF-0056 / REPORT-0013：
-- pending #8：memory_a=185、memory_b=355，原因 `sim=0.677 opposition`。
-- #185 数据显示 `status=active`，但 `superseded_by=320`、`valid_to` 有值；向量仍存在。
-- #355：“主人喜欢带有语气词的句子”。
-- #185：“主人希望汐说话带语气词、活泼些，不要冷冰冰”。
-- 旧 P4 从传入 vectors 直接 bestMatch，neighbor 查询只取 id/text/kind；旧 conflict 极性按整段判断，容易把不同语义对象的正负词拼接。
+## 2. EI：EI-1 收口与 EI-2A 实施前设计裁决
 
-负责人明确决策：**先修代码，数据后修**。
+### 2.1 EI-1
 
-## 2. 实施
+- 仓库：`ba-song/dsh-persona-core`
+- EI-1 代码验收目标：`3a1376184491d94b02d4c3ad4990a957e85acb48`
+- 当前修订分支起点：`1572e49ce0fd9c713f119ff8300af91db3c2bb1e`
+- source blob：`cf033ec8400ea38e717481a46a5bfe834276a4a5`
+- tests blob：`eb17cb0f2c67450a145f38d1a582bef6d90b07c8`
 
-开发分支：`fix/p4-active-neighbors-semantic-opposition`，基于 `feat/m1-preference-memory`。
+EI-REPORT-0004 记录的复验结果：
+- 定向 21/21；
+- 全量 324/324；
+- 0 fail、0 skip；
+- 工作树 clean、`git diff --check` 通过。
 
-### 2.1 P4 active neighbor filtering
+结论只能写：**EI-1 代码隔离验收 PASS，DSHA/负责人设备复验 NOT RUN**。不代表生产集成 PASS。
 
-在向量 bestMatch 前，查询 memories 的有效 ID：
-- `status='active'`
-- `superseded_by IS NULL OR superseded_by=0 OR superseded_by=''`
-- `valid_to IS NULL`
+### 2.2 EI-2 设计文档修订
 
-仅用有效 ID 过滤传入 vectors Map，再执行 bestMatch。选出 best 后，最终 neighbor SQL 再次施加相同条件，避免过期/被 supersede 的记忆参与冲突判断。向量表/历史数据本身未删除或改写。
+GPT 已更新 `EI-2-PERSISTENCE-DESIGN-01.md`：
 
-### 2.2 Clause-scoped opposition
+- 文档提交：`8ccb8a922a789d8d15157b9d99f9de0c20c8807b`
+- 新 blob：`670e5a34a1916a8b104ebfd1004b525236677d4c`
 
-`hasOpposition` 改为成对比较分句：
-- 两边分句必须有明确相反极性；
-- 必须共享至少一个非停用主题字；
-- ANTONYMS 词对必须在同一对共享主题的分句内出现；
-- “不要冷冰冰”不能单独与“喜欢语气词”拼接成反义。
-保留主题匹配要求，避免只因“喜欢/讨厌”等泛词判冲突。
+本轮设计裁决：
+1. **B1 confidence**：`emotion_appraisal` 与 `emotion_appraisal_items` 增加 `confidence_kind` / `confidence_source`；区分 unknown、rule_default、calibrated、legacy_unclassified。旧数值不反推来源。
+2. **B2 dedupe_key**：旧 event 行回填公式冻结为 `legacy:event:<event_id>`；保留已有非空 key，迁移 fixture 必须证明唯一、幂等、不覆盖。
+3. **D3 生命周期**：`effective_end_at = min(non-null ended_at, expires_at)`；较早者退出，end_reason 只解释显式结束，不延长自然到期。
+4. **D1 owner ID**：建议跨受信任设备共享的 opaque UUID，不直接绑定 DSH 登录 ID/手机号/外部账号；最终由负责人确认。EI-2A 可先用 unknown/空 ID。
+5. **D2 third_party**：会话内 opaque 临时 ID，不跨会话关联，不默认读取联系人 ID。
+6. **D4 旧 348 条**：先全部 unknown；known-self/owner/third_party 只做 shadow 候选统计，不自动升级。
+7. **D5 0.65/0.45**：保留为未校准工程 shadow 阈值，不作为心理学真值。
+8. **D6 legacy fallback**：旧 self 视图必须带 `legacyFallback:true`，不得成为可信 self 注入。
+9. **D7 outbox/inbox**：EI-2A 不建、不运行，相关 DDL/传输/ACK/重试留到 EI-2D。
 
-### 2.3 Regression tests
+新增独立报告：
+- `EI-REPORT-0005.md`
+- 分支：`ei/pre-ei2a-review-01`
+- commit：`4992a313f72326caa4b5e84558005a53db239af0`
+- blob：`e23d98c920f1a9979e1e83400123288e3ee8c88f`
 
-在 `tests/p4.test.mjs` 新增：
-- 已 supersede 且仍 status=active、仍有最高相似度向量的旧记录，不得成为邻居；应选中有效 active 记录。
-- “主人喜欢带有语气词的句子” + “主人希望汐说话带语气词，活泼些，不要冷冰冰”不判 opposition。
-- 对上述文本在相似度 0.95 时，`decideConflict` 应返回 merge。
-既有喜欢海/讨厌海、爱吃辣/讨厌吃辣等正向冲突测试仍保留。
+### 2.3 当前状态与门禁
 
-## 3. GitHub 文件核验
+- EI-1：代码隔离 PASS；设备复验 NOT RUN。
+- EI-2：设计文档已补齐 B1/B2/D3，其他决策已按上表收口。
+- D1 owner ID 等待负责人最终确认。
+- **EI-2A 未获授权、未启动**。
+- 未修改 Persona 生产 DB/插件目录/profile/config；未部署、未重启、未启动 staging；未合并 main。
 
-| 文件 | Blob SHA |
-|---|---|
-| `lib/ingest/p4.js` | `e05b9c30b31d9e8546d67eb256ebdfdbea6bfdb8` |
-| `lib/ingest/conflict.js` | `cb960430d163d1c40be60a778162af19b5904ce4` |
-| `tests/p4.test.mjs` | `4ed68ce0de11a7c3b89de21a6c723c6421ef4100` |
+## 3. Android 与 Autonomy：v4 设计对齐继续保留
 
-最新 commit：`d9d50ac087e40cef0de03f96e2a05248cfe4e5e2`。GPT 已重新 fetch 文件并核对 blob SHA。
+两条线当前没有运行中的任务，但仍是项目主线，不得因 Memory/EI 优先推进而搁置。
 
-## 4. 验证状态
+### Android v4
+- commit：`3dd5d321929b8f3e308663f48bc55292bce4de8a`
+- blob：`76924c81f6b5b165e55dd797f3927408b84bfac9`
+- 后台恢复协议 v4 与 Autonomy v4 已完成设计对齐。
 
-- GPT 未运行 Node 测试。
-- P4 定向测试：NOT RUN。
-- conflict 定向测试：NOT RUN。
-- Memory 全量测试：NOT RUN。
-- DSH 隔离 worktree 复验：待执行。
-- 生产 DB/冲突队列/记忆状态：未改。
-- staging/host、部署、重启：NOT RUN。
+### Autonomy v4
+- commit：`1925037998a301550e96112e042ed6eb05df2440`
+- blob：`26584df51148547baa357b109bf55aac43865ac0`
+- 关键约定：请求一文件、回执不自动清理、原始字节 SHA256、60 秒半写观察窗、80% 告警每天最多一次、BACKPRESSURE 后 6 小时仅紧急请求、ledger 明细 TTL 与永久 tombstone 分离。
 
-当前代码状态：**已提交开发分支，等待 DSH 验证；不得标记修复 PASS。**
+两线仍未完成 DSHA 真机 kill/reboot、双 worker、目录 watch、fsync、ENOSPC、f2fs 发布路径和 staging 验证。下一阶段目标是推进真实设备验证前置工作，但不得擅自启动 staging、真机压力测试或生产变更；需要负责人明确安排/授权。
 
-## 5. 数据后修门禁
+## 4. 本轮副作用与下一步
 
-只有代码验证通过后，才由负责人单独授权处理：
-- #185：修正 active 与 superseded_by/valid_to 不一致；
-- #8：根据真实证据决定 resolved/stale，不自动清理；
-- #355 与 #320：核对后合并/处理。
+### 已完成
+- Memory 隔离分支代码/测试修改（GPT 提交，等待 Memory 专项验证）。
+- EI-2 设计文档修订与 EI-REPORT-0005。
+- 本报告与 HANDOFF 状态同步。
 
-本轮不执行任何数据修复，不更新生产向量，不改生产冲突队列。
+### 等待
+1. Memory 智能体复跑 GPT 两个新提交并回报 MEMORY-REPORT-0006。
+2. D1 owner ID 最终确认；EI-2A 仍等待负责人当前对话明确授权。
+3. Android/Autonomy v4 真机验证仍待后续安排与授权。
+
+### 未做
+- 未写/迁移/删除生产 DB；
+- 未改生产源码、profile/config；
+- 未部署、未重启、未启动 staging；
+- 未合并 Memory 或 Persona 主开发分支；
+- 未执行 DSHA 真机后台恢复测试；
+- 未将 EI-1 隔离测试结果表述为生产通过。
