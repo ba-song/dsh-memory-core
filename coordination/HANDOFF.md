@@ -3812,3 +3812,42 @@ GPT 已实际回读修复后文件与 GitHub compare，确认没有业务代码�
 等待 Memory 智能体针对修复后 HEAD `37fb441fbe39dee715340f8204c16e3a3fe4782e` 重新独立验证：定向测试、weekly 单文件、相关回归、全量测试三次，以及原 E1–E7 负向对照。验证报告仍由 Memory 智能体提交至 `coordination/Memory 智能体报告.md`；共享 HANDOFF/REPORT 由 GPT 统一维护。
 
 边界不变：不触生产、不部署、不启动 staging、不合并主线、不运行真实 weekly apply。Batch E PASS 后仍须另行进行 A–E 统一集成和生产只读核查；部署需要单独授权。
+
+
+---
+
+## 2026-11-21 17:4x · GPT 统筹复核 · HANDOFF-0072（Batch E PASS；进入统一集成审查）
+
+### Memory Batch E：weekly 周结统一 current validity 与事务/CAS 加固
+
+- 仓库：`ba-song/dsh-memory-core`
+- 分支：`feat/memory-validity-batch-e`
+- 验证 HEAD：`4bf92aad8c069e92f3521e6a7cdf4c7b79559e3c`
+- tree：`efff01dc63e8bddcdbeb79c430692cf4e26f18aa`
+- 基线：Batch D PASS @ `5500d04e0e49ebb8168e7356de3c082a9e0e722e`；Batch E 原始实现基线 `e3976101a14356819a15d09b69ee4328f194887b`；相对后者 ahead 2 / behind 0。
+- 最终 compare 仅一个文件变化：`tests/weekly.test.mjs`，2 additions / 2 deletions。
+- `lib/consolidate/weekly.js` blob：`61083aaaaff3fbc6927490045a92246ee9b1d05f`（业务代码未变）。
+- `tests/weekly.test.mjs` blob：`a8cf3cdb362a76a6fe29072840b495325994471a`。
+- `lib/store/validity.js` blob：`7aabea0efff2b9d5fe40acea19fcc4609f5e87e6`（未变）。
+- 修复提交：`4bf92aad8c069e92f3521e6a7cdf4c7b79559e3c`，将未来 validTo 从 importance 0.7 keeper fixture 移至 importance 0.6 member fixture；固定 now 参数保留；断言未改。
+- Memory 专项报告：`MEMORY-REPORT-0017`；报告 commit `d590bf5208482c159bed8ce9fd9946eda0a34ff8`；blob `3dfe3645a0480fefa3c0b77a9f9c4b19fdf37b00`。
+
+### GPT 独立核对与裁决
+
+GPT 已从 `coordination/project-handoff` 回读完整 MEMORY-REPORT-0017，并从 GitHub 回读 weekly.js、weekly.test.mjs、validity.js、修复 commit diff 和 compare。核对结果与报告一致：
+
+- 定向 weekly + validity：30/30 × 3；weekly 单文件：6/6；六文件回归：53/53。
+- 全量 `npm test`：305/305 × 4，0 fail / 0 skip。
+- E1–E7 七组负向对照均由语义断言失败证明，恢复后逐字节一致。
+- current 候选过滤、dry-run/apply 同源、事务内重读、revision/validity 复核、snapshot + CAS 同事务、valid_to clamp、缺表/CAS 失败整体回滚、keeper 更新门禁均经报告证据与静态代码复核。
+- 测试执行证据来自 Memory 智能体独立 worktree；GPT 未亲自运行 Node 测试。
+
+**GPT 裁决：Batch E 隔离代码验证 PASS。A–E 五批均已取得隔离代码验证 PASS。**
+
+### 状态边界与下一步
+
+- 本 PASS 不代表生产验证、设备验证、A–E 集成、主线合并或部署通过。
+- 未写生产 DB，未修改生产插件/profile/config；未部署、重启、启动 staging；未执行真实 weekly 调度/apply；未合并主线。
+- 下一步进入 **A–E 统一集成审查**：先只读核对分支祖先链、最终累计 diff、文件覆盖关系、调用点与统一 validity helper 语义、测试覆盖及跨批次兼容性；形成集成审查报告和风险清单。
+- 统一集成审查不自动授权合并、生产验证、staging 或部署。若发现需要改代码，先列明具体文件/风险/最小修复方案，再向负责人请求对应授权。
+- Android / Autonomy v4 设计对齐继续保留在项目主线；真实设备后台恢复验证仍 NOT RUN，不能因 Memory A–E 通过而搁置。
