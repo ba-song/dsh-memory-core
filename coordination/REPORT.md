@@ -146,3 +146,43 @@ GPT 已更新 `EI-2-PERSISTENCE-DESIGN-01.md`：
 - 未合并 Memory 或 Persona 主开发分支；
 - 未执行 DSHA 真机后台恢复测试；
 - 未将 EI-1 隔离测试结果表述为生产通过。
+
+
+---
+
+## 2026-11-21 · GPT 统筹复核 · REPORT-0016（对应 HANDOFF-0059）
+
+### 1. Memory：strict graph diagnostic lane 隔离复验 PASS
+
+- 仓库：`ba-song/dsh-memory-core`
+- 分支：`feat/memory-validity-unified`
+- 验收 HEAD：`c437c460d8378cbf6493a5e4e12d673c4334d50f`
+- 提交链：`b4606e1c66f1afb94cb154b7ec96423103477029` → `d6521c10d8ff4c01cdaa0cd5712f3921b7ac43b4` → `1d0a163c3878208af8f9f523dd56575cc4b06687` → `c437c460d8378cbf6493a5e4e12d673c4334d50f`
+- Memory 专项报告：`MEMORY-REPORT-0007`；commit `5109676ac15a06e830ea15df2a5cfe77b9b19506`；blob `1eca4afcaa8e5606b2193a0451b6c9d08d0c1da7`。
+
+GPT 独立核对：
+1. GitHub compare 确认分支相对 `b4606e1` ahead 3、behind 0，修改范围仅 `graph.js`、`recall.js`、`asof-graph-uncertain.test.mjs)。
+2. 分支 HEAD 确认是 `c437c460d8378cbf6493a5e4e12d673c4334d50f`。
+3. 三个文件当前 blob 分别为 `94a196c27455a0a8601ef40889352eb46d2086ac`、`6fda81efb6cc21ef5f9daf913ceea944e5bb2dbb`、`3a0d514661643fd34db804f9492620223b39c9f3`，与报告一致；并确认 hopStrict、recall strict lane 和 hop/hopStrict 重叠断言存在。
+
+Memory 智能体报告的隔离测试证据：
+- 定向：2/2、5/5、1/1、13/13；
+- 完整有效性集合：47/47；
+- 全量 `npm test`：**298/298、0 fail、0 skip、exit 0**；
+- 三组负向对照 A/B/C 均按预期失败，恢复后测试全绿。
+- 测试执行主体是 Memory 智能体；GPT 本轮未亲自运行 Node 测试。此证据不等同生产验证。
+
+**裁决：C 方案（普通 hop + 独立 hopStrict 诊断通道）隔离开发验证 PASS。**
+
+### 1.1 残留风险（不阻塞本轮）
+
+- `candidateIds` 仍通过 `g.unknownHop` 兼容别名取候选，而 `unknownIds` 使用 `g.hopStrict ?? g.unknownHop`；当前是同一 Map，建议后续统一。
+- `hopStrict` 状态域仍限定 `status='active'`，与 asOfHistory 允许 archived/expired 的范围不一致；需独立裁决。
+- preference / session-index / remembered / merge / daily / weekly / brief 等其他调用点尚未接入统一 validity helper。
+- 生产 as-of **NOT RUN**；本轮未触碰生产 DB/插件目录/profile/config，未部署、重启、启动 staging，未合并主开发分支。
+
+### 1.2 下一步
+
+- 本轮只完成 strict graph lane 验证与共享状态同步；不自动扩大到其他调用点。
+- 后续可按风险分批规划其他 Memory 调用点接入；生产 as-of、主线合并、部署/迁移均需单独评估与负责人当前授权。
+- EI、Android、Autonomy 维持原状态；Android/Autonomy v4 设计对齐继续保留主线，当前无任务运行，真实设备验证待后续安排与授权。
