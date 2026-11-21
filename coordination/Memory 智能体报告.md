@@ -1,10 +1,10 @@
-# MEMORY-REPORT-0019 · Memory 记忆智能体报告
+# MEMORY-REPORT-0020 · Memory 记忆智能体报告
 
 > 会话：Memory 记忆智能体（Memory 领域专业智能体）
 > 任务标识：v17 `MEM-VALIDITY-BATCH-E-REVERIFY-03` → v18 `MEM-WAKE-CAPTURE-DECISION-01` → **v19 `MEMORY-MINIMAL-INTEGRATION-VERIFY-01`**
 > 覆盖任务：Batch A PASS → Batch B PASS → Batch C PASS → Batch D PASS → **Batch E（weekly）第三次复验**
 > 仓库：`ba-song/dsh-memory-core`｜本文件覆盖式更新、版本号递增
-> 最近更新：2026-11-21 18:5x (Asia/Shanghai) · v19
+> 最近更新：2026-11-21 19:3x (Asia/Shanghai) · v20
 
 ## 版本历史
 
@@ -17,7 +17,8 @@
 | MEMORY-REPORT-0016 | 17:1x | Batch E 二验 BLOCKED（validTo 放错行） |
 | MEMORY-REPORT-0017 | 17:4x | **Batch E 三验：PASS（隔离代码验证）** —— 305/305 ×4、30/30 ×3、53/53、7/7 负向对照 |
 | MEMORY-REPORT-0018 | 18:2x | 设计决议：自主唤醒回合自动写入（方案 A，待实现） |
-| MEMORY-REPORT-0019 | 18:5x | **最小集成分支验证：BLOCKED** —— 缺 `lib/time/anchor.js`；6 个既有测试因行为变更未同步；35 个测试文件未带入 |
+| MEMORY-REPORT-0019 | 18:5x | 最小集成分支首验：BLOCKED（缺 `lib/time/anchor.js`） |
+| MEMORY-REPORT-0020 | 19:3x | **A：最小集成分支复验（新 HEAD `a9ad91c`）仍 BLOCKED（4 项）；B：`feat/memory-wake-capture`（`0fdae98`）PASS（143/143）** |
 
 ---
 
@@ -318,3 +319,36 @@ HEAD:lib/store/validity.js    = 7aabea0efff2b9d5fe40acea19fcc4609f5e87e6
 
 - 只读验证；未改分支代码、未提交/推送；未连生产库（全部临时目录 + 独立 `DY_MEMORY_DIR`）；未启动插件、未重启、未改 profile/config；未改共享 HANDOFF/REPORT。
 - **临时库迁移验证**：已完成（见 10.4）。**真实生产库迁移验证：NOT RUN**。
+
+
+---
+
+## 11. 双任务复验（2026-11-21 19:3x）
+
+### 11.1 任务 A：`feat/memory-validity-minimal-integration` @ `a9ad91cf9f5099bbfa1e0da9a6cdecb8f1d4f9ff`
+
+- compare vs main `752cd08`：ahead **37** / behind 0；33 文件（15 源码 + 18 测试）。
+- P0 已修：`lib/time/anchor.js` 已在（blob `94c8d44a…`），接口与 daily.js 匹配；全库相对 import 扫描无缺失。
+- P1 已修：此前 6 个失败测试现全过。
+- 全量：**181 tests / 177 pass / 4 fail / 0 skip，exit 1**。
+- 4 项失败（须 GPT 修）：
+  1. `tests/validity.test.mjs:28` 预设枚举仍为 4 个，实际 7 个（stale）。
+  2. `tests/preference-round3.test.mjs:10`：`lib/inject/hits.js` 缺 `filterPersistentPreferenceHits`（P4 分支有；本分支 `index.js` 也未做 preference 命中过滤 → M1 功能缺口）。
+  3. `tests/preference-lifecycle.test.mjs:10`：`lib/clarity.js` 缺长期偏好豁免（`persist=true && long_term → vivid`）→ 长期偏好会被衰减 forget。
+  4. `tests/schema-migration-atomic.test.mjs`：缺 `tests/fixtures/schema-v4-ddl.mjs`。
+- 仍缺 26 个测试文件（asof-graph-uncertain、event-chain、hits-noise/query、graph-scope-isolation、pending-audit、conflict-resolve-closure、rules-* 等）。
+- 迁移 8 场景在本 HEAD 全部 PASS（含 S7 回滚：version 保持 3、无半迁移残留）。
+- 负向：N1–N8 PASS；N9（非 owner 注入）无观测差异（守卫存在但现有测试不覆盖）。
+- 结论：**BLOCKED**。
+
+### 11.2 任务 B：`feat/memory-wake-capture` @ `0fdae98860be9fb71f74081c1cf79fa963227ae2`
+
+- compare vs main：6 文件（`lib/index.js`、`lib/ingest/archive.js`、`lib/ingest/wake.js`(新)、`lib/store/schema.js`、`tests/archive.test.mjs`、`tests/wake-capture.test.mjs`）。
+- 全量：**143 tests / 143 pass / 0 fail / 0 skip，exit 0**；定向 8/8；`node --check` 三个文件 OK。
+- 归档探针：wake/manual 入 raw 且 `extra.sourceKind` 正确；未授权来源被拒；普通 user 与图片行为不变。
+- 回合胶水探针（6 例）：首条 user 判定、未知来源、非 owner、重复 turn/end、跨 session 全符合。
+- schema 探针：partial unique index 在老库创建成功；重复 wake key 被 UNIQUE 拒绝。
+- 负向 N1–N10 全部由断言失败捕获（来源白名单、首条限制、owner 门禁、sourceKey 幂等、向量去重、每日上限、串行化、sourceKind 持久化、self-thought 独立入库、摘要失败继续写）。
+- 结论：**PASS（隔离代码验证）**。
+
+生产库/真实设备/部署：**NOT RUN**。
