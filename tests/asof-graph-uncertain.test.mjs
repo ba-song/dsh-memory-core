@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { openDb } from '../lib/store/db.js'
 import { insertMemory } from '../lib/store/memories.js'
-import { linkMemory } from '../lib/store/graph.js'
+import { graphCandidates, linkMemory } from '../lib/store/graph.js'
 import { recall } from '../lib/recall/recall.js'
 
 test('as-of recall reports graph-only unknown-validity neighbours as uncertain', async () => {
@@ -29,6 +29,14 @@ test('as-of recall reports graph-only unknown-validity neighbours as uncertain',
     })
     linkMemory(db, seedId, '鲸鱼和主人一起讨论了海边旅行', at)
     linkMemory(db, unknownId, '主人曾经提到一件没有时间标注的往事', at)
+
+    const graph = graphCandidates(db, '鲸鱼', {
+      asOf: at,
+      preset: 'asOfHistory',
+      includeUnknownHops: true,
+    })
+    assert.ok(graph.hop.has(unknownId), 'asOfHistory hop may admit the created_at approximation')
+    assert.ok(graph.hopStrict.has(unknownId), 'strict diagnostic lane must retain the same missing-valid_from hop')
 
     const rows = await recall(db, '鲸鱼', {
       asOf: at,
