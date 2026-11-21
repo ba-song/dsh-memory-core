@@ -1,9 +1,9 @@
-# MEMORY-REPORT-0008 · Memory 记忆智能体报告
+# MEMORY-REPORT-0009 · Memory 记忆智能体报告
 
 > 会话：Memory 记忆智能体（Memory 领域专业智能体）
-> 覆盖任务：`MEM-P4-TEMPORAL-VERIFY-01`（v1）→ `MEM-VALIDITY-R5-01`（v2）→ `MEM-VALIDITY-IMPL-01`（v3）→ `MEM-VALIDITY-INTEGRATION-01`（v4）→ `MEM-VALIDITY-INTEGRATION-REVIEW-FIX-01`（v5）→ `MEM-VALIDITY-GPT-FIX-VERIFY-01`（v6）→ `MEM-VALIDITY-GRAPH-STRICT-LANE-VERIFY-02`（v7）→ `MEM-VALIDITY-BATCH-A-VERIFY-01`（v8，本轮）
+> 覆盖任务：v1 P4 时间有效性 → v2 R5 语义 → v3 helper+P4 → v4 recall/graph/event-chain → v5 FTS/uncertain → v6 复核 `697de1e`+`b4606e1` → v7 strict graph lane → v8 Batch A → **v9 Batch B（本轮）**
 > 仓库：`ba-song/dsh-memory-core`｜迭代规则：本文件覆盖式更新、版本号递增，不新增同类文件
-> 最近更新：2026-11-21 13:3x (Asia/Shanghai) · v8
+> 最近更新：2026-11-21 13:5x (Asia/Shanghai) · v9
 
 ## 版本历史
 
@@ -15,208 +15,266 @@
 | MEMORY-REPORT-0004 | 11:5x | recall / graph / event-chain 接入（38844d1）：292/292 |
 | MEMORY-REPORT-0005 | 12:2x | FTS 状态域 + uncertain 时间边界（4b4f927）：297/297 |
 | MEMORY-REPORT-0006 | 12:5x | 复核 `697de1e`+`b4606e1`：PARTIAL |
-| MEMORY-REPORT-0007 | 13:0x | 复核 strict graph lane（c437c46）：PASS，298/298 |
-| MEMORY-REPORT-0008 | 13:3x | **Batch A（preference + remembered）验证：PASS**，298/298，两组负向对照按预期失败 |
+| MEMORY-REPORT-0007 | 13:0x | strict graph lane（c437c46）：PASS，298/298 |
+| MEMORY-REPORT-0008 | 13:3x | Batch A（preference + remembered）：PASS，298/298 |
+| MEMORY-REPORT-0009 | 13:5x | **Batch B（session-index + handoff brief）：BLOCKED** —— 3 处 fixture 与 `status NOT NULL` 冲突，4 个测试失败 |
 
 ---
 
-## 0. 结论：**PASS**
+## 0. 结论：**BLOCKED**
 
-| 验证项 | 判定 | 关键证据 |
+| 项 | 判定 | 证据 |
 |---|---|---|
-| 基线 HEAD 与四提交 | **PASS** | HEAD `5797324`；`c437c46 → 9546471 → 0edc81a → 4bd4644 → 5797324` |
-| 四文件 blob 与任务预期一致 | **PASS** | 与任务书给定的 4 个 SHA 完全相同 |
-| preference 接入语义（A.1–A.10） | **PASS** | 单一 `validity` 实例、参数顺序、owner/kind/meta/预算/排序全保持 |
-| remembered 接入语义（B.1–B.10） | **PASS** | 新增可注入 `now`、默认不变、参数顺序正确、跳过原因不变 |
-| 定向测试 | **PASS** | 2/2、exit 0 |
-| 回归测试 | **PASS** | 16/16、exit 0 |
-| 全量 `npm test` | **PASS** | **298/298、0 fail、0 skip、exit 0** |
-| 负向对照 ×2 | **PASS** | 两组均按预期失败，恢复后全绿 |
-| 生产 / 部署 / 合并 | **未触碰** | 见 §10 |
+| 基线 HEAD / 树 / ahead-behind | **PASS** | `29a18fd`、tree `9b1218e4…`、ahead 6 / behind 0 |
+| 六个文件 blob | **PASS** | 与任务给定 6 个 SHA 逐一相同 |
+| helper 两个新预设的 SQL 形态 | **PASS** | 逐字核对（§10） |
+| SQL ↔ `isValidAt()` 镜像 | **PASS（JS 直测）** | 矩阵一致；镜像变异对照能捕获（§11/§16） |
+| session-index 实现行为 | **PASS（独立探针）** | active/'' 收，future/expired/superseded/group 不收（§13） |
+| handoff brief 实现行为 | **PASS（独立探针）** | active/'' 收，future/expired/superseded/pending 不收；隔离正确（§14） |
+| **提交的测试能否运行** | **FAIL（阻塞）** | 3 处 `SET status=NULL` 违反 `memories.status NOT NULL` → 4 个测试失败 |
+| 定向 / 回归 / 全量 | **FAIL** | validity 21/23；session-index 0/1；handoff 0/1；全量 **296/300、4 fail、0 skip、exit 1** |
+
+**阻塞点唯一且明确**：`tests/session-index.test.mjs:19`、`tests/handoff-brief.test.mjs:15`、`tests/validity.test.mjs:183` 都执行 `UPDATE memories SET status=NULL`，而 `memories.status` 在仓库 DDL（`lib/store/schema.js:77`）与生产库（`PRAGMA table_info` → `notnull=1`）都是 `TEXT NOT NULL DEFAULT 'active'`。该 UPDATE 必然抛 `NOT NULL constraint failed: memories.status`，测试无法到达断言。
+**代码层实现经独立探针验证符合设计**；按任务要求「不删除断言、不跳过测试、不放宽预期」，本轮不修改测试，提交证据与修复选项待 GPT 决定。
 
 ---
 
-## 1. 基线与提交（已核对）
+## 1. 仓库、分支、基线
 
 | 项 | 值 |
 |---|---|
-| 仓库 / 分支 | `ba-song/dsh-memory-core` / `feat/memory-validity-unified` |
-| 上一基线 | `c437c460d8378cbf6493a5e4e12d673c4334d50f` |
-| **验证 HEAD** | **`5797324175f345ff82337f409d8406e5256ddfc3`**（与任务一致，分支未前进） |
-| 提交 1 | `9546471391117c40668049f32bf8800d4aae8b90`（preference 接入，parent `c437c46`） |
-| 提交 2 | `0edc81ae0c375305ca885ac7027d2ae6c407788f`（remembered 接入，parent `9546471`） |
-| 提交 3 | `4bd4644653ffa80dd136c192c9335213352ff81b`（preference 测试，parent `0edc81a`） |
-| 提交 4 | `5797324175f345ff82337f409d8406e5256ddfc3`（remembered 测试，parent `4bd4644`） |
-| diff（c437c46→5797324） | 4 文件 +36/−19；无其他文件 |
-| 环境 | Node **v24.19.0**、`node:sqlite`；独立 worktree `/tmp/memaudit/batchA`（detached @ 5797324）；`node_modules` 复用既有目录，未安装/升级 |
-| 仓库 AGENTS.md | `git ls-tree -r` 确认**仓库树内无 AGENTS.md**；已遵循项目 AGENTS.md（工作区版）与本会话目录规则 |
-| 协调文档 | 已重读最新 `HANDOFF.md`（blob `bee03e17…`，含 §56/§57）与 `REPORT.md`（blob `fc4d01dd…`）；本轮未修改 |
+| 仓库 / 分支 | `ba-song/dsh-memory-core` / `feat/memory-validity-batch-b` |
+| 分支 HEAD（实测） | **`29a18fdcbaf95ff6042c8ef8eb5b678577e26129`**（与指定值一致，未前进） |
+| 相对 Batch A 基线 | `5797324…` → ahead **6** / behind **0** |
+| 树 SHA | `9b1218e42f1b7b1050bf5d71baa6730fd31d5736`（与任务一致） |
+| 六个提交 | `ebe3cb8` feat → `621aedd` test → `e52aa6d` fix mirror → `54c1f77` test → `901fadc` correct assertions → `29a18fd` preserve fixtures |
+| 环境 | Node **v24.19.0**、`node:sqlite`；独立 worktree `/tmp/memaudit/batchB`（detached @ 29a18fd）；未安装/升级依赖 |
+| 仓库 AGENTS.md | `git ls-tree -r` 确认**仓库树内无 AGENTS.md**；已遵循工作区 AGENTS.md 与会话目录规则，并重读最新 `HANDOFF.md`(`bee03e17…`) / `REPORT.md`(`fc4d01dd…`) |
 
-## 2. 四个文件实际 blob（与任务预期一致）
+## 2. 六个文件实际 blob（全部与预期一致）
 
-| 文件 | 实际 blob | 任务预期 |
-|---|---|---|
-| `lib/inject/preference.js` | `d28bacc5a0c1477a751dada0040243581213b4e5` | 一致 |
-| `lib/inject/remembered.js` | `4d3a5f2af4e61531581ed01fe778dffdd567f14e` | 一致 |
-| `tests/preference-inject.test.mjs` | `08f170ce8ddf7cb4907ebec77c38fc18666454c6` | 一致 |
-| `tests/remembered.test.mjs` | `3bf6dbf49cf6062e9e39e41810bd629219ac8f35` | 一致 |
-
-`lib/store/validity.js` blob `00c4d948ccb2973d48d95aebb07d230c8f44854c` —— **与 v7 相同，helper 未被改动**（符合"不改 validity helper"边界）。
-
----
-
-## 3. 代码语义核对
-
-### 3.1 preference（A.1–A.10）
-
-| 检查项 | 结论 | 证据 |
-|---|---|---|
-| A.1 使用 `validitySql({preset:'current', at:Number(now)})` | PASS | `lib/inject/preference.js` 新增 `const validity = validitySql(...)`，位于 `try` 块内 |
-| A.2 两路查询共享同一 SQL 与时点 | PASS | 同一个 `validity` 对象被 recentRows/stableRows 复用；探针捕获 2 条查询，均含同一片段 |
-| A.3 参数顺序：先有效性、再 scope | PASS | SQL 文本 `${validity.sql}` 在 `${w.sql}` 之前；绑定 `...validity.params, ...w.params`；探针显示 2 个占位符且 validity 片段在前 |
-| A.4 仅 owner scope | PASS | `if (scope?.level !== 'owner') return ''`（未改）；外部 scope 测试仍返回 `''` |
-| A.5 kind / scope_type / scope 隔离不变 | PASS | `kind='preference' AND scope_type='owner' AND ${w.sql}` 保持；contact 私有记录仍不注入 |
-| A.6 meta persist / long_term 筛选不变 | PASS | `if (!meta || meta.persist !== true \|\| meta.persistence !== 'long_term') continue`（未改） |
-| A.7 排序/去重/门槛/条数/预算不变 | PASS | `ORDER BY` 两路原样；`rowsById` 合并去重、`PREFERENCE_MAX_ITEMS=3`、`PREFERENCE_BUDGET=180`、`fit()` 未改；`tests/preference-round3` 通过 |
-| A.8 future / 过期 / superseded 不进入 | PASS | 定向测试断言 `!block.includes('未来才生效')`、`'已过期'`、`'已被替代'`；负向对照证明旧过滤会泄漏 |
-| A.9 损坏 meta 安全跳过 | PASS | `json_valid(meta)` 仍在 SQL；探针：插入 `meta='{bad json'` 后 block 正常返回且不含该行 |
-| A.10 `now` 默认值与调用兼容 | PASS | 默认 `now = Date.now()` 未改；`lib/index.js:1239` 显式传 `now: Date.now()` 行为不变 |
-
-### 3.2 remembered（B.1–B.10）
-
-| 检查项 | 结论 | 证据 |
-|---|---|---|
-| B.1 使用同一 `current` helper | PASS | `const validity = validitySql({ preset:'current', at:Number(now) })` |
-| B.2 `now` 可由调用方注入 | PASS | 签名新增 `now = Date.now()`；测试注入固定 `now` |
-| B.3 默认行为不变 | PASS | 默认值即 `Date.now()`；`lib/inject/stable.js:218` 不传 `now`，行为不变 |
-| B.4 参数顺序：先有效性、再 scope | PASS | SQL `${validity.sql} AND ${w.sql}`；绑定 `...validity.params, ...w.params`；探针（external scope，3 个 scope 参数）显示共 5 个占位符且 validity 在前 |
-| B.5 kind 白名单 / scope / 排序 / LIMIT 80 不变 | PASS | `kind IN ('preference','relation','skill')`、`ORDER BY pinned DESC, importance DESC, COALESCE(...) DESC`、`LIMIT 80` 均未改 |
-| B.6 preference 跳过原因不变 | PASS | `skipped.push({ reason: 'preference-managed-separately' })` 未改；测试断言仍成立 |
-| B.7 fact 不进入 | PASS | kind 白名单未含 fact；测试 `!block.includes('[fact]')` |
-| B.8 stableText 去重/连接词/字符/预算不变 | PASS | `overlaps`、`truncated-connector`、`MAX_ITEMS=8`、`MAX_ITEM_CHARS=50`、400 字预算均未改；`tests/remembered` 覆盖 |
-| B.9 future / superseded 不进入 | PASS | 测试断言 + 负向对照证明旧过滤会泄漏 |
-| B.10 DB 异常返回空结构 | PASS | `catch { return { block:'', count:0, skipped:[] } }`；探针在已关闭 DB 上调用返回该结构 |
-
-### 3.3 重点风险（C）
-
-| 风险 | 结论 |
+| 文件 | 实际 blob |
 |---|---|
-| 占位符与参数顺序 | 两文件均为「先 validity(2 参) 再 scope」，探针实证 |
-| `scopeWhere` 参数拼接 | external scope 3 参场景查询返回正确记录，参数未错位 |
-| 两路 preference 是否共享同一 `now` | 同一 `validity` 对象，共享 |
-| remembered 新参数是否改变旧调用方 | 默认 `Date.now()`，`stable.js` 不传参行为不变 |
-| 空结果 / scope 不匹配 / 异常时返回结构 | 与旧版一致（`''`、`{block,count,skipped}`） |
-| 是否有其他文件被意外修改 | `git diff --name-only c437c46 5797324` 仅 4 个预期文件 |
+| `lib/store/validity.js` | `e2be1294e52e33724e1cd8c815dd418b8a883f2b` |
+| `lib/inject/session-index.js` | `e155f1ce1ab147828c381d05532323e2cce0cebc` |
+| `lib/handoff/brief.js` | `e8938ffc924f374d553017263d506472a5cacca0` |
+| `tests/session-index.test.mjs` | `8739a4021f2eb940bc4bbf2d7538bbbbf2849a98` |
+| `tests/handoff-brief.test.mjs` | `a900ff121118beaaae29d1920aad1cfbe922d179` |
+| `tests/validity.test.mjs` | `d4c0a164eb19875f836090156b859653a019fc75` |
+
+## 3. 工作区
+
+```
+git status --short → ?? node_modules   （仅符号链接）
+git diff --check   → 无输出            EXIT=0
+git diff --stat    → 空
+```
 
 ---
 
-## 4. 定向测试（真实输出）
+## 4. session-index 定向测试
 
 ```
-node --test tests/preference-inject.test.mjs tests/remembered.test.mjs
-tests 2 / pass 2 / fail 0 / skipped 0
-EXIT=0
+node --test tests/session-index.test.mjs
+✖ tests/session-index.test.mjs
+tests 1 / pass 0 / fail 1 / skipped 0
+EXIT=1
+Error: NOT NULL constraint failed: memories.status   (tests/session-index.test.mjs:19)
 ```
 
-## 5. 回归测试
+## 5. handoff brief 定向测试
 
 ```
-node --test tests/preference-lifecycle.test.mjs tests/preference-merge.test.mjs \
-             tests/session-index.test.mjs tests/validity-integration.test.mjs
-tests 16 / pass 16 / fail 0 / skipped 0
-EXIT=0
+node --test tests/handoff-brief.test.mjs
+✖ tests/handoff-brief.test.mjs
+tests 1 / pass 0 / fail 1 / skipped 0
+EXIT=1
+Error: NOT NULL constraint failed: memories.status   (tests/handoff-brief.test.mjs:15)
 ```
 
-## 6. 全量测试
+## 6. validity helper 定向测试
+
+```
+node --test tests/validity.test.mjs
+tests 23 / pass 21 / fail 2 / skipped 0
+EXIT=1
+✖ validity: legacy todo JS mirror and SQL sets preserve NULL/empty distinctions   → line 183 NOT NULL
+✖ db: current 视图                                                                → line 198（级联：前一测试留下的 3 条 todo 污染共享 DB 的精确集合断言）
+```
+
+单测隔离证据（`--test-name-pattern`）：
+- `legacy todo presets preserve distinct status domains…` → **PASS**（SQL 形态正确）。
+- `legacy todo JS mirror …` → FAIL（仅在 NULL fixture 处失败）。
+
+## 7. 相关回归测试
+
+```
+node --test tests/preference-inject.test.mjs tests/remembered.test.mjs \
+             tests/preference-lifecycle.test.mjs tests/preference-merge.test.mjs \
+             tests/session-index.test.mjs tests/handoff-brief.test.mjs \
+             tests/validity-integration.test.mjs
+tests 19 / pass 17 / fail 2 / skipped 0
+EXIT=1
+```
+失败即上述两个 Batch B 测试文件；其余 5 个文件全绿。
+
+## 8. 全量测试
 
 ```
 npm test
-tests 298 / pass 298 / fail 0 / skipped 0
-EXIT=0
+tests 300 / pass 296 / fail 4 / skipped 0
+EXIT=1
 ```
-（控制组恢复后再次运行仍为 298/298/0/0、exit 0。）
+失败 4 项：`handoff-brief.test.mjs`、`session-index.test.mjs`、`validity: legacy todo JS mirror…`、`db: current 视图`。
 
-## 7. 工作区
+## 9. `git diff --check`
 
-```
-git rev-parse HEAD   → 5797324175f345ff82337f409d8406e5256ddfc3
-git status --short   → ?? node_modules        （仅符号链接）
-git diff --check     → 无输出                 EXIT=0
-git diff --stat      → 空（工作树与 HEAD 一致）
-```
+无输出，`EXIT=0`。
 
 ---
 
-## 8. 两项负向对照（scratch 修改，逐字节恢复）
+## 10. 两种 todo status domain 的真实 SQL 与参数顺序（实测字符串）
 
-### 对照 1：preference 恢复旧过滤（`status='active'` + `valid_to`）
-
-- 改动：两路查询的 `${validity.sql}` → `status='active' ... AND (valid_to IS NULL OR valid_to>?)`，绑定改回 `...w.params, Number(now)`。
-- 结果：**定向测试失败**（exit 1）。失败位置在 `block.includes('长期记录 A'/'长期记录 B')`（line 27/28 —— 两次运行因 `created_at_epoch` 毫秒并列、排序不同而在 27 与 28 间摆动；这是**被破坏代码下的不稳定**，恢复后稳定通过）。
-- 直接泄漏证据（独立探针，旧过滤下）：
-
-```json
-{"block":"【长期偏好】\n- 未来才生效的记录\n- 已被替代的记录\n- 正常长期记录\n【长期偏好结束】",
- "leaksFuture":true,"leaksSuperseded":true}
+```
+currentTodoActiveEmpty
+  sql    = (status='active' OR status='') AND (valid_from IS NULL OR valid_from<=?) AND (valid_to IS NULL OR valid_to>?) AND (superseded_by IS NULL OR superseded_by=0 OR superseded_by='')
+  params = [at, at]   （长度 2）
+  domain = (status='active' OR status='')
+currentTodoLegacy
+  sql    = (status='active' OR status='' OR status IS NULL) AND (valid_from IS NULL OR valid_from<=?) AND (valid_to IS NULL OR valid_to>?) AND (superseded_by IS NULL OR superseded_by=0 OR superseded_by='')
+  params = [at, at]   （长度 2）
+  domain = (status='active' OR status='' OR status IS NULL)
+current（未改动）
+  sql    = status='active' AND (valid_from IS NULL OR valid_from<=?) AND (valid_to IS NULL OR valid_to>?) AND (superseded_by IS NULL OR superseded_by=0 OR superseded_by='')
+  params = [at, at]
 ```
 
-- 恢复：`diff -q` 与备份一致；定向测试 **2/2 PASS**。
+调用点参数顺序：`session-index` 与 `handoff brief` 均为 `${validity.sql}` 在前、`LIMIT ?` 在后；绑定 `[...validity.params, limit]`（brief 为 `[pj.id, ...validity.params]`）与 SQL 文本顺序一致。
 
-### 对照 2：remembered 恢复旧过滤
+## 11. SQL ↔ `isValidAt()` 镜像一致性
 
-- 改动：`${validity.sql}` → `status='active' ... AND (valid_to IS NULL OR valid_to>?)`，绑定改回 `...w.params, Number(now)`。
-- 结果：**定向测试失败**（exit 1），断言为 `future valid_from 不得进入当前注入`（`tests/remembered.test.mjs:34`）。
-- 直接泄漏证据（独立探针）：
+JS 直测矩阵（不落库，规避 NOT NULL）：
 
-```json
-{"block":"【记得的事】\n- [relation] 正常关系记录\n- [relation] 未来才生效的事\n- [relation] 已经被替代的事\n【记得的事结束】",
- "leaksFuture":true,"leaksSuperseded":true}
+| status | `current` | `currentTodoActiveEmpty` | `currentTodoLegacy` |
+|---|---|---|---|
+| `'active'` | true | true | true |
+| `''` | false | **true** | **true** |
+| `null` | false | false | **true** |
+| `undefined` | false | false | **true** |
+| `'pending'` | false | false | false |
+| `'archived'` | false | false | false |
+
+与 SQL 域逐格对照一致：`current` = active；`active-empty` = active/''；`active-empty-null` = active/''/NULL。
+
+## 12. NULL / 空字符串 / active 三种状态的实测
+
+- **active**：三个预设均收（探针：session-index 含「活跃待办」，brief 含「活跃待办A」）。
+- **空字符串**：`active-empty` / `active-empty-null` 收（session-index 含「空状态待办」，brief 含「空状态待办B」）；`current` 不收。
+- **NULL**：**在当前 schema 下无法写入**（`NOT NULL`）。生产实测也无 NULL（`status` 分布：active 213 / archived 8 / merged 3 / pending 1，无 NULL、无空串）。JS 镜像对 NULL 的行为符合 `active-empty-null` 设计，但无法通过 DB 路径验证。
+
+## 13. future / valid_to / superseded 实测（独立探针，不依赖被阻塞的 fixture）
+
+session-index（`buildSessionIndex(db,{now})`）：
+
+```
+block = 【跨会话经历】|- 11-21 正常经历|- 约定：空状态待办|- 约定：活跃待办|【跨会话经历结束】
+活跃待办: true   空状态待办: true   未来待办: false   过期待办: false
+已替代待办: false  群聊待办: false  正常经历: true   未来经历: false  已替代经历: false
 ```
 
-- 恢复：`diff -q` 一致；定向测试 **2/2 PASS**。
+handoff brief（`handoffBrief({cwd, isOwner:true})`）：
 
-> 两组均按预期失败；未删除断言、未跳过测试、未放宽预期。
+```
+标签：待办 1
+项目：工作区（/sdcard/DSHA/工作区）
+待办：- 空状态待办B  - 活跃待办A
+活跃待办A: true   空状态待办B: true   未来待办C: false
+过期待办D: false  已替代待办E: false  pending 待办F: false
+```
+
+→ future `valid_from`、`valid_to` 过期、`superseded_by` 均已正确排除；旧状态兼容未被破坏。
+
+## 14. owner / group / external / project 隔离
+
+- session-index：群聊 episode/todo 未进入（探针 `群聊待办: false`；`scope_type='owner'` 保持）。
+- handoff brief：`isOwner:false` 分支不读项目/决策/todo（`group leaks project/todos: false`；`stranger leaks: false`），不输出「标签」；owner 分支项目、决策、待办正常。
+- 标签统计：`标签：待办 1` —— 只计 owner + `current`（active）记录；空串状态不计入标签，符合第 11/12 条。
+- `decisions` 仍为原 `status='decided'` 查询，未接入 memory helper。
+
+## 15. 只读 / 预算 / 排序 / 截断兼容性
+
+- 两个调用点均为纯 SELECT；未更新 `access_count`、`revision`、状态字段（diff 仅替换 WHERE 条件与参数）。
+- session-index：episode `ORDER BY created_at_epoch DESC LIMIT ?`、todo `ORDER BY id DESC LIMIT ?`、36/40 字截断、去重 `seen` 不变。
+- handoff brief：todo `ORDER BY id DESC LIMIT 3`、`clipBlock(maxChars)`、pins/conversationSection/lastUnanswered/topics 未改。
+- `shouldInjectSessionIndex` 未改。
+
+## 16. 负向对照（全部在 worktree 内临时修改，恢复后逐字节一致）
+
+### A. session-index 恢复旧 todo 过滤
+
+```js
+kind='todo' AND status IN ('active','') AND scope_type='owner' AND (valid_to IS NULL OR valid_to>?)
+```
+- 测试：**仍失败**，但错误同样是 `NOT NULL constraint failed: memories.status`（line 19）→ **不具备区分力**（fixture 先崩，断言未执行）。
+- 独立泄漏探针（旧过滤下）：
+```json
+{"leaksFuture":true,"leaksSuperseded":true,
+ "block":"【跨会话经历】|- 约定：已替代待办|- 约定：未来待办|【跨会话经历结束】"}
+```
+- 说明：代码修复确有必要，但提交的测试目前无法守护它。
+
+### B. handoff brief 恢复旧 todo 过滤
+
+- 测试：同样 **在 line 15 的 NULL fixture 处失败**（非断言失败）→ 不具备区分力。
+- 泄漏探针：`{"leaksFuture":true,"leaksSuperseded":true,"keepsEmpty":true,"keepsActive":false}`（`keepsActive:false` 仅因 `LIMIT 3` + id DESC 把最旧的活跃待办挤出，不是语义缺陷）。
+
+### C. helper 负向对照（4 组，全部按预期失败）
+
+| 变异 | 结果 |
+|---|---|
+| 去掉 `valid_from` 条件 | `legacy todo presets…` **FAIL**（exit 1） |
+| 去掉 `superseded_by` 条件 | **FAIL** |
+| 把 `active-empty-null` 域改成 `active-empty` | **FAIL** |
+| 镜像变异：`isValidAt` 不再容纳 NULL | JS 直测 `got=[false,true,true]`，`expected=[true,true,true]`，**MISMATCH=true** |
+
+恢复后：`diff -q` 与备份一致；`legacy todo presets…` 单测 PASS。
 
 ---
 
-## 9. 兼容性检查结论（逐项）
+## 17. 新问题 / 阻塞与修复选项
 
-- **scope**：preference 仅 owner（`level !== 'owner'` 直接返回空）；remembered 的 contact/group/owner 隔离沿用 `scopeWhere`，external 用例返回正确记录。
-- **kind**：preference 固定 `kind='preference'`；remembered 白名单 `preference/relation/skill`，fact 不进入。
-- **meta persist**：`persist === true && persistence === 'long_term'` 判定位置与逻辑未变；损坏 meta 走 `json_valid` + JS 跳过。
-- **排序**：两路 preference 的 `ORDER BY` 一字未改；remembered 的 `pinned/importance/last_access` 排序未改。
-- **预算**：`PREFERENCE_BUDGET=180`、`MAX_ITEMS=3`、remembered 400 字 / 8 条 / 50 字截断全部未改。
-- **跳过原因**：`preference-managed-separately`、`truncated-connector`、`dup-stable` 均保留，测试断言通过。
+**阻塞（P0，本轮验收无法通过）**：3 处 fixture 假设 `status` 可为 NULL，与 schema 冲突。修复选项（需 GPT 决定，本轮未实施）：
 
-## 10. 新问题 / 阻塞
+1. **删掉 NULL 用例**（最小改动），并把 `currentTodoLegacy` 的 NULL 分支标注为「防御性、当前 schema 不可达」；保留 `''`/active 覆盖。
+2. **用 legacy 表 fixture 测 NULL**：在临时库中重建一张 `status` 可空的 `memories` 表（或在插入前 `PRAGMA writable_schema`/表重建），仅用于验证 SQL/JS 的 NULL 语义。
+3. **重新裁定 NULL 兼容是否必要**：生产 `memories.status` 为 `NOT NULL` 且现存值无 NULL/空串 → 该兼容分支可能只是历史防御；若确认无用，可直接把 brief 的 todo 预设改为 `currentTodoActiveEmpty`，删除 `currentTodoLegacy`。
 
-**无阻塞。** 记录一项非阻塞行为差异（P3）：
+非阻塞观察：
+- `db: current 视图` 的失败是前一测试崩溃后遗留 3 条 active todo 造成的**级联污染**，不是独立缺陷；修复 NULL fixture 后应恢复。
+- `VALIDITY_PRESETS` 枚举从 4 → 6；`tests/validity.test.mjs` 已更新枚举断言，未发现其他调用方按枚举长度硬编码（已 grep）。
+- 生产状态分布无 `''` 与 NULL，说明两个 todo 预设的兼容分支目前都是防御性代码。
 
-- 当调用方显式传入非法 `now`（如 `0`/`null`）时，`validitySql` 抛 `E_BAD_TIMESTAMP`，被两个函数的 `try/catch` 吞掉，分别返回 `''` / 空结构；旧实现会按 `valid_to > 0` 返回部分结果。
-  - 现有调用方 `lib/index.js:1239` 传 `Date.now()`、`stable.js:218` 不传（默认 `Date.now()`），**生产路径不受影响**。
-  - 建议：如需防御性兼容，可在入口做 `Number.isFinite` 回退（本轮未改，避免越界）。
+## 18. 生产边界声明
 
-其他残留（与 v7 相同、不在本轮范围）：preference-merge / session-index / handoff brief / daily / weekly 仍未接入；生产 as-of **NOT RUN**。
-
-## 11. 边界声明
-
-- 未写入、删除、回填、迁移生产 DB；本轮未打开生产库（全部 `/tmp` 临时库）。
-- 未修改生产插件目录、`profile`/`config`；未部署、未重启、未启动 staging；未合并 `feat/m1-preference-memory` 或 `main`。
-- 未修改 `session-index`、`handoff brief`、`preference merge`、`daily`、`weekly` 等其他调用点；未修改 `validity.js`。
+- 未写入、删除、回填、迁移生产 DB；本轮**未打开生产库本体**（仅使用此前 `/tmp` 只读副本做 schema 只读核对）。
+- 未修改生产插件目录、`profile`/`config`；未部署、未重启、未启动 staging。
+- 未合并 `feat/m1-preference-memory` 或 `main`；未修改 preference merge / daily / weekly / 其他未接入调用点。
 - 未修改 Persona/EI/Autonomy/Android；未修改共享 `HANDOFF.md` / `REPORT.md`（blob `bee03e17…` / `fc4d01dd…` 未变）。
 - 负向对照全部在 worktree 内临时修改并逐字节恢复；未 force push、未覆盖他人提交。
-- **隔离开发验证 PASS ≠ 生产验证通过 ≠ 获准合并或部署。**
+- **本轮为隔离验证；即使后续测试修复通过，也不代表生产验证通过或获准合并/部署。**
 
-## 12. 证据索引
+## 19. 证据索引
 
 | 内容 | 命令 / 路径 | 退出码 |
 |---|---|---|
-| HEAD / 提交链 | `git ls-remote`；`git log -1 --format='%H parent=%P'` ×4 | 0 |
-| blob ×4 | `git rev-parse 5797324:<path>` | 0 |
-| 定向 | `node --test tests/preference-inject.test.mjs tests/remembered.test.mjs` | 0（2/2） |
-| 回归 | 4 个文件合并运行 | 0（16/16） |
-| 全量 | `npm test` ×2（对照前/恢复后） | 0（298/298/0/0） |
-| 对照 1 | preference 旧过滤 → 定向失败 + 探针 leaksFuture/leaksSuperseded | 1（预期） |
-| 对照 2 | remembered 旧过滤 → 定向失败（line 34）+ 探针泄漏 | 1（预期） |
-| 恢复校验 | `diff -q` 两次均一致；定向复跑 2/2 | 0 |
+| HEAD / 树 / 提交链 | `git ls-remote`；`git rev-parse 29a18fd^{tree}`；`git log` | 0 |
+| 六 blob | `git rev-parse 29a18fd:<path>` | 0 |
+| schema 约束 | `lib/store/schema.js:77`；生产副本 `PRAGMA table_info(memories)` | 0 |
+| session-index 定向 | `node --test tests/session-index.test.mjs` | **1** |
+| handoff 定向 | `node --test tests/handoff-brief.test.mjs` | **1** |
+| validity 定向 | `node --test tests/validity.test.mjs`（23/21/2） | **1** |
+| 回归集合（7 文件） | `node --test …`（19/17/2） | **1** |
+| 全量 | `npm test`（300/296/4/0） | **1** |
+| helper 对照 ×4 | 变异后单测/直测失败，恢复后 PASS | 1（预期） |
+| 调用点对照 ×2 | 测试仍失败于 NULL fixture；泄漏探针 true | 1 |
 | 工作区 | `git status --short`、`git diff --check`、`git diff --stat` | 0 |
