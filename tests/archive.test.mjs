@@ -41,4 +41,22 @@ assert.ok(strict.length <= 1, '高分门下最多 1 条')
 const v = raw.verify(day)
 assert.ok(v.ok && v.files.length === 1 && v.files[0].hash.length === 16)
 
+// 自主唤醒来源被归档，并将 source.kind 落入 raw_meta.extra。
+const wakeSeq = ++seq
+raw.onEvent(session, {
+  type: 'user/message', seq: wakeSeq, time: Date.now(),
+  data: { message: { source: { kind: 'autonomy-home-wake' }, content: [{ type: 'text', text: '这是一次自主唤醒回合的触发内容。' }] } },
+})
+const wakeMeta = db.prepare('SELECT extra FROM raw_meta WHERE seq=? AND role=?').get(wakeSeq, 'user')
+assert.ok(wakeMeta, '自主唤醒用户消息应进入原话归档')
+assert.equal(JSON.parse(wakeMeta.extra).sourceKind, 'autonomy-home-wake')
+
+// 其他非 user 来源仍然被拒绝，不能扩大归档入口。
+const ignoredSeq = ++seq
+raw.onEvent(session, {
+  type: 'user/message', seq: ignoredSeq, time: Date.now(),
+  data: { message: { source: { kind: 'untrusted-injected-source' }, content: [{ type: 'text', text: '不应归档的注入内容。' }] } },
+})
+assert.equal(db.prepare('SELECT count(*) c FROM raw_meta WHERE seq=?').get(ignoredSeq).c, 0)
+
 console.log(JSON.stringify({ ok: true, test: 'archive', lines: text.split('\n').filter(Boolean).length, hits: hit.length }))
