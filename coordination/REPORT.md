@@ -186,3 +186,44 @@ Memory 智能体报告的隔离测试证据：
 - 本轮只完成 strict graph lane 验证与共享状态同步；不自动扩大到其他调用点。
 - 后续可按风险分批规划其他 Memory 调用点接入；生产 as-of、主线合并、部署/迁移均需单独评估与负责人当前授权。
 - EI、Android、Autonomy 维持原状态；Android/Autonomy v4 设计对齐继续保留主线，当前无任务运行，真实设备验证待后续安排与授权。
+
+
+---
+
+## 2026-11-21 · GPT 统筹只读审查 · REPORT-0017（对应 HANDOFF-0060）
+
+### 1. 审查范围
+
+基于 `feat/memory-validity-unified` @ `c437c460d8378cbf6493a5e4e12d673c4334d50f`，只读核对七个剩余调用点与统一 helper：
+- `lib/inject/preference.js` blob `086b3e180050c1156af12b05affd89dbad69c8df`
+- `lib/inject/session-index.js` blob `355eb7a1bbc88d86e692b13f0bc511359cd0f33a`
+- `lib/inject/remembered.js` blob `dc11425f2cdcc78ff5b9b86418b2fb44b5666ad5`
+- `lib/pref/merge.js` blob `2a801eefb4647b8ce3d1e31e2c1c0ad43e92cdf9`
+- `lib/consolidate/daily.js` blob `643d8026bf482dc0a5c76db9be8243f7ef77059a`
+- `lib/consolidate/weekly.js` blob `a2d1178196f89dfd46d64f79f6e4136b76e6436f`
+- `lib/handoff/brief.js` blob `0a111c003f2e0ac8cad746d5f16f2b412381555a`
+- helper `lib/store/validity.js` blob `00c4d948ccb2973d48d95aebb07d230c8f44854c`
+
+### 2. 关键发现
+
+- preference 与 remembered 是最适合先做的只读调用点：现有 active + valid_to 过滤缺少 valid_from/superseded_by 统一检查，可评估 current helper 接入；remembered 需要增加可注入 now 以稳定测试。
+- session-index 的 todo 支持 active/空字符串状态；handoff brief 的 project todo 支持 NULL/空/active。helper current 只允许 active，机械替换会改变旧数据兼容行为。decisions 表不属于 memories。
+- preference merge 的 incoming candidate 允许 pending，不能对 candidate 直接使用 current preset；旧记录候选查询可考虑 helper，但要保护事务、scope、conflict_queue、revision/CAS 语义。
+- daily 的 existing 候选查询可考虑 current helper；exact-text duplicate guard 是另一种全局去重语义，不能无差别套 helper。日结另含 LLM、文件、profile、短期记忆和DB写入副作用。
+- weekly 既有候选查询又有 supersede 写路径；必须同时处理事务内 UPDATE 条件、revision 快照、valid_to 与旧 schema fallback，风险最高。
+
+### 3. 建议顺序
+
+| 批次 | 调用点 | 主要边界 |
+|---|---|---|
+| A | preference + remembered | 只读注入，优先使用 current helper，保持 scope/meta/排序/预算 |
+| B | session-index + handoff brief | 先裁决 legacy todo status 兼容，再接 helper |
+| C | preference merge | 单独审查事务候选与 pending 激活语义 |
+| D | daily consolidate | 仅处理 existing 候选查询，不碰其它副作用 |
+| E | weekly consolidate | 最后单独处理事务、CAS、历史快照与 fallback |
+
+### 4. 状态与授权
+
+- 本轮是只读审查，没有修改源码、测试、生产数据或插件配置。
+- 以上 Batch A–E 均为建议，不视为已授权实施。
+- 推荐下一步先推进 Batch A；需负责人明确授权后，才启动 GPT 隔离分支代码修改与 Memory 智能体本地验证。
