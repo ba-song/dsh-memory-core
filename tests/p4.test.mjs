@@ -103,6 +103,7 @@ assert.equal(hasOpposition('主人允许汐自主修改，但要求先告知', '
     const currentId = await insertMemory(db, {
       kind: 'preference', text: '主人希望汐说话带语气词，活泼些，不要冷冰冰',
       status: 'active', confidence: 0.9, layer: 'manual',
+      validTo: Date.now() + 60_000,
     })
     const futureId = await insertMemory(db, {
       kind: 'preference', text: '未来才生效的偏好，不应提前参与冲突判断',
