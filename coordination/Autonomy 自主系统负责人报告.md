@@ -3,7 +3,7 @@
 > 会话：Autonomy 自主系统负责人
 > 覆盖任务：`AUTO-ARCH-AUDIT-01`、`AUTONOMY-RECOVERY-SEMANTICS-DESIGN-01/02/03/04`
 > 迭代规则：本文件覆盖式更新、版本号递增，不新增同类文件
-> 最近更新：2026-11-21 10:53 (Asia/Shanghai) · v4-r2（复核 Android v4 后）
+> 最近更新：2026-11-22 00:50 (Asia/Shanghai) · v5（新增 §17 设备配置只读核查）
 > 性质：只读设计修订。未改任何源码/DB/profile/配置；未创建实现分支；未启动 scheduler/executor/staging；未部署/重启；未改 `HANDOFF.md`/`REPORT.md`；未修改 Android 报告
 
 ## 版本历史
@@ -15,10 +15,13 @@
 | v3 | 2026-11-21 09:58 | 请求/回执持久性、recovery.lock 续租、runtime stale 与 lease 分离、nextWake、原子性、迁移补齐 |
 | v4 | 2026-11-21 10:44 | 跨模块差异收口 A–H：未 ack 保留、ack 校验、nextWake reason、紧急唤醒 floor、hardlink 降级、队列背压、ledger 保留与 tombstone、merged 语义；初判 `PARTIAL` |
 | v4-r2 | 2026-11-21 10:53 | 复核 Android v4（`3dd5d32`）：A–D、F–H 已书面确认；E 采用 Android 的 60s 观察窗，双方一致 → 改判 `DESIGN ALIGNED` |
+| v5 | 2026-11-22 00:50 | 新增 §17 `AUTONOMY-PROFILE-READONLY-01`：设备实际 profile、22 个字段真实值、运行状态、6 条执行路径启用条件、冲突与 UNKNOWN |
 
 ---
 
 ## 0. 结论（先看这一节）
+
+**最新一轮（§17）：`AUTONOMY-PROFILE-READONLY-01` 只读核查完成，结论 `PASS`（核查）/ 风险 `MEDIUM`；协议设计结论仍为 `DESIGN ALIGNED`。**
 
 **本轮结果：`DESIGN ALIGNED`。**
 
@@ -374,3 +377,143 @@ P4  以上全部失败 → 不发布，保留 tmp + 写 .pending 标记 + 事件
 **边界**：本轮只读设计修订；未改任何源码/DB/profile/配置；未创建实现分支；未启动 scheduler/executor/staging；未部署/重启；未改 `HANDOFF.md`/`REPORT.md`；未修改 Android 报告或替 Android 作设备权限决定；未开始 AUTO-R1…R7。
 
 **设计通过 ≠ 代码实现；源码实现、DSH 实机、staging、生产迁移均 NOT RUN；生产数据库未修改。**
+
+
+---
+
+## 17. AUTONOMY-PROFILE-READONLY-01 · 设备配置只读核查
+
+> 执行：Autonomy 自主系统负责人（应 DSH 任务）｜时间：2026-11-22 00:26–00:50 (+08)
+> 性质：**严格只读**。未改 profile/配置/文件/DB；未执行 tick；未启动/停止任何 watcher；未调用 poll/send/write/execute；未发 QQ/抖音；未写记忆/日记；未重启任何进程；未读取/输出任何密钥、token、密码。
+> 结论：**核查 `PASS`；风险等级 `MEDIUM`**（无自动外发，但有 1 条自动回复通道在线 + 2 个布尔开关即可激活真实执行器 + 通知触发空转）。
+
+### 17.1 设备与版本（/app 只读接口，00:27）
+
+| 项 | 值 | 证据 |
+|---|---|---|
+| 机型 / Android | vivo V2154A · Android 14 (SDK 34) | `/app/device` |
+| 电量 / 网络 / 屏幕 | 89% 未充电 · wifi · screen on · app_foreground=true | 同上 |
+| 存储 / 内存 | 101.43 GB 可用 / 222.76 GB；内存可用 2.94 GB / 11.10 GB | 同上 |
+| DSHA | `0.2.1-rc.2-20261022.2100-dsh0.2.1-rc.2`，APP_CODE=190，BRIDGE_PROTOCOL=3 | `/app/version` |
+| DSH | `0.2.1-rc.2` | `@deepseek-ai/dsh/package.json` |
+| 运行环境 | Ubuntu 24.04.3 LTS arm64（proot），Node v24.19.0，uid=0（容器伪 root） | `/etc/os-release`、`node -v`、`id -u` |
+
+### 17.2 实际使用的 profile
+
+| 项 | 值 | 证据 |
+|---|---|---|
+| 启动方式 | `dsh web --no-open --host 127.0.0.1 --port 38105`（PID 20189） | `/proc/20189/cmdline` |
+| profile 名 | **`web`**（`dsh web` ≡ `dsh --profile web`） | CLI 帮助文本；`DSHA_STARTUP_PROFILE=web` |
+| DSH_HOME / profile 目录 | `/root/.dsh` / `/root/.dsh/profiles/web` | `/proc/20189/environ`、`dsh` 约定 |
+| 加载时间 | 2026-11-21 09:52:55（进程 starttime） | `/proc/20189/stat` + `os.uptime()` |
+| 配置层顺序 | bundles → `cordis.patch.yml` → `--patch`（无） | `cordis.yml` 注释；cmdline 无 `--patch` |
+| 生效 patch | `/root/.dsh/profiles/web/cordis.patch.yml`（mtime 2026-11-21 09:39:58，**早于进程启动 13 分钟**） | `stat` |
+| 其他 profile | `headless` 存在但**未加载**（无对应进程）；无第二个 profile 覆盖 | 进程扫描 |
+| 覆盖情况 | 无其他 profile/overlay 覆盖；patch 覆盖 bundle 默认值（这是正常层级） | 同上 |
+
+**结论**：当前生效配置 = `profiles/web/cordis.patch.yml`，且运行时与文件一致（关键布尔值与状态接口逐项吻合）。
+
+### 17.3 字段实际值及来源
+
+判定类别：`显式`=配置文件明确写；`默认`=字段缺失，取代码默认；`运行时`=状态接口/DB。
+
+| 字段 | 实际值 | 来源 | 类别 |
+|---|---|---|---|
+| autonomy.enabled | **true** | patch L163；status.enabled=true | 显式 |
+| autonomy.dryRun | **false** | patch L107；status.dryRun=false、reason=off | 显式 |
+| autonomy.sendEnabled | **true** | patch L108；status.sendEnabled=true | 显式 |
+| autonomy.tick.enabled | **false** | patch L105；status.tickEnabled=false | 显式 |
+| autonomy.tick.realSafe | **false** | patch L106；真实执行器未注册 | 显式 |
+| autonomy.allowedKinds | read_archive, organize_memory, find_sticker, write_diary, browse_douyin, send_qq | patch L133-139；status.allowedKinds 一致 | 显式 |
+| autonomy.home.enabled | **true** | patch L156；home.lastWake/会话在跑 | 显式 |
+| autonomy.home.dice.enabled | **true** | patch L147；dice.lastRoll 00:18 hit=true | 显式 |
+| autonomy.homeArchiveMaintenance.enabled | **false** | 字段缺失 → `config.js:149-150` 默认 false；`index.js:498` 为挂载条件 | 默认 |
+| autonomy.douyinInbox.enabled | **true** | patch L101；status.douyinInbox.enabled=true | 显式 |
+| autonomy.douyinInbox.respectDryRun | **true** | 字段缺失 → `config.js:246` 默认 true（当前 dryRun=false，故不构成限制） | 默认 |
+| autonomy.douyinInbox.notify.enabled | **true** | 字段缺失 → `config.js:256` 默认 true；status.douyinInbox.notify.enabled=true | 默认 + 运行时 |
+| autonomy.triggers.enabled | **true** | patch L110 | 显式 |
+| autonomy.triggers.device.enabled | **true** | patch L121；device-trigger.log 有 fired=514 | 显式 |
+| autonomy.triggers.notification.enabled | **true** | patch L132；但 3091 不可达（见 §17.4） | 显式 |
+| douyin.exposeService | **true** | patch L187；autonomy 能订阅 dyDouyin 事件 | 显式 |
+| douyin.dmWatchEnabled | **true** | patch L215；source.running=true、attached=true | 显式 |
+| douyin.notifyWatchEnabled | **true** | patch L190；notify.subscribed=true | 显式 |
+| douyin.notifyWatchDeliver | **true** | 字段缺失 → `dsh-douyin/lib/config.js:267` 默认 true；运行时接口未直接暴露该值 | 默认 |
+| channel-bridge.enabled | **true** | patch L167；`dy_bridge_status` ok=true | 显式 |
+| channel-bridge.mode | **send** | patch L175；`dy_bridge_status.mode="send"` | 显式 |
+| channel-bridge.groupMemory.enabled | **true** | 字段缺失 → `dsh-channel-bridge/lib/config.js:126-127` 默认 true；运行时未暴露，日志无 `groupMemory` 命中 | 默认 |
+
+补充（与执行路径相关）：`home.minIntervalMin=40`、`maxIntervalMin=60`（L157-158）；`douyinInbox.mode=auto`（L102，运行时解析为 `subscribe`）；`douyinInbox.reply.enabled` 未配置 → 默认 **true**（`config.js:248`）。
+
+### 17.4 当前运行状态（只读状态接口 + 只读 DB + 日志）
+
+| 对象 | 状态 | 证据 |
+|---|---|---|
+| Autonomy | enabled=true，dryRun=false，stage=`offline-mock-only`，paused.all=false，6 个 kind 均未暂停 | `dy_life_status` 00:26 |
+| tick | **无活动调度**；最后一条 tick 2026-11-16 01:11:28 `interval/skipped/PAUSED_KIND`；定时器因 `tick.enabled=false` 未挂 | `dy_life_status`；`index.js:530-535` |
+| 真实执行器 | **0 个**：executors 列表 6 项全部 `mock:true`；真实注册需 `tick.realSafe=true`（`index.js:351-370`），当前 false | `dy_life_status.executors` |
+| Home | **活动**：会话 `e755af98-…`，last_seen 2026-11-22 00:18:28，prompt 468,584 / window 1,048,576（44.7%）；lastWake 00:18:28 `AWAKENED`；dice 同刻 `hit=true`；14 个历史房间 | DB `meta`、`home_sessions`（只读） |
+| Home 唤醒频率 | 近 6h21m 内 8 次 `AWAKENED`（09:57Z–16:18Z），间隔 21–139 分钟，**短于配置的 40–60 分钟** → 存在非骰子触发路径 | `autonomy.log` wake 行 |
+| 聊天闸门 | 23:55:04 一次 `CHAT_ACTIVE` 跳过，`source=device`、idle 53.9s、剩余 246s | `meta.home.lastChatSkip` |
+| Douyin inbox | enabled=true，started=true，attached=true，mode=`subscribe`，source.running=true、dmWatch=true、primed=true；notify.subscribed=true、primed=false、seen=11；replies.enabled=true、sent=0 | `dy_life_status.douyinInbox` |
+| Douyin watcher 文件 | `dm-watch-seen.json` mtime 2026-11-20 09:01；`notify-seen.json` 2026-11-18 18:22；`notify-watch.log` 339KB（11-21 09:52）；`watch.lock` 存在 | `stat`（只读） |
+| Channel Bridge | mode=send，health=OK，unified=true，outbound=tool，lastEvent 11s；历史 outSent=3125（非 Autonomy 产生） | `dy_bridge_status` |
+| 通知触发 | enabled=true，但 `http://127.0.0.1:3091` **不可达**：`curl http=000 exit=7`；`notification-trigger.log` 每 5s 一条 `fetch failed`（6.5MB） | curl + 日志 tail |
+| 邮件轮询 | enabled=true，60s 轮询；最近一次 `MAIL_POLL_FAILED`（socket EOF）于 2026-11-21 14:20 | `dy_life_status.mail` |
+| Purpose 定时器 | 活动：最近刷新 2026-11-22 00:07（`purpose_hypotheses` 写入，seenCount 达 690） | status.purpose + DB |
+| 设备触发 | 活动：device-trigger.log `fired`=514、`poll`=3418；3090 dump 可用 | 日志计数 |
+
+> 工具权限说明：`dy_life_home_status` 与 `dy_douyin_*` 在工作会话返回 `E_PERMISSION`（仅主人/家/抖音渠道会话可用）。因此 Home/Douyin 状态改用**只读 DB + 日志 + Autonomy 状态接口**交叉取证，未调用任何写操作。
+
+### 17.5 六条真实执行路径的启用条件
+
+| # | 路径 | 成立条件 | 当前实际 | 判定 |
+|---|---|---|---|---|
+| 1 | Autonomy 自动写日记/记忆 | tick.enabled=true + tick.realSafe=true + 真实 executor + dryRun=false + 选中 write_diary；或手动 `dy_life_action_run` 带正文 | tick=false、realSafe=false、6 executor 全 mock → **自动路径不成立**；手动工具路径存在（owner/home 会话） | **不可自动发生** |
+| 2 | Autonomy 自动浏览抖音 | 同上 + browse_douyin | executor mock；手动 `browse_douyin` 直接返回 `UNAVAILABLE` | **不可自动发生** |
+| 3 | Autonomy 向 QQ 发送 | 同上 + send_qq（另需 evidence 门） | executor mock；手动 send_qq 返回 `UNAVAILABLE`；真实 executor 未注册 | **不可自动发生**（QQ 真实发送属于 channel-bridge 的会话内 `dy_say`，非 Autonomy） |
+| 4 | 自动回复抖音私信 | douyinInbox.enabled + watcher 在跑 + reply.enabled + dryRun=false + servicesReady + 非主人私信 | **全部成立**：enabled、subscribed、replies.enabled、dryRun=false、persona/memory 可用；`dmReplyWindowMs=0`（不限时效）、`dmDailyLimit=0`（不限条数） | **在线，可自动发生**（当前 events=0） |
+| 5 | 通知重复投递 | 3091 可用 + 抖音通知 watcher 同时投递同一事件 | 3091 不可达 → Autonomy 通知触发 0 投递；抖音主人通知由插件直投 home，非主人通知**委托**给 autonomy（不双投） | **当前不发生**（3091 修复后需复评） |
+| 6 | Home 自动唤醒/自主调度 | enabled + home.enabled + (dice 或 triggers) | 全部成立；00:18 刚唤醒一次 | **正在发生** |
+
+### 17.6 风险与配置冲突
+
+**R1（中）两个布尔开关即可激活真实执行器。** `dryRun=false` 与 `sendEnabled=true` 已经满足高风险注册前提（`executors.js:32-34`），当前唯一阻断是 `tick.enabled=false` + `tick.realSafe=false`；两者同时置 true 后，`send_qq`/`write_diary`/`browse_douyin` 会立即注册真实实现。且 `antiSpam.perHour/perDay=0`、各 kind caps 为 null，只有 `sameKindMinGapMin=10`，**无全局速率上限**。
+
+**R2（中）抖音私信自动回复通道在线且无时效/条数限制。** `dmReplyWindowMs=0` 在代码中表示"不限时效"（`dsh-douyin/lib/service.js:3684`），`dmDailyLimit=0` 表示无每日上限（`:3615`）。当前 0 事件，但一旦有新私信即会建会话并在回合结束自动回复（仅非主人）。这属于"自动对外发送"，与本项目"外发需授权/审计"原则需要负责人明确确认。
+
+**R3（低）通知触发空转。** `triggers.notification.enabled=true`，3091 未监听 → 每 5s 失败一次，日志 6.5MB 持续增长；功能实际不可用。属"配置声称启用、运行无效"的不一致。
+
+**R4（低）状态字段误导。** `dy_life_status.channel.supportsRealChannel=false`（adapter 写死，`lib/io/channel.js:14`），但 channel-bridge 实际 `mode=send` 且历史外发 3125 条。该字段只代表 Autonomy 内部 channel adapter，不代表全局外发能力，容易被误读。
+
+**R5（低）schema 漂移。** 运行时 `db.schemaVersion=3`、`db.version=4`（迁移缺口已在此前报告记录）。
+
+**R6（低）Home 在 dry-run 下仍会醒。** `home.respectDryRun=false`（patch L142）；若将来把 dryRun 打开，tick 会停但 home 唤醒不受影响。
+
+**R7（低）夜间唤醒。** `home.dice.quietHours.enabled=false`（L152），00:18 已发生一次唤醒；`home.minIntervalMin=40` 但实测 21 分钟间隔（触发路径）。
+
+**R8（低）日志污染。** `device-trigger.log` 18MB / 39k+ 行（`apply` 每次启动都写，`index.js:223`）；`notification-trigger.log` 6.5MB 全为失败行。不影响功能，但影响取证与磁盘。
+
+**R9（低）邮件轮询失败。** 最近一次 `MAIL_POLL_FAILED`（socket EOF）14:20；邮件通道当前可能不可用，未自动重试风暴（60s 周期）。
+
+**R10（信息）群记忆默认开启。** channel-bridge `groupMemory.enabled` 默认 true（无 profile 覆盖），代码会在群聊轮次后调用 `dyMemory.saveGroupTurn`；运行时未暴露该值，日志无命中，**是否已产生写入未确认**。
+
+**配置冲突汇总**：无"同一字段被两个 profile 同时定义"；存在 3 处"配置声称启用但运行无效/误导"（R3/R4/R5）与 1 处"默认开启但未确认生效"（R10）。
+
+### 17.7 无法确认（UNKNOWN）
+
+| 项 | 原因 |
+|---|---|
+| 下一次 Home 唤醒的精确时间 | 只读状态工具在工作会话 E_PERMISSION；DB 只存 lastWake，不存 nextWakeAt |
+| Home 会话可用工具清单 | 未枚举 preset/bundle 的实际 tool 集；只能确认会话为默认 preset，是否有日记/QQ 工具 UNKNOWN |
+| `notifyWatchDeliver` 运行时有效值 | 状态接口未暴露；仅代码默认 true + 配置未覆盖 |
+| `groupMemory.enabled` 运行时写入效果 | 状态未暴露；memory DB 未见 group 表；日志无命中 |
+| 每次 wake 的具体触发源 | 日志只记 `wake AWAKENED`，不记 dice/device/notification 归因 |
+| `homeArchiveMaintenance` 定时器确实未挂 | 由 config=false + 代码 gate 推断，无直接状态字段 |
+| GUI 设置是否曾覆盖 volatile 字段 | 未找到独立 settings 存储；关键值与文件一致，但不能排除历史写入 |
+| 抖音 `exposeService` 运行时值 | 由"autonomy 能订阅"反推 true，服务未暴露自身配置 |
+
+### 17.8 边界声明
+
+本任务**没有改变任何状态**：未写 profile/配置/文件/DB；未启动/停止任何 watcher 或 timer；未执行 tick；未调用 poll/send/write/execute/launch/tap；未发送 QQ/抖音/邮件；未写记忆/日记/档案；未重启 DSHA/DSH/插件；未输出任何密钥、token、密码、邮箱或私人正文（owner QQ/邮箱仅以数量/脱敏形式出现）。
+
+证据均为 2026-11-22 00:26–00:50 实时读取；命令退出码：`curl /app/version` 200、`/app/device` 200、`curl 3091` exit 7、`dy_life_status` ok=true、`dy_bridge_status` ok=true、DB 只读查询成功。
