@@ -3378,3 +3378,39 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - 本轮没有修改生产 DB、生产插件目录、profile/config；没有部署、重启、staging 或生产迁移。
 - HANDOFF 与 REPORT 由 GitHub Contents 更新接口顺序提交为相邻 commits；接口未暴露可复用 tree SHA，故未能将两文件放入单一 commit。REPORT commit/blob 已在本节明确记录；后续如工具支持单 tree commit，再恢复同 commit 更新。
 - 后续更新者必须重新读取最新 HANDOFF/REPORT blob SHA，按 SHA 并发保护更新，不得覆盖他人并发内容。
+
+
+---
+
+## 56. Memory 统一有效性 strict graph lane 复验通过（HANDOFF-0059）
+
+> 专项报告：`coordination/Memory 智能体报告.md`（MEMORY-REPORT-0007）
+> 专项报告 commit：`5109676ac15a06e830ea15df2a5cfe77b9b19506`
+> 专项报告 blob：`1eca4afcaa8e5606b2193a0451b6c9d08d0c1da7`
+
+### 56.1 Memory 隔离分支验收
+
+- 仓库：`ba-song/dsh-memory-core`
+- 分支：`feat/memory-validity-unified`
+- 验收 HEAD：`c437c460d8378cbf6493a5e4e12d673c4334d50f`
+- 提交链：`b4606e1c66f1afb94cb154b7ec96423103477029` → `d6521c10d8ff4c01cdaa0cd5712f3921b7ac43b4` → `1d0a163c3878208af8f9f523dd56575cc4b06687` → `c437c460d8378cbf6493a5e4e12d673c4334d50f`
+- GPT 已通过 GitHub 独立核对分支 HEAD、三提交 compare（ahead 3、仅 3 文件变更）及三个文件 blob：
+  - `lib/store/graph.js`：`94a196c27455a0a8601ef40889352eb46d2086ac`
+  - `lib/recall/recall.js`：`6fda81efb6cc21ef5f9daf913ceea944e5bb2dbb`
+  - `tests/asof-graph-uncertain.test.mjs`：`3a0d514661643fd34db804f9492620223b39c9f3`
+- C 方案：普通 hop 继续 asOfHistory；独立 hopStrict 诊断通道允许与 hop 重叠；unknownHop 作为同一 Map 的兼容别名；recall 只将 strict lane 用作 unknown-validity 诊断，不混入正式召回结果。
+- Memory 智能体在隔离 worktree 报告：定向测试 2/2、5/5、1/1、13/13；有效性集合 47/47；全量 `npm test` **298/298、0 fail、0 skip、exit 0**；三组负向对照全部按预期失败，恢复后全绿。
+- **结论：C 方案隔离开发验证 PASS。** 测试由 Memory 智能体执行并报告，GPT 独立核对了 GitHub 提交与代码 blob；GPT 未亲自运行 Node 测试。
+
+### 56.2 非阻塞残留风险
+
+1. `recall.js` 的 `candidateIds` 仍通过兼容别名 `g.unknownHop.keys()` 取候选，而 `unknownIds` 使用 `(g.hopStrict ?? g.unknownHop)`；当前同一 Map，行为一致，后续应统一入口。
+2. `hopStrict` 诊断查询仍硬编码 `status='active'`，与 asOfHistory 允许 archived/expired 的状态域不完全一致；需另行评估，不在本轮扩大范围。
+3. preference / session-index / remembered / merge / daily / weekly / brief 等调用点尚未接入统一谓词，按既有授权边界暂不扩展。
+4. 生产 as-of **NOT RUN**；生产插件仍为旧版。
+
+### 56.3 边界与下一步
+
+- 未写生产 DB、未改生产插件目录/profile/config；未部署、重启、启动 staging；未合并主开发分支；未修改 Persona/EI/Android/Autonomy。
+- 下一步由 GPT 统一整合共享 HANDOFF/REPORT；Memory 后续调用点分批评估，生产验证、主线合并和部署均须另行安排/授权。
+- Android 与 Autonomy v4 设计对齐仍保留项目主线；当前无任务运行，不得遗忘，真实设备验证仍待后续安排与授权。
