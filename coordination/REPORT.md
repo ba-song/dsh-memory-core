@@ -548,3 +548,37 @@ GPT 已读取最终 weekly.js、weekly.test.mjs、提交 diff 和 compare，核�
 - 核对工作区无业务改动、无 scratch 残留，恢复后逐字节一致。
 
 本阶段仅隔离开发分支；未写生产 DB、未改生产插件/profile/config；未部署、重启、启动 staging；未合并主线。Batch E PASS 后再规划 A–E 统一集成，仍需生产只读核查及单独部署授权。
+
+
+---
+
+## 2026-11-21 17:10 · GPT 裁决与测试修复 · REPORT-0027（对应 HANDOFF-0071）
+
+### 1. Batch E 首轮 BLOCKED 的独立裁决
+
+GPT 实际读取 Memory-REPORT-0015、目标 HEAD `e3976101a14356819a15d09b69ee4328f194887b` 的 `weekly.js` 与 `weekly.test.mjs`。失败断言要求 `valid_to === now`，但测试调用没有传入固定 `now`，函数使用默认 `Date.now()`；同时该 apply 用例复用的 member fixture 没有设置未来 `validTo`，却断言 revision snapshot 保留迁移前的未来 valid_to。报告给出的 scratch 修正与探针证据支持测试前提缺失，而非 clamp 实现缺陷。
+
+### 2. GPT 已执行最小测试修复
+
+- 分支：`feat/memory-validity-batch-e`
+- 修复前 HEAD：`e3976101a14356819a15d09b69ee4328f194887b`
+- 修复后 HEAD：`37fb441fbe39dee715340f8204c16e3a3fe4782e`
+- 修复提交仅修改 `tests/weekly.test.mjs`：2 additions / 2 deletions。
+- 测试文件 blob：`c9f998af91a26cc136b294345585bed0de7f8a50`
+- `weekly.js` blob 保持不变：`61083aaaaff3fbc6927490045a92246ee9b1d05f`。
+- 修改：apply fixture 的 member 显式设置未来 `validTo: now + 86400000`；apply 调用显式传入同一个固定 `now`。
+- GPT 已回读修复后文件及 compare，确认只改上述测试文件。GPT 未运行 Node 测试。
+
+**状态：IMPLEMENTED / REVERIFYING。Batch E 尚未 PASS。**
+
+### 3. 重新验证要求
+
+Memory 智能体须在修复后 HEAD `37fb441fbe39dee715340f8204c16e3a3fe4782e` 重新运行：
+- weekly + validity 定向测试连续三次；
+- weekly 单文件；
+- 六文件相关回归；
+- 全量 `npm test` 连续三次；
+- E1–E7 七组语义负向对照；
+- HEAD/blob、工作区、scratch 清理和恢复后逐字节一致性核验。
+
+不得把首轮 scratch 6/6 或 GPT 的静态复核当作正式复验 PASS。所有生产、staging、部署、合并仍未授权。
