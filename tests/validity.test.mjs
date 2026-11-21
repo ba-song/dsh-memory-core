@@ -68,8 +68,8 @@ test('validity: legacy todo presets preserve distinct status domains with curren
 test('validity: preference merge candidate preset allows pending but enforces current time/supersede rules', () => {
   const candidate = validitySql({ at: T, preset: 'currentPreferenceCandidate' })
   assert.match(candidate.sql, /status='active' OR status='pending'/)
-  assert.match(candidate.sql, /valid_from IS NULL OR valid_from<=\\?/)
-  assert.match(candidate.sql, /valid_to IS NULL OR valid_to>\\?/)
+  assert.ok(candidate.sql.includes('valid_from IS NULL OR valid_from<=?'))
+  assert.ok(candidate.sql.includes('valid_to IS NULL OR valid_to>?'))
   assert.match(candidate.sql, /superseded_by IS NULL OR superseded_by=0 OR superseded_by=''/)
   assert.deepEqual(candidate.params, [T, T])
   assert.equal(isValidAt({ status: 'active' }, T, 'currentPreferenceCandidate'), true)
