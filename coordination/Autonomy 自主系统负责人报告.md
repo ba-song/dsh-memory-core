@@ -588,7 +588,7 @@ P4  以上全部失败 → 不发布，保留 tmp + 写 .pending 标记 + 事件
 **判定为"非当前实例"的遗留定时器**：
 - 01:26:39 组件 **Off**（`dy_life_status` 不可用），但 01:27:05、01:28:05 仍有 `poll`；
 - 该日志文件只有 `dsh-autonomy/lib/run/device-triggers.js` 会写（全仓 grep 仅此一处）；
-- 当前实例 `cfg.triggers.device.enabled=false`，`index.js:206` 的条件不会创建新触发器；
+- 当前实例 `cfg.triggers.device.enabled=false`，`index.js:211` 的条件不会创建新触发器；
 - ⇒ 定时器属于更早的插件实例（进程内遗留），`ctx.on('dispose')` 未能清掉，插件 disable/enable 也无法触达。
 
 **影响**：
