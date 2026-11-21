@@ -36,7 +36,7 @@ console.log(JSON.stringify({ ok: true, test: 'preference-merge' }))
 // 旧偏好比较集合统一使用 current validity helper。
 for (const [label, topic, mutate] of [
   ['future valid_from', '柠檬', (id, at) => db.prepare('UPDATE memories SET valid_from=? WHERE id=?').run(at + 1, id)],
-  ['expired valid_to', '咖啡', (id, at) => db.prepare('UPDATE memories SET valid_to=? WHERE id=?').run(at, id)],
+  ['expired valid_to', '椰子', (id, at) => db.prepare('UPDATE memories SET valid_to=? WHERE id=?').run(at, id)],
   ['superseded', '牛奶', (id) => db.prepare('UPDATE memories SET superseded_by=? WHERE id=?').run(999999, id)],
 ]) {
   const at = 5000
