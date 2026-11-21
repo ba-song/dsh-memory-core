@@ -1,365 +1,311 @@
-# ANDROID-REPORT-0003 · Android 平台负责人报告（平台能力契约 + 后台恢复设计 v3）
+# ANDROID-REPORT-0004 · Android 平台负责人报告（平台能力契约 + 后台恢复设计 v4）
 
 > 会话：Android 平台负责人（DSHA Android 平台专业智能体）
-> 覆盖任务：`ANDROID-ARCH-AUDIT-01`、`ANDROID-BACKGROUND-RECOVERY-DESIGN-01/02/03`
-> 迭代规则：本文件覆盖式更新、版本号递增（ANDROID-REPORT-0004…），不新增同类文件；与 `coordination/HANDOFF.md`、`coordination/REPORT.md` 同目录。
-> 最近更新：2026-11-21 10:05 (Asia/Shanghai) · v3 按 GPT 联合接口裁决修订（请求队列、回执持久化、nextWake、f2fs 持久性）
-> 性质：只读设计修订。未改 DSHA 源码/Manifest/服务/配置/权限；未装包、未部署、未重启、未 kill/reboot、未启动 staging/调度；未碰生产库；未改共享 HANDOFF/REPORT/PROJECT；未改 Autonomy 接口或其报告。
+> 覆盖任务：`ANDROID-ARCH-AUDIT-01`、`ANDROID-BACKGROUND-RECOVERY-DESIGN-01/02/03`、v4 差异收口
+> 迭代规则：本文件覆盖式更新、版本号递增（ANDROID-REPORT-0005…），不新增同类文件。
+> 最近更新：2026-11-21 10:50 (Asia/Shanghai) · v4 与 Autonomy v3 收口（8 项差异）
+> 性质：只读设计修订。未改 DSHA 源码/Manifest/服务/权限/profile/配置；未构建/安装 APK；未 kill/reboot；未启动 staging/scheduler/executor；未部署/重启；未改共享 HANDOFF/REPORT；未改 Autonomy 报告。
 
 ## 版本历史
 
-| 版本 | 时间 | 覆盖任务 | 变更摘要 |
-|---|---|---|---|
-| v1 (ANDROID-REPORT-0001) | 2026-11-21 02:45 | ARCH-AUDIT-01 + DESIGN-01 | 首次建档：平台基线、19 项能力矩阵、权限矩阵、后台可靠性、恢复设计初稿 |
-| v2 (ANDROID-REPORT-0002) | 2026-11-21 09:55 | + DESIGN-02 | 按 12 项裁决修订：recover 入口、文件所有权、消费 8 问、回执与 nextWake、四段状态机、事件日志拆分、能力契约与失败码 |
-| v3 (ANDROID-REPORT-0003) | 2026-11-21 10:05 | + DESIGN-03 | 请求/回执改为 inbox/outbox **一请求一文件**队列；ack 语义与保留策略；回执轮询「未收到≠失败」；nextWake 六字段与 allowDefer；f2fs 原子写/fsync/损坏/配额规则；§5.3 三项标记已对齐 |
-
----
-
-## 0. 给 GPT 的阅读导航（先看这一节）
-
-**本轮 6 项修订**
-1. **单文件 → 队列**：`wake.json` / `wake-result.json` 改为 `/root/.dsha-wake/{inbox,outbox,ack}/<attemptId>.json`，一请求一文件，不同 attemptId 不再互相覆盖（§3.3–3.5）。
-2. **确认后才清理**：Android 写 `ack/<attemptId>.json` 后，Autonomy 才可删除 outbox 条目；未 ack 的回执最长保留到 7 天/TTL，**不得静默丢**（§3.5）。
-3. **回执轮询语义**：停止轮询 ≠ 丢弃请求；`RECEIPT_TIMEOUT` 只是 W6 传输观测，**不能推导 W5 失败**；下次唤醒先补读未确认回执，同一 attemptId 绝不重复执行（§3.8）。
-4. **nextWake 六字段**：`notBefore/latest/reason/mode/allowDefer/confidence`；普通周期 10min 下限，`allowDefer=false` 的紧急核实不被普通下限主动延后（仍受系统限制），24h 封顶（§3.9）。
-5. **f2fs 持久性**：同目录 tmp + fsync(file) + 发布（hardlink 或 rename）+ fsync(dir)、0600、损坏隔离、磁盘满、轮转与清理、崩溃恢复（§3.6）。
-6. **§5.3 三项已对齐**：引用 Autonomy v2（commit `01afc56`，blob `899528d7…`），不再列为待修复（§5.3）。
-
-**仍需 GPT 裁决（§5.1）**
-1. 目录化契约（inbox/outbox/ack）需 **Autonomy v3** 确认（其 v2 §8.1–8.8 仍写单文件）。
-2. 队列上限与保留：inbox/outbox 各 500 条、ack 24h、回执未 ack 最长 7 天，是否接受。
-3. `allowDefer=false` 的紧急下限：Android 侧取 1min（其余交给系统调度），是否接受。
-4. hardlink 发布不可用时的降级顺序（O_EXCL+写+fsync）是否接受。
-
-**需负责人授权（§5.2）**：test APK、kill/reboot 实验、staging、生产灰度与开关、电池优化白名单长期依赖。
-
----
-
-## 1. 基线（2026-11-21 09:43–10:00 重新核对）
-
-| 对象 | 值 | 核对方式 |
+| 版本 | 时间 | 变更摘要 |
 |---|---|---|
-| `coordination/project-handoff` HEAD | `01afc56cd8067a089e26525cba276a5ed2abf262` | `git fetch` + `ls-remote` 一致 |
-| `coordination/Android 平台负责人报告.md`（v2） | blob `1a3de74f203df871da6ef142d3e71fe8f0ff8fbf` | `git ls-tree` |
-| `coordination/Autonomy 自主系统负责人报告.md`（v2） | blob `899528d74538d6033bc4128a906cfe486d7b7880` | 同上 |
-| `coordination/HANDOFF.md` | `f8ffa40d4c27c04d23ff74b123bf2b7044821976` | 本轮未改 |
-| `coordination/REPORT.md` | `e219f707cc4363c53704fbe389f786148142326e` | 本轮未改 |
-| `DSH-APP/DSHA` main | `36d89b72294348d0482d509109cf8e76d51fc1cb` | `ls-remote` |
-| `ba-song/dsh-autonomy` main | `6c4a4753b4737060211955b1f022cab2f1d39521` | `ls-remote` |
-| `ba-song/dsh-memory-core` main | `7548e49ed0b8d8673818464325d8e72ec7704b27` | `ls-remote` |
-| 设备 | vivo V2154A · Android 14 (SDK 34) · 存储 105.57GB 可用 · `MemAvailable 2.41GB` | `/app/device` 09:44 |
-| DSHA 进程 | pid 22300 · 连续 1d22h12m · FGS 在跑 | `dumpsys activity processes` 09:45 |
-| 运行时 | Ubuntu 24.04.3 · PRoot `-0` · 伪 root uid 10328 · Node 24.19.0 | `ps`/`/proc/self/status` |
+| v1 (0001) | 11-21 02:45 | 首次建档：平台基线、19 项能力矩阵、权限矩阵、恢复设计初稿 |
+| v2 (0002) | 11-21 09:55 | 12 项裁决：recover 入口、文件所有权、消费 8 问、回执/nextWake、四段状态机、日志拆分 |
+| v3 (0003) | 11-21 10:05 | inbox/outbox/ack 队列化、ack 确认后清理、轮询「未收到≠失败」、nextWake 六字段、f2fs 持久性 |
+| v4 (0004) | 11-21 10:50 | 与 Autonomy v3 收口 8 项：未 ack 永久保留、receiptSha256、`verifier_retry`、allowDefer 去软件下限、发布/半写统一协议、INBOX_FULL/BACKPRESSURE、ledger TTL 归属、merged/queued 语义 |
 
 ---
 
-## 2. 能力契约与失败码（保留 v2，未改）
+## 0. 阅读导航
 
-### 2.1 四级判定
+**本轮结论：`PARTIAL`（Android 侧 7/8 完全对齐，E 项需 Autonomy v4 确认一处细化）**
 
-`L1 端点存在 → L2 可调用 → L3 权限允许 → L4 效果已验证`；结论必须写成「L1 PASS / L2 PASS / L3 DISABLED / L4 NOT RUN」，禁止越级。
+- A/B/C/D/F/G/H 七项：**DESIGN ALIGNED**，Android v4 口径与 Autonomy v3 §8 一致
+- E（发布/半写统一协议）：Android 按你要求增加「仍在发布中的文件 60s 内不得隔离」，Autonomy v3 §8.9 写的是「重试 3×50ms 后隔离」——**两者对"仍在写入"的等待窗口不一致**，需 Autonomy v4 确认按 60s（否则本项仍为 PARTIAL）
+- 无 BLOCKED：所有运行期项目都是 NOT RUN（见 §8），不阻塞设计定稿
 
-### 2.2 契约表（19 项）
+**八项差异一览**
 
-| # | 能力 | 入口 | 关键权限 | 失败码 | 级别 |
+| 项 | 主题 | v4 状态 |
+|---|---|---|
+| A | outbox 未 ack 回执 | 对齐（Android 不再有 7 天 TTL） |
+| B | `receiptSha256` | 对齐（对 outbox 原始字节做 SHA-256） |
+| C | `nextWake.reason=verifier_retry` | 对齐（纳入合法枚举 + 旧版兼容） |
+| D | `allowDefer=false` | 对齐（删除 1min 软件下限） |
+| E | 发布/半写/隔离 | **PARTIAL**（60s 窗口待对方确认） |
+| F | `INBOX_FULL` / `BACKPRESSURE` | 对齐（不删未确认、退避、告警） |
+| G | ledger TTL 归属 | 对齐（Android 不定义 TTL） |
+| H | merged / queued | 对齐（默认排队，merged 独立回执） |
+
+---
+
+## 1. 基线（2026-11-21 10:42 重新核对）
+
+| 对象 | 值 |
+|---|---|
+| `coordination/project-handoff` HEAD | `5e0159beff49e798101b11dc647030218f4fd4d6` |
+| 本报告 v3 blob | `461a67d6e1fce877dbdeac2a3360830f66f6e594`（commit `a48fc33`） |
+| Autonomy v3 | commit `de9b319ea1d747aa76e90d488ad315c1970c9e39` · blob `59b3b3b192c5e9f7be55b613a316372c22bcddff` |
+| Memory 报告（只读，非本会话） | blob `5f96d640e99b9d2fc1eb4e22d8bb79051419a841` |
+| `HANDOFF.md` / `REPORT.md` | `f8ffa40d…` / `e219f707…`（未改） |
+| `DSH-APP/DSHA` main | `36d89b72294348d0482d509109cf8e76d51fc1cb` |
+| 设备/运行时 | vivo V2154A · Android 14 · DSHA `0.2.1-rc.2-20261022.2100` · Ubuntu 24.04.3 · 伪 root uid 10328 · Node 24.19.0 |
+
+---
+
+## 2. 能力契约（保留 v3，未改）
+
+### 2.1 四级：L1 端点存在 / L2 可调用 / L3 权限允许 / L4 效果已验证（禁止越级）
+
+| # | 能力 | 入口 | 失败码 | 级别 |
+|---|---|---|---|---|
+| 1 | 读屏 | `/app/ui/dump` | `NO_PERMISSION` | L4 PASS |
+| 2 | 截屏 | `/app/ui/screenshot` | `NO_PERMISSION` | L4 PASS（1080×2400） |
+| 3 | 文字点按 | `/app/ui/tap?text=` | `NO_PERMISSION` | L2 / L4 NOT RUN |
+| 4 | 输入 | `/app/ui/input` | `NO_PERMISSION` | L2 / L4 NOT RUN |
+| 5 | 按键 | `/app/ui/key` | `NO_PERMISSION` | L2 / L4 NOT RUN |
+| 6 | 手势 | `/app/ui/swipe`、`tap?gesture=` | `UNAUTHORIZED`/`UNKNOWN` | L1 / L4 NOT RUN |
+| 7 | 应用启动 | `/app/launch` | `NO_CMD` | L2 / L4 NOT RUN |
+| 8 | 通知 | `/app/notify` | `NO_PERMISSION` | L1 / L4 NOT RUN |
+| 9 | 剪贴板读 | `/app/clip` | `NO_PERMISSION` | L4 PASS |
+| 10 | 剪贴板写 | `/app/clip?text=` | `NO_PERMISSION` | L1 / L4 NOT RUN |
+| 11 | 位置 | `/app/location` | `DISABLED` | L3 BLOCKED |
+| 12 | 传感器 | `/app/sensors`、`/app/sensor` | `DISABLED` | L4 PASS |
+| 13 | 手电 | `/app/torch` | `NO_PERMISSION` | L1 / L4 NOT RUN |
+| 14 | 虚拟屏 | `/app/vscreen/*` | `VSCREEN_NOT_RUNNING` | L2 / L4 NOT RUN |
+| 15 | 应用清单 | `/app/apps` | `NO_CMD` | L4 PASS |
+| 16 | 插件状态 | `/app/plugins` | `NO_CMD` | L4 PASS |
+| 17 | 设备文件读 | `/app/readfile` | `FORBIDDEN` | L2 FAIL |
+| 18 | 交互类 | `ask/toast/vibrate/share/open/export` | `NO_CMD` | L1 / L4 NOT RUN |
+| 19 | 设备 shell | `adb-shell` | `POLICY_BLOCKED`(126) | L4 PASS（只读） |
+
+### 2.2 失败码（冻结）：`UNAUTHORIZED`｜`NO_CMD`｜`POLICY_BLOCKED`｜`DISABLED`｜`NO_PERMISSION`｜`VSCREEN_NOT_RUNNING`｜`FORBIDDEN`；附加 `EXECUTION_UNKNOWN`（可能已执行，不重放）。
+
+### 2.3 权限/风险：已授 20 项；未授 `MANAGE_EXTERNAL_STORAGE`/`SYSTEM_ALERT_WINDOW`/`REQUEST_INSTALL_PACKAGES`；未声明 SMS/通讯录/相机；R1–R10 不变。
+
+---
+
+## 3. v4 差异收口（A–H）
+
+### A. outbox 未 ack 回执
+
+| 维度 | Android v3 原口径 | Autonomy v3 原口径 | **v4 统一口径** | Android 实现责任 | NOT RUN 验收 |
 |---|---|---|---|---|---|
-| 1 | 读屏语义树 | `/app/ui/dump` | 无障碍 | `NO_PERMISSION` | L4 PASS |
-| 2 | 截屏 | `/app/ui/screenshot` | 无障碍+截图 | `NO_PERMISSION`/`UNKNOWN` | L4 PASS（1080×2400） |
-| 3 | 文字点按 | `/app/ui/tap?text=` | 无障碍 | `NO_PERMISSION` | L2 PASS / L4 NOT RUN |
-| 4 | 输入 | `/app/ui/input` | 无障碍+焦点 | `NO_PERMISSION` | L2 PASS / L4 NOT RUN |
-| 5 | 按键 | `/app/ui/key` | 无障碍 | `NO_PERMISSION` | L2 PASS / L4 NOT RUN |
-| 6 | 手势 | `/app/ui/swipe`、`tap?gesture=` | 无障碍+最新截图凭据 | `UNAUTHORIZED`/`UNKNOWN` | L1 PASS / L4 NOT RUN |
-| 7 | 应用启动 | `/app/launch` | `QUERY_ALL_PACKAGES` | `NO_CMD`/`UNKNOWN` | L2 PASS / L4 NOT RUN |
-| 8 | 通知 | `/app/notify` | `POST_NOTIFICATIONS` | `NO_PERMISSION` | L1 PASS / L4 NOT RUN |
-| 9 | 剪贴板读 | `/app/clip` | 前台 | `NO_PERMISSION` | L4 PASS |
-| 10 | 剪贴板写 | `/app/clip?text=` | 前台 | `NO_PERMISSION` | L1 PASS / L4 NOT RUN |
-| 11 | 位置 | `/app/location` | 定位已授+DSHA 开关 | `DISABLED` | L3 BLOCKED |
-| 12 | 传感器 | `/app/sensors`、`/app/sensor` | 无 | `DISABLED` | L4 PASS（light=31.79 lux） |
-| 13 | 手电 | `/app/torch` | 闪光灯 | `NO_PERMISSION`/`UNKNOWN` | L1 PASS / L4 NOT RUN |
-| 14 | 虚拟屏 | `/app/vscreen/*` | Android 11+ | `VSCREEN_NOT_RUNNING` | L2 PASS / L4 NOT RUN |
-| 15 | 应用清单 | `/app/apps` | `QUERY_ALL_PACKAGES` | `NO_CMD` | L4 PASS（45 用户/424 可见） |
-| 16 | 插件状态 | `/app/plugins` | 无 | `NO_CMD` | L4 PASS |
-| 17 | 设备文件读 | `/app/readfile` | Android 权限+白名单 | `FORBIDDEN` | L2 FAIL（`/sdcard/*` 全拒） |
-| 18 | 交互类 | `/app/ask|toast|vibrate|share|open|export` | 各自 | `NO_CMD`/`UNKNOWN` | L1 PASS / L4 NOT RUN |
-| 19 | 设备 shell | `adb-shell` | uid2000 通道+设备策略 | `POLICY_BLOCKED`(126)/`UNAUTHORIZED` | L4 PASS（只读） |
+| 未 ack 回执 | 最长 7 天 TTL 后清理 | **未 ack 不自动删除**；如运维必须清理，须先复制进 ledger 并记 `OUTBOX_TTL_PURGED` | **未 ack 一律不自动清理**；Android 不再持有任何 outbox TTL | Android 只读，不删；读到后**先写 ack** 再认为已读 | 造 10 条未 ack 回执，运行 30 天模拟（时钟注入）后仍在 |
+| 读 → ack 顺序 | 读后写 ack（未强调顺序） | 以 ack 判定已读 | **先完整解析 → 落盘 ack（含 sha256）→ 才标记本地已读**；ack 失败则下次唤醒补读补写 | `ack/<id>.json` 写失败记 `ACK_WRITE_FAILED` 并重试 | 断电容错：ack 写一半崩溃后重启补写 |
+| outbox 满 | 未定义 | `rejected/BACKPRESSURE`，不丢旧回执 | 同 Autonomy；Android **不删任何回执**，只降低新请求频率 | 收到 BACKPRESSURE → 6h 内不发非紧急请求 | 模拟 500 条满载，验证不丢旧回执 |
+| 500 满载告警/恢复 | 未定义 | 80% 记 `INBOX_HIGH` | 80%（400）记 `OUTBOX_HIGH` 并**每天最多一次**用户可见提示；满载时只保留预留槽位写拒绝回执；恢复由负责人/DSH 处理队列，**不得删除未确认回执** | Android 发 `/app/notify` 低频告警；事件写 `QUEUE_BLOCKED` | 构造满载 + 预留槽位，验证仍有拒绝回执 |
 
-### 2.3 失败码（冻结，未改）
+### B. `receiptSha256`
 
-`UNAUTHORIZED`（重新取凭据，不重放）｜`NO_CMD`（能力不存在）｜`POLICY_BLOCKED`（126，停止，不绕道）｜`DISABLED`（产品开关，提示去设置）｜`NO_PERMISSION`（系统权限，提示设置）｜`VSCREEN_NOT_RUNNING`（需显式 create）｜`FORBIDDEN`（路径策略，换合法路径）。附加 `EXECUTION_UNKNOWN`：可能已执行，先核对，不自动重放。
+| 维度 | Android v3 | Autonomy v3 | **v4** | 责任 | NOT RUN |
+|---|---|---|---|---|---|
+| 计算对象 | 仅字段名出现 | 必须是 outbox 文件**原始字节** | **对 `outbox/<id>.json` 原始字节做 SHA-256**（读取时一次读入字节，先算 hash 再解析；解析与 hash 用同一份字节） | Android 实现「读字节 → sha256 → 解析 → 校验 attemptId」 | 用已知向量验证 hash 与 Autonomy 计算一致 |
+| ack 字段 | schema/attemptId/readAt/result/receiptSha256 | 同 | 同 v3 + `schema=1`；`result` 取自回执；`readAt` 为 Android 时钟 | — | ack 被 Autonomy 校验通过率 100% |
+| 一致性判定 | 未定义 | sha256 不一致视为未 ack、保留回执 | 同；Android 若发现 `attemptId` 与文件名不符 → `RECEIPT_INVALID`，不写 ack | 不一致时不 ack、下次重读 | 篡改回执 1 字节 → 不 ack |
 
-### 2.4 权限与风险（保留 v2）：已授 20 项；未授 `MANAGE_EXTERNAL_STORAGE`/`SYSTEM_ALERT_WINDOW`/`REQUEST_INSTALL_PACKAGES`；未声明 SMS/通讯录/相机；R1–R10 不变（内存、进程内定时、短信、录音、位置、readfile、appops、自启/被杀、LAN token、生产镜像缺 exporter/P4）。
+### C. `nextWake.reason = verifier_retry`
+
+| 维度 | Android v3 | Autonomy v3 | **v4** | 责任 | NOT RUN |
+|---|---|---|---|---|---|
+| 枚举 | `backoff/lease/budget/none` | 新增 `verifier_retry` | **接受 `verifier_retry`**，写进合法枚举 | 解析层白名单 | — |
+| 语义 | — | verifier 触发的重验请求 | **不得降级为 budget**：Android 原样保留 reason 字符串，不得改写 | 事件里记原始 reason | — |
+| 调度 | — | 按 `allowDefer` 分流 | 调度只由 `allowDefer/mode/notBefore/latest` 决定；`verifier_retry` 本身不额外加延迟，也不特殊提速 | `floor` 仅由 allowDefer 决定 | 断言 notBefore 不被改写 |
+| 旧版兼容 | — | 若 Android 拒绝则退回 `lease`+confidence | Android v4 起认识；**万一遇到未知 reason**：原样保留、按 `lease` 同等紧急度调度、记 `UNKNOWN_REASON_FALLBACK:<raw>`，绝不重写文件 | 兼容分支 | 注入未知 reason 断言不丢字段 |
+| 其他字段 | — | 不变 | `mode/allowDefer/confidence` 语义不变 | — | — |
+
+### D. `allowDefer=false`
+
+| 维度 | Android v3 | Autonomy v3 | **v4** | 责任 | NOT RUN |
+|---|---|---|---|---|---|
+| 下限 | 1min 软件 floor | 不得被普通 10min 下限无理由推迟 | **删除 1min 软件 floor**；`effective = max(notBefore, now)`，再受 `latest` 与 24h 兜底约束 | 计算层 | 断言不再出现 +60s |
+| 到时行为 | 未明确 | 按 notBefore 请求系统调度 | `notBefore` 已过 → **立即请求系统调度**（app 在前台可直接 startForegroundService；后台走 alarm/FGS，被拒记 `WAKE_START_DENIED`） | 调度层 | 前台/后台两路径各一例 |
+| 系统延迟 | 未区分 | 记 `DEFERRED_BY_SYSTEM` + actualAt | 同；另记可观测原因（Doze/AppStandby/FGS 限制/OEM），**不得写成 Autonomy 主动 defer** | 事件层 | 注入 Doze 模拟，断言错误分类 |
+| 10min 下限 | 全局 | 只约束 allowDefer=true | 只对 `allowDefer=true`（budget/none）生效 | — | — |
+
+### E. 发布与半写（PARTIAL：60s 窗口待确认）
+
+| 维度 | Android v3 | Autonomy v3 | **v4** | 责任 | NOT RUN |
+|---|---|---|---|---|---|
+| 发布方式 | link 优先，降级 O_EXCL+写+fsync | 请求用 link（不可覆盖）；回执/ack 用 rename；不支持 link 时降级 | 统一：请求=link（目标存在则换 seq，绝不覆盖）；回执/ack=rename（本模块独占文件名）；降级=O_EXCL create → write → fsync | Android 只对 inbox 用 link/降级；outbox/ack 不写 | fallback 路径实测（hardlink 支持性 NOT RUN） |
+| 识别「正在发布」 | 未定义 | 读者 3×50ms 重试后隔离 | **`.tmp-*` 一律不解析**；final 解析失败时：①重试 3×50ms；②若文件 mtime 年龄 <60s → 视为**可能仍在写入**，本轮不隔离、下轮再试；③年龄 ≥60s 仍无效 → 才移入 `.corrupt-<ts>` | 读方（Android 只读 outbox，隔离仅限自己读到的坏回执需谨慎：**outbox 属 Autonomy，Android 不移动其文件**，只记 `RECEIPT_INVALID` 并等其重写） | 半写注入：写 1KB 后暂停，验证 60s 内不隔离 |
+| 崩溃恢复 | 清理 >1h tmp | 同 | 启动清理 >1h `.tmp-*`；Android 对**自己**的 inbox 半写文件：同 attemptId 重写（幂等，记 `REPAIR_OWN_PARTIAL`）；不触碰他人文件 | Android | 断电模拟后重启，验证可自愈 |
+| 不覆盖 attemptId | 已写 | 已写 | 同：link 失败或已存在 → 换 seq；降级路径先 `exists()` 再 rename，单写者假设 + 事后校验 attemptId，冲突记 `ATTEMPT_ID_COLLISION` | Android | 并发两次同 id，验证只一份有效 |
+| **差异点** | — | 3×50ms 后即隔离 | Android 要求 60s 观察窗（你的裁决） | — | **需 Autonomy v4 确认** |
+
+> 说明：`/root` 为 f2fs（`df -T` 实测），同目录 rename/link 原子；跨目录不原子；PRoot 下 `link` 可用性未实测 → NOT RUN，降级路径必须实现。
+
+### F. `INBOX_FULL` / `BACKPRESSURE`
+
+| 维度 | Android v3 | Autonomy v3 | **v4** | 责任 | NOT RUN |
+|---|---|---|---|---|---|
+| 80% 预警 | 写 `INBOX_HIGH` | 同 | 400 条记 `INBOX_HIGH`，每天最多一次用户可见提示（`/app/notify`） | Android | 造假 400 条验证只提示一次 |
+| 满载 500 | 拒绝并记 `INBOX_FULL` | 不删未 ack | 同；**不覆盖、不删除任何未确认请求** | Android | 500 条时确认零删除 |
+| 写失败退避 | 退避 | — | 30min → 60min → 2h（上限 2h），只重试**同一 attemptId**（不新建） | Android | 断言 attemptId 不变 |
+| BACKPRESSURE 后 | 未定义 | 回执 `rejected/BACKPRESSURE` | 收到后 6h 内只发 `allowDefer=false` 的紧急请求；其余挂起；1 次用户提示 + `QUEUE_BLOCKED` 事件 | Android | 模拟 BACKPRESSURE，验证 6h 内只发紧急 |
+| 负责人介入 | 未定义 | — | 连续 3 次 `INBOX_FULL`/`BACKPRESSURE` → 提示「队列堵塞，请 DSH 处理」，**不自动清理** | Android | 提示只发一次/天 |
+| 超时重做 | 未定义 | — | **禁止**因请求超时自动新建 attemptId 重做；重试一律同 id，重做必须新 id + `RETRY_OF` | Android | 断言事件里无隐式新 id |
+
+### G. ledger TTL 归属
+
+| 维度 | Android v3 | Autonomy v3 | **v4** | 责任 | NOT RUN |
+|---|---|---|---|---|---|
+| TTL 表述 | 写「幂等表 TTL 1h」 | `recovery_requests` 保留 **30 天**，未决/未 ack 永久 | **Android 不再定义任何 ledger TTL**；只写「保留时间由 Autonomy 契约决定」 | 文档层 | — |
+| 幂等依赖 | attemptId | 同 | Android 只依赖「同一 attemptId 不重复执行」契约 | — | — |
+| 重试 | 新 attemptId + `RETRY_OF` | 同 | 同 v3；补「必须先收到旧 id 的终态回执或确认 `latest` 已过才重试」 | Android | 断言不提前重试 |
+
+### H. `merged` / `queued`
+
+| 维度 | Android v3 | Autonomy v3 | **v4** | 责任 | NOT RUN |
+|---|---|---|---|---|---|
+| 新请求默认 | 可被合并 | **默认 `queued`**，不合并执行 | **默认排队**；Android 不得假设「恢复中 = 会被合并」 | Android | — |
+| 静默合并/丢弃 | 允许合并 | 禁止静默 | 禁止；只有 Autonomy 明确返回 `merged` 才按 merged 处理 | Android | 注入并发请求，验证两条都有回执 |
+| merged 语义 | 可终态 | `merged + mergedInto`，leader `done + mergedFrom[]` | 同；**merged ≠ 未被处理**，Android 不得重发该 id | Android | 验证 merged 不回重试 |
+| 独立回执 | 未明确 | 每个 id 独立回执 | 同 | — | 计数校验：请求数 = 回执数 |
 
 ---
 
-## 3. 后台恢复设计 v3
+## 4. 保留设计（受 A–H 影响处已更新）
 
-### 3.1 12 项裁决 → 设计映射（同 v2）
-
-FGS+心跳保留 · Alarm 检查兜底 · JobScheduler 跨重启 · Boot 受 sentinel 门控 · 不新增精确闹钟权限 · 15–30min 初期目标 · Alarm→Boot→灰度 · force-stop 不恢复 · 事件日志分离 · Autonomy 唯一裁决 · 回执由 Autonomy 写 · Android 不解释任务语义。
-
-### 3.2 统一架构图（v3：队列化）
+### 4.1 架构图
 
 ```mermaid
 flowchart TD
-  SYS[Android 系统事件<br/>boot/alarm/job/user_open] --> WG[W1 WakeGate<br/>attemptId·去重·节流]
-  WG -->|已在运行| W3[W3 HarnessService 健康检查]
+  SYS[Android 系统事件] --> WG[W1 WakeGate<br/>attemptId·去重]
+  WG -->|已在运行| W3[W3 Harness 健康]
   WG -->|未运行| W2[W2 startForegroundService]
   W2 --> W3
   W3 --> W4[W4 DSH Web 就绪]
-  W4 --> IN[Android → /root/.dsha-wake/inbox/<attemptId>.json]
-  IN --> CONS{Autonomy 消费<br/>目录 watch / 启动扫描 / 5s 轮询}
-  CONS --> REC[W5 dyAutonomy.recover<br/>requestId·reason·bootId（不是 tick）]
-  REC --> VER[Autonomy verifier / lease→unknown 恢复]
-  VER --> OUT[Autonomy → /root/.dsha-wake/outbox/<attemptId>.json]
-  OUT --> RD[W6 Android 读回执]
-  RD --> ACK[Android → ack/<attemptId>.json]
-  ACK --> CLN[Autonomy 见 ack 后清理 outbox]
+  W4 --> IN[inbox/&lt;attemptId&gt;.json<br/>Android 写·link 发布]
+  IN --> CONS{Autonomy<br/>watch/启动扫描/5s 轮询}
+  CONS --> REC[W5 dyAutonomy.recover<br/>不是 tick]
+  REC --> VER[verifier / lease→unknown]
+  VER --> OUT[outbox/&lt;attemptId&gt;.json<br/>Autonomy 写]
+  OUT --> RD[W6 Android 读原始字节<br/>sha256 + 解析]
+  RD --> ACK[ack/&lt;attemptId&gt;.json<br/>含 receiptSha256]
+  ACK --> CLN[Autonomy 见 ack 清理]
   RD --> NW[按 nextWake 设 Alarm/Job]
   NW --> SYS
-  IN -.写失败降级.-> DL[DiagnosticLog]
   IN --> AE[/root/.dsha-android-events.jsonl/]
   REC --> UE[/root/.dsha-autonomy-events.jsonl/]
 ```
 
-**强调**：`W5` 是独立 recovery 入口，不是 `tick({trigger:'resume'})`；`W6` 未收到回执**不能**推导 W5 失败。
+### 4.2 状态机（W1–W6）
 
-### 3.3 目录与所有权（v3 变更）
+`REQUESTED → INBOXED → W2/W3(ANDROID_UP/HARNESS_UP) → W4 WEB_UP → REQUEST_PUBLISHED → W6 POLLING → CONFIRMED → ACKED → CLEANED`；
+`POLLING --latest 过--> UNCONFIRMED`（非终态，下次唤醒补读）；`SUPPRESSED_*` / `WAKE_START_DENIED` 为终态或需退避。
+**W6 未收到回执 ≠ W5 执行失败**；`merged` 是该 id 的独立终态。
 
-```
-/root/.dsha-wake/
-  inbox/    <attemptId>.json   # Android 写 / Autonomy 读
-  outbox/   <attemptId>.json   # Autonomy 写 / Android 只读
-  ack/      <attemptId>.json   # Android 写 / Autonomy 读
-  legacy/   wake.json, wake-result.json   # v2 单文件迁移备份（只读，1 个版本后删）
-```
-
-| 目录/文件 | 写入方 | 读取方 | 清理方 | 清理条件 |
-|---|---|---|---|---|
-| `inbox/<attemptId>.json` | Android | Autonomy | Android | 收到 ack 后 24h，或请求过期 7 天（需记事件） |
-| `outbox/<attemptId>.json` | Autonomy | Android | Autonomy | 见到 ack 后 10min，或 7 天 TTL（需记事件） |
-| `ack/<attemptId>.json` | Android | Autonomy | Android | 写入后 24h |
-| `/root/.dsha-web-activity.json` | DSH Host | Android | DSH Host | 既有策略 |
-| `/root/.dsha-android-events.jsonl` | Android | 诊断 | Android | 2MB×2 轮转 |
-| `/root/.dsha-autonomy-events.jsonl` | Autonomy | 诊断 | Autonomy | 2MB×2 轮转 |
-
-**禁止**：两模块共写同一文件；Android 读写 `autonomy.db`；Autonomy 写 inbox/ack。
-
-### 3.4 请求队列（inbox）规范
-
-- 文件名 = `attemptId`，字符集 `[a-z0-9-]`，长度 ≤96；`attemptId = "w-" + bootId8 + "-" + reason + "-" + windowStartMin + "-" + seq`
-- **唯一性**：`attemptId` 由 Android 生成；冲突（同窗口同 seq）→ seq+1 重试，最多 5 次；仍冲突记 `ATTEMPT_ID_COLLISION`
-- **不覆盖**：发布前若目标已存在 → 不写、seq+1；**绝不 rename 覆盖已有 attempt**
-- **顺序**：Autonomy 按 `requestedAt` 升序（同值按文件名）消费，一次一个 inflight
-- **上限**：500 条；80% 记 `INBOX_HIGH`；满则拒绝新请求（`INBOX_FULL`），**不删除未 ack 条目**
-- **字段**：`schema, attemptId, bootId, reason, requestedAt, notBefore, latest, deadline, generation, mode, allowDefer`
-
-### 3.5 回执队列（outbox）与 ack
-
-- Autonomy 每个 attemptId 写**恰好一个**回执（含 merged 的每个 attemptId 都有）
-- `result` 取值：`accepted | rejected | deferred | done | expired | failed | merged`
-- `merged` 必须带 `mergedInto=<主 attemptId>`；主回执带 `mergedFrom[]`（≤5），两边都可终态
-- **保留**：未 ack 的回执不得删除；上限 500；满则 Autonomy 拒绝新的恢复（回执 `rejected/BACKPRESSURE`），不丢旧回执
-- **ack**：Android 成功解析并落盘判定后写 `ack/<attemptId>.json`：`{schema, attemptId, readAt, result, receiptSha256}`；写失败则下次唤醒重试（`ACK_WRITE_FAILED`）
-- Autonomy 见到 ack（或 7 天 TTL）才清理 outbox；Android 见到自己的 ack 才清理 inbox
-
-### 3.6 原子写与持久性（f2fs 规则）
-
-| 步骤 | 规则 |
-|---|---|
-| 1 写临时 | 目标同目录创建 `.tmp-<attemptId>-<pid>-<rand>`，`O_CREAT|O_EXCL`，`0600` |
-| 2 落盘 | `write` → `fsync(fd)` → `close` |
-| 3 发布 | 首选 `link(tmp, final)`（目标已存在则失败，**天然不覆盖**）；不可用时退化为 `O_EXCL create final → write → fsync`（内容可能半写，由读取方校验丢弃） |
-| 4 目录持久 | `fsync(dirfd)`（rename/link 的元数据落盘） |
-| 5 清理 tmp | 发布后 unlink tmp；启动时清理 >1h 的 `.tmp-*` |
-| 读取 | 校验大小 ≤64KB、JSON 完整、`schema=1`、`attemptId === 文件名`；失败 → 移入 `<name>.corrupt-<ts>` + 事件，**不静默删** |
-| 磁盘不足 | 写入失败保留旧文件；记 `STORAGE_LOW`，退避；不降级到 `/sdcard` |
-| f2fs 注意 | 同目录 rename/link 原子；跨目录不原子；不依赖 mtime 精度（用内容 hash 判定变化）；`inline_dentry` 不影响 rename 语义 |
-
-### 3.7 消费机制（9 问，含 v3 队列）
-
-| 问题 | 机制 |
-|---|---|
-| 1. 已运行时如何收到 | Autonomy 在 `apply()` 注册 `fs.watch('/root/.dsha-wake/inbox', {persistent:false})`（目录级），300ms 去抖；只处理新增/变更文件 |
-| 2. 触发通道分工 | Host 内部调用（boot/启动）→ 目录 watch（运行时）→ 5s 目录轮询（兜底）→ 60s 维护扫描（最后兜底） |
-| 3. 启动与运行时统一 | 同一 `consumeInbox(reason)`：扫描未处理文件、按 `requestedAt` 排序、逐个 CAS 认领；启动时先扫描再挂 watch |
-| 4. 半写入/覆盖 | 见 §3.6；半写文件校验失败 → 跳过并等下次；不删除 |
-| 5. 重复 attemptId | Autonomy `recovery_requests(attempt_id PK)` TTL 1h；命中返回缓存回执（`duplicate=true`），不重复执行 |
-| 6. 过期 | `now > deadline` 或 `requestedAt+10min < now` → 回执 `expired/REQUEST_EXPIRED`，不恢复 |
-| 7. 恢复中收到新请求 | 不合并执行：新请求留在 inbox 排队；若必须合并（同 kind 且当前 inflight），写 `merged` 回执并记 `mergedFrom`；主回执完成后再处理队列 |
-| 8. Android 如何判定结果 | 读 `outbox/<attemptId>.json`；1s→30s 退避轮询到 `latest` 停；终态 `done/rejected/expired/failed/merged`；**未收到** → `UNCONFIRMED`（见 §3.8） |
-| 9. 重启恢复 | Android：扫 outbox 补读未 ack → 补 ack；扫 inbox 未 ack 的保留待处理。Autonomy：扫 inbox 未处理 → 处理；扫 outbox 缺失的回执 → 重写 |
-
-### 3.8 回执轮询与「未收到」语义（W6 ≠ W5）
-
-| 观测（W6） | 允许的结论 | 禁止的结论 |
-|---|---|---|
-| 收到 `done` | W5 完成，按回执内容 | — |
-| 收到 `rejected/deferred` | W5 已知结果 | — |
-| 到 `latest` 仍未收到 | **UNCONFIRMED**（传输层未观测到结果） | ✗「Autonomy 执行失败」 ✗「任务丢失」 |
-| 回执损坏 | `RECEIPT_INVALID`，重试读取 | ✗ 丢弃该 attempt |
-| 旧回执（attemptId 不匹配） | 忽略 | ✗ 当成当前结果 |
-
-规则：
-1. 停止轮询**不等于**丢弃请求；请求与回执按 §3.4/3.5 保留。
-2. `RECEIPT_TIMEOUT` 只是 W6 观测码，不写进 W5 状态，也不触发「重做」。
-3. 下次唤醒时**先补读** outbox 中未 ack 的 attempt，再决定是否发新请求。
-4. 同一 `attemptId` 永不重复执行（Autonomy 幂等表保证）。
-5. 不得因回执暂未到就创建新的执行请求；只有 `latest` 已过且策略允许时，才用**新 attemptId**（`reason=retry`）发起，并在事件里记 `RETRY_OF:<旧 attemptId>`。
-
-### 3.9 nextWake 契约（六字段）
-
-```json
-{ "notBefore": 1795201800000, "latest": 1795205400000,
-  "reason": "backoff|lease|budget|none", "mode": "check|recover",
-  "allowDefer": true, "confidence": 0.8, "at": 1795201800000 }
-```
-- `at` 仅作 `notBefore` 的兼容别名
-- Android 计算：`effective = min(max(notBefore, now + floor(mode, allowDefer)), latest, now + 24h)`
-- `floor`：普通周期 = 10min；`allowDefer=false` = **1min**（紧急核实不被普通下限主动延后；仍受 Doze/系统调度限制）
-- `latest` 为硬上界：错过则下次唤醒立即执行（记 `MISSED_WINDOW`）
-- 缺失或无 `nextWake` → 默认 `check` 30min
-- Android 只执行建议，不推断任务优先级；最终值与理由写 `NEXT_WAKE_SET`
-
-### 3.10 状态机（W1–W6 + 队列状态）
-
-```
-W1 REQUESTED ──dedupe/throttle──▶ DEDUPED/THROTTLED
-   └─允许─▶ PUBLISHING ──ok──▶ INBOXED
-INBOXED ──(Android 侧)──▶ W2 ANDROID_UP? ──否──▶ STARTING ──fail──▶ WAKE_START_DENIED
-W2/W3 ──canAutoStart? 否──▶ SUPPRESSED_*(终态)
-W3 ──▶ W4 WEB_UP(generation+1) ──▶ REQUEST_PUBLISHED
-REQUEST_PUBLISHED ──▶ W6 POLLING ──receipt──▶ CONFIRMED(终态)
-                                   └─latest 过─▶ UNCONFIRMED(非终态，可补读)
-UNCONFIRMED ──下次唤醒补读──▶ CONFIRMED
-CONFIRMED ──▶ ACKED ──▶ CLEANED
-```
-
-队列文件状态：`published → consumed(仅 Autonomy 可见) → receipt_written → acked → cleaned`；Android 不感知 `consumed`。
-
-### 3.11 失败场景（24 条）
-
-| # | 段 | 场景 | 处理 | 码 | 重试 |
-|---|---|---|---|---|---|
-| 1 | W1 | 同窗口重复 | 丢弃 | `DEDUPED` | 否 |
-| 2 | W1 | 频率过高 | 丢弃 | `THROTTLED` | 否 |
-| 3 | W1 | 低内存 | 只检查 | `DEFERRED_LOW_MEMORY` | 下次 |
-| 4 | W2 | 后台 FGS 启动被拒 | 退避，不换通道 | `WAKE_START_DENIED` | 是 |
-| 5 | W2 | force-stop | 等用户打开 | `IRRECOVERABLE_USER_FORCE_STOP` | 否 |
-| 6 | W3 | stop sentinel | 不启动 | `SUPPRESSED_USER_STOPPED` | 否 |
-| 7 | W3 | 连续失败阻塞 | 提示恢复页 | `SUPPRESSED_RESTART_BLOCKED` | 否 |
-| 8 | W3 | 会话状态未知 | 不自动启动 | `SUPPRESSED_RESTORE_UNKNOWN` | 否 |
-| 9 | W4 | web 起不来 | 现有 3 次+120s | `RESTORE_FAILED` | 是 |
-| 10 | W2/W4 | 进程与 node 生命周期不同步 | 分别探测 3090/38105 | `STAGE_MISMATCH` | 是 |
-| 11 | 队列 | attemptId 冲突 5 次 | 放弃本轮 | `ATTEMPT_ID_COLLISION` | 下次 |
-| 12 | 队列 | inbox 满 | 拒绝新请求 | `INBOX_FULL` | 下次 |
-| 13 | 队列 | outbox 满 | 拒绝新恢复 | `BACKPRESSURE` | 下次 |
-| 14 | 队列 | 半写入/损坏 | 跳过+隔离 | `WAKE_FILE_INVALID` | 否（等新文件） |
-| 15 | 队列 | 发布失败（磁盘满） | 保留旧文件 | `STORAGE_LOW` | 是（退避） |
-| 16 | 队列 | tmp 残留 | 启动清理 >1h | `TMP_CLEANED` | — |
-| 17 | 队列 | 目录 fsync 失败 | 记事件，继续（可能丢 rename） | `DIRSYNC_FAILED` | 下次 |
-| 18 | W5 | 请求过期 | 回执 expired | `REQUEST_EXPIRED` | 否 |
-| 19 | W5 | 恢复中又到请求 | 排队或 merged | `MERGED` | 否 |
-| 20 | W6 | 到 latest 未收到 | 标 UNCONFIRMED | `RECEIPT_TIMEOUT` | 补读，不重发 |
-| 21 | W6 | 回执损坏 | 隔离+重试读 | `RECEIPT_INVALID` | 是（读取） |
-| 22 | W6 | ack 写失败 | 下次补写 | `ACK_WRITE_FAILED` | 是 |
-| 23 | 任意 | 时间前跳/回拨 | 只影响窗口 | `CLOCK_JUMP` | 否 |
-| 24 | 任意 | 事件日志写失败 | 降级 DiagnosticLog | `EVENTLOG_FALLBACK` | 否 |
-
-### 3.12 参数与保留
+### 4.3 参数（更新）
 
 | 项 | 值 |
 |---|---|
-| 心跳 / 重启冷却 / 失败阈值 | 15s / 120s / 3（现状） |
-| Alarm | 30min（正常）· 15min（紧急）· 60min（空闲） |
-| 唤醒硬下限 | 10min；`allowDefer=false` 1min |
-| 失败退避 | 1/2/4/8/16/32/60min，日封顶 48 次 |
-| 请求 TTL | 10min（过期）；`latest` 为执行窗上界 |
-| 回执轮询 | 1s→30s 退避，到 `latest` 停 |
-| inbox/outbox 上限 | 各 500；ack 24h；未 ack 回执 7 天 |
+| 心跳 / 重启冷却 / 失败阈值 | 15s / 120s / 3 |
+| Alarm | 30min 正常 · 15min 紧急 · 60min 空闲 |
+| 下限 | `allowDefer=true` 10min；`allowDefer=false` **无软件下限** |
+| 失败退避 | 1/2/4/8/16/32/60min，日封顶 48 |
+| 请求 TTL | 10min 过期；`latest` 为执行窗上界 |
+| 回执轮询 | 1s→30s，到 latest 停 |
+| 队列 | inbox/outbox 各 500；ack 24h；**未 ack 永久**；corrupt 30d |
 | 事件日志 | 2MB×2 |
-| 重型任务并发 | ≤2 subagent + ≤1 Chromium |
+| 并发 | ≤2 subagent + ≤1 Chromium |
 
-### 3.13 分阶段计划（授权门槛不变）
+### 4.4 失败场景（增补至 27 条）
 
-P0 分支实现 → P1 模拟（boot/alarm/队列/去重/损坏/退避）→ **P2 Alarm 健康检查**（test APK，需授权）→ **P3 Boot 自启**（受 sentinel）→ P4 staging（端口 31873）→ P5 生产灰度（先只读回执 24h）。回滚：`WakeScheduler.enabled=false` + 停 alarm/job，数据保留。
+原 24 条保留；新增：25 `OUTBOX_HIGH/QUEUE_BLOCKED`（80%/满载告警）；26 `UNKNOWN_REASON_FALLBACK`（未知 reason 按 lease 处理并保留原串）；27 `REPAIR_OWN_PARTIAL`（Android 修复自己半写的 inbox，同 id 幂等）。
 
-### 3.14 未验证
+### 4.5 队列与消费规范（v3 保留，v4 仅改 TTL/隔离/告警）
 
-kill 后 START_STICKY｜vivo 放行后台 FGS（INCONCLUSIVE）｜Freezer（INCONCLUSIVE）｜OEM 拦 boot｜JobScheduler 现状｜force-stop 真实表现｜**hardlink 在 f2fs 的可用性（本轮未测，NOT RUN）**｜`fs.watch` 长稳｜轮询负载。
+- `attemptId = "w-" + bootId8 + "-" + reason + "-" + windowStartMin + "-" + seq`，字符集 `[a-z0-9-]`，≤96 字符
+- 顺序：Autonomy 按 `requestedAt` 升序（同值按文件名），一次一个 inflight
+- 消费通道：Host 内部调用（boot/启动）→ 目录 `fs.watch('/root/.dsha-wake/inbox')` 去抖 300ms → 5s 目录轮询 → 60s 维护扫描
+- 半写：读者只解析 final 文件；`.tmp-*` 忽略；解析失败 3×50ms 重试 → 60s 观察窗（见 E）→ 隔离
+- 重启：Android 扫 outbox 补读补 ack、扫 inbox 未 ack 的保留；Autonomy 扫 inbox 未 ingest、scan ledger 未完成、重写丢失回执
+- 幂等：同一 attemptId 永不重复执行；重试必须新 id + `RETRY_OF:<旧 id>`
+
+### 4.6 回执字段与 nextWake（v4）
+
+回执（Autonomy 写）：`schema, attemptId, requestId, result(accepted|rejected|deferred|done|expired|failed|merged), errorCode, runtimeId, bootId, startedAt, finishedAt, pendingTasks{5 类}, recovery{scanned,claimed,counts,results,errors}, nextWake, mergedFrom[] | mergedInto, duplicate`
+ack（Android 写）：`schema, attemptId, readAt, result, receiptSha256`
+nextWake：`{schema, notBefore, latest, reason(lease|backoff|verifier_retry|budget|none), mode(check|recover), allowDefer, confidence, at(=notBefore 别名)}`
+- Android 计算：`effective = min(max(notBefore, now), latest, now+24h)`；`allowDefer=true` 才加 10min 下限
+- 缺失 nextWake → 默认 check/30min；最终值与理由记 `NEXT_WAKE_SET`
+
+### 4.7 失败场景（27 条）
+
+| # | 段 | 场景 | 处理 | 码 |
+|---|---|---|---|---|
+| 1 | W1 | 同窗口重复 | 丢弃 | `DEDUPED` |
+| 2 | W1 | 频率过高 | 丢弃 | `THROTTLED` |
+| 3 | W1 | 低内存 | 只检查 | `DEFERRED_LOW_MEMORY` |
+| 4 | W2 | 后台 FGS 被拒 | 退避，不换通道 | `WAKE_START_DENIED` |
+| 5 | W2 | force-stop | 等用户打开 | `IRRECOVERABLE_USER_FORCE_STOP` |
+| 6 | W3 | stop sentinel | 不启动 | `SUPPRESSED_USER_STOPPED` |
+| 7 | W3 | 连续失败阻塞 | 提示恢复页 | `SUPPRESSED_RESTART_BLOCKED` |
+| 8 | W3 | 会话状态未知 | 不自动启动 | `SUPPRESSED_RESTORE_UNKNOWN` |
+| 9 | W4 | web 起不来 | 现有 3 次+120s | `RESTORE_FAILED` |
+| 10 | W2/W4 | 进程与 node 不同步 | 分别探测 | `STAGE_MISMATCH` |
+| 11 | 队列 | attemptId 冲突 5 次 | 放弃本轮 | `ATTEMPT_ID_COLLISION` |
+| 12 | 队列 | inbox 满 | 拒绝新请求 | `INBOX_FULL` |
+| 13 | 队列 | outbox 满 | 拒绝新恢复，保留旧回执 | `BACKPRESSURE` |
+| 14 | 队列 | 半写入/损坏 | 观察窗后隔离 | `WAKE_FILE_INVALID` |
+| 15 | 队列 | 磁盘满 | 保留旧文件+退避 | `STORAGE_LOW` |
+| 16 | 队列 | tmp 残留 | 启动清理 >1h | `TMP_CLEANED` |
+| 17 | 队列 | 目录 fsync 失败 | 记事件继续 | `DIRSYNC_FAILED` |
+| 18 | W6 | 到 latest 未收到 | 标 UNCONFIRMED | `RECEIPT_TIMEOUT` |
+| 19 | W6 | 回执损坏 | 不 ack、等重写 | `RECEIPT_INVALID` |
+| 20 | W6 | ack 写失败 | 下次补写 | `ACK_WRITE_FAILED` |
+| 21 | W5 | 请求过期 | 回执 expired | `REQUEST_EXPIRED` |
+| 22 | W5 | 恢复中又到请求 | 排队（或对方明确 merged） | `QUEUED`/`MERGED` |
+| 23 | 任意 | 时间跳变 | 只影响窗口 | `CLOCK_JUMP` |
+| 24 | 任意 | 事件日志写失败 | 降级 DiagnosticLog | `EVENTLOG_FALLBACK` |
+| 25 | 队列 | 80%/满载告警 | 每天一次提示 | `OUTBOX_HIGH`/`QUEUE_BLOCKED` |
+| 26 | nextWake | 未知 reason | 按 lease 处理、保留原串 | `UNKNOWN_REASON_FALLBACK` |
+| 27 | 队列 | 自己半写的 inbox | 同 id 重写（幂等） | `REPAIR_OWN_PARTIAL` |
 
 ---
 
-## 4. 证据索引
+## 5. 证据索引
 
-### 4.1 源码（`DSH-APP/DSHA` @ `36d89b7`）
-
-BootReceiver 51-88｜HarnessService 19-28/47-49/199-270/353-405/484-577/608-640/436-455｜AdbKeepAliveReceiver 22-33/54-64｜DeviceBridgeService 86-88/112-160/228-253/361-365｜AutomaticBackups 49-69｜WebLifecycleController 860-866/878-895/1917-1922/1936-1948｜WebLifecycle 53-55｜DiagnosticLog 14-36/67-89｜ConfigStore 643｜app-integration/index.js 16-50｜AndroidManifest 14-40/246-251/268-285。
-
-### 4.2 设备证据（09:44–09:50）
-
-`/app/device`（android=14、battery=94%、`app_foreground=true`、2.41GB 可用）｜`dumpsys activity processes`（pid 22300、1d22h12m、FGS）｜`dumpsys power`（白名单含 10328）｜`cat /proc/sys/kernel/random/boot_id` = `70301938-bbaf-…`｜`fs.watch('/root')` 可注册｜`df -T /root` = **f2fs**。
-
-### 4.3 跨报告
-
-`coordination/Autonomy 自主系统负责人报告.md`（v2，blob `899528d7…`，commit `01afc56`）：§8 文件契约、§8.5 pendingTasks、§8.6 nextWake、§8.8 原子写规则，与本报告 §3.3–3.9 对齐；**v3 队列化需其 v3 确认**。
-
-### 4.4 文档
-
-[FGS 后台启动限制](https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start)｜[Android 15 BOOT_COMPLETED 限制](https://developer.android.com/about/versions/15/behavior-changes-15)｜[Android 14 FGS 类型](https://developer.android.com/about/versions/14/changes/fgs-types-required)
+- 源码：`DSH-APP/DSHA` @ `36d89b7`（BootReceiver 51-88；HarnessService 47-49/199-270/484-577；AdbKeepAliveReceiver 22-33；AutomaticBackups 49-69；WebLifecycleController 878-895/1917-1922/1936-1948；WebLifecycle 53-55；DiagnosticLog 14-36；app-integration/index.js 16-50）
+- 平台：`df -T /root` = f2fs；`/proc/sys/kernel/random/boot_id` 可读；`fs.watch('/root')` 可注册（本轮只读复核，10:44）
+- 跨报告：Autonomy v3（`de9b319`，blob `59b3b3b1…`）§8.1–8.11
+- 设备：pid 22300、FGS、Doze 白名单含 10328、`MemAvailable 2.41GB`（09:44）
 
 ---
 
-## 5. 决策、授权与一致性
+## 6. 决策 / 授权 / 一致性
 
-### 5.1 仍需 GPT 裁决
-1. 目录化契约需 Autonomy v3 确认（其 v2 §8.1–8.8 仍写单文件）。
-2. 队列上限 500 / ack 24h / 未 ack 回执 7 天是否接受。
-3. `allowDefer=false` 紧急下限 1min 是否接受。
-4. hardlink 发布不可用时的降级顺序是否接受。
+### 6.1 仍需 GPT 裁决
+1. **E 项 60s 观察窗**：是否要求 Autonomy v4 把「3×50ms 后隔离」改成「60s 观察窗」（本报告按你的要求已改为 60s）。
+2. 80% 告警的频率上限（本报告取「每天一次」）。
+3. `BACKPRESSURE` 后 6h 冷却是否接受。
 
-### 5.2 需负责人授权
+### 6.2 需负责人授权
 test APK｜kill/reboot 实验｜staging｜生产灰度与开关｜电池优化白名单长期依赖。
 
-### 5.3 跨报告一致性：三项已对齐（v3 更新）
-Autonomy v2（commit `01afc56cd8067a089e26525cba276a5ed2abf262`，blob `899528d74538d6033bc4128a906cfe486d7b7880`）已修正 v1 三处：
-1. ✅ 事件日志拆分（`dsha-android-events.jsonl` / `dsha-autonomy-events.jsonl`）— 其 §8.7；
-2. ✅ 回执删除 `resumeTick`（恢复不依赖 tick）— 其 §8.7；
-3. ✅ `/root` 更正为 f2fs — 其 §8.7。
-→ 三项**不再列为待修复**；本报告 §5.3 与 §6.3 相应更新。
-
-**唯一新差异**：本报告 v3 将单文件契约升级为 inbox/outbox/ack 目录队列（GPT 本轮要求），Autonomy v2 §8.1–8.8 尚未包含，需其 v3 确认或由 GPT 裁定以本报告为准。
+### 6.3 一致性状态
+A/B/C/D/F/G/H：**DESIGN ALIGNED**（与 Autonomy v3 §8 逐项一致）。
+E：**PARTIAL**（Android 增加 60s 观察窗，Autonomy v3 为 3×50ms 后隔离；需其 v4 确认或由你裁定）。
+无 BLOCKED。
 
 ---
 
-## 6. 本轮变更摘要
+## 7. 变更摘要
 
-### 6.1 新增
-- inbox/outbox/ack 目录队列与所有权/清理表
-- attemptId 唯一性、发布不覆盖、顺序消费、上限与背压
-- `merged` 回执语义（每个 attemptId 必有回执，不静默丢）
-- ack 确认后清理；未 ack 保留 7 天
-- 回执「未收到 ≠ 失败」的 W6/W5 推断表（5 条规则）
-- nextWake 六字段（notBefore/latest/reason/mode/allowDefer/confidence）与 allowDefer 语义
-- f2fs 原子写/fsync/发布降级/损坏隔离/磁盘满/清理规则
-- 24 条失败场景（含队列类）
-
-### 6.2 修正
-- 单文件 `wake.json`/`wake-result.json` → 目录队列（v2 §3.3/3.4/3.6/3.7 被取代）
-- `wake-result.json` 保留 1 条 → 每 attemptId 一份回执，按 attemptId 保留
-- 回执轮询终止语义明确为「UNCONFIRMED，可补读」
-- §5.3 三项从「待修复」改为「已对齐」
-
-### 6.3 未解决
-1. Autonomy v3 对目录队列的确认（当前唯一跨报告差异）
-2. 队列上限/保留数值待联合确认
-3. `allowDefer=false` 下限与系统调度交互未实测
-4. hardlink 在 f2fs 的可用性 NOT RUN
-5. 全部真机验证（kill/reboot/FGS 拒绝/OEM 拦截/force-stop）NOT RUN
-6. `appops` 级证据仍 BLOCKED
+**修正**：outbox 7 天 TTL → 未 ack 永久；1min 软件 floor → 无下限；ledger TTL 1h → 不定义；隔离策略 → 60s 观察窗；新增 `verifier_retry`、`receiptSha256` 原始字节口径、`BACKPRESSURE`/`INBOX_FULL` 退避与告警、`merged≠未处理`。
+**保留**：四段状态机、inbox/outbox/ack 目录、consume 机制、W6≠W5、19 项能力契约与失败码。
+**未解决**：E 的 60s 窗口（待对方确认）；hardlink 在 f2fs/PRoot 的可用性（NOT RUN）；全部真机项（§8）。
 
 ---
 
-## 7. 边界声明
+## 8. NOT RUN（不得写成真机通过）
 
-本轮只读设计修订：未改 DSHA 源码/Manifest/服务/配置/权限；未装包、未部署、未重启；未 kill/reboot；未启动 staging/真实调度；未申请新权限；未碰生产库；未改 `HANDOFF.md`/`REPORT.md`/`PROJECT.md`；未改 Autonomy 接口或其报告。
+目录级 `fs.watch` 稳定性｜f2fs fsync 延迟｜ENOSPC｜hardlink 不可用降级实测｜kill/reboot｜Android 写 inbox/读 outbox/写 ack 全链路｜双 worker 并发｜test APK｜staging｜FGS 后台启动被拒｜OEM 拦截｜force-stop 真实表现｜`appops` 级证据。
+
+---
+
+## 9. 边界声明
+
+本轮只读设计修订：未改 DSHA 源码/Manifest/服务/权限/profile/配置；未构建/安装 APK；未 kill/reboot；未启动 staging/scheduler/executor；未部署/重启；未改生产 DB；未改 `HANDOFF.md`/`REPORT.md`/`PROJECT.md`；未修改 Autonomy/Memory/Persona 报告。
