@@ -1,10 +1,10 @@
-# MEMORY-REPORT-0018 · Memory 记忆智能体报告
+# MEMORY-REPORT-0019 · Memory 记忆智能体报告
 
 > 会话：Memory 记忆智能体（Memory 领域专业智能体）
-> 任务标识：`MEM-VALIDITY-BATCH-E-REVERIFY-03`（v17）→ `MEM-WAKE-CAPTURE-DECISION-01`（v18）
+> 任务标识：v17 `MEM-VALIDITY-BATCH-E-REVERIFY-03` → v18 `MEM-WAKE-CAPTURE-DECISION-01` → **v19 `MEMORY-MINIMAL-INTEGRATION-VERIFY-01`**
 > 覆盖任务：Batch A PASS → Batch B PASS → Batch C PASS → Batch D PASS → **Batch E（weekly）第三次复验**
 > 仓库：`ba-song/dsh-memory-core`｜本文件覆盖式更新、版本号递增
-> 最近更新：2026-11-21 18:2x (Asia/Shanghai) · v18
+> 最近更新：2026-11-21 18:5x (Asia/Shanghai) · v19
 
 ## 版本历史
 
@@ -16,7 +16,8 @@
 | MEMORY-REPORT-0015 | 17:0x | Batch E 首验 BLOCKED |
 | MEMORY-REPORT-0016 | 17:1x | Batch E 二验 BLOCKED（validTo 放错行） |
 | MEMORY-REPORT-0017 | 17:4x | **Batch E 三验：PASS（隔离代码验证）** —— 305/305 ×4、30/30 ×3、53/53、7/7 负向对照 |
-| MEMORY-REPORT-0018 | 18:2x | **新增设计决议：自主唤醒回合自动写入（方案 A，已由负责人拍板，待实现）**；v17 的 Batch E 结论不变 |
+| MEMORY-REPORT-0018 | 18:2x | 设计决议：自主唤醒回合自动写入（方案 A，待实现） |
+| MEMORY-REPORT-0019 | 18:5x | **最小集成分支验证：BLOCKED** —— 缺 `lib/time/anchor.js`；6 个既有测试因行为变更未同步；35 个测试文件未带入 |
 
 ---
 
@@ -238,3 +239,82 @@ HEAD:lib/store/validity.js    = 7aabea0efff2b9d5fe40acea19fcc4609f5e87e6
 
 - 本地未写生产 DB、未改插件/profile/config、未部署、未合并；本节仅为决策记录。
 - 实施需隔离分支（建议 `feat/memory-wake-capture`）+ GPT 协调 + 独立复验；生产部署另需授权。
+
+
+---
+
+## 10. `MEMORY-MINIMAL-INTEGRATION-VERIFY-01`（最小集成分支验证）
+
+> 分支 `feat/memory-validity-minimal-integration` @ `b15a07a529e51bdffb1b487f90feb99c96dca056`
+> 基线 `752cd0861e9c86c9f7be4bdf18302fa72a3b95dd`（main）；compare：ahead 18 / behind 0；15 个文件变更（10 M + 5 A），与任务清单一致。
+> 结论：**BLOCKED**（只读、临时库；未改代码、未动生产）。
+
+### 10.1 P0：缺失模块（阻塞全量）
+
+- `lib/consolidate/daily.js:16` → `import { anchorRelativeTime } from '../time/anchor.js'`
+- 实际：`lib/time/` 目录在本分支**不存在**（main 也没有；该文件在 `feat/m1-preference-memory` 上，blob `94c8d44aa772f639797840b403d841154e7872b8`，提交 `a77b801`）
+- 复现：`node -e "import('lib/index.js')"` → `ERR_MODULE_NOT_FOUND: .../lib/time/anchor.js`
+- 影响：`lib/index.js:47` 传递依赖 daily.js → 依赖 index 的测试全部无法加载；全量 **131 tests / 102 pass / 29 fail**（29 个文件级失败）
+- 最小修复：把 `lib/time/anchor.js`（blob `94c8d44a…`）加入本分支
+
+### 10.2 P1：补上 P0 后仍 6 个既有测试失败（行为变更未同步测试）
+
+诊断方式：在 `/tmp/memaudit/integ-scratch` 副本加入缺失文件后运行（仅诊断，不代表分支已修）→ **136 tests / 130 pass / 6 fail**：
+
+| 测试 | 失败断言 | 原因 |
+|---|---|---|
+| `tests/remembered.test.mjs:22` | `block.startsWith('【记得的事】')` | M1 起 preference 不再进常驻块（`preference-managed-separately`），测试仍插 preference |
+| `tests/scope.test.mjs:99` | external/home 便签断言 | 同上 |
+| `tests/inject-b1b.test.mjs:57` | 「传 db 后应能读到记得的事」 | 同上 |
+| `tests/inject-safety.test.mjs:103` | `captured.length === 1`（实得 2） | `agent/created` 现同时挂 `dy-preference` + `dy-memory-stable`，测试只认 1 个且取 `[0]` |
+| `tests/prestep.test.mjs:53` | `mountedCalls.length === 1` | 同上 |
+| `tests/carryover.test.mjs:35` | `caps.length === 1` | 同上 |
+
+最小修复：从特性分支带入对应测试更新（Batch A 已有更新版 remembered/scope/inject/prestep 断言），或按 M1 语义改这 6 处预期。
+
+### 10.3 P2：新模块零测试覆盖
+
+- 本分支 `tests/` 108 个文件；P4 分支 143 个 → **缺 35 个测试文件**，含 `validity.test.mjs`、`preference-classify/merge/inject/lifecycle/evolution/second-round/round3`、`session-index.test.mjs`、`time-anchor.test.mjs`、`schema-migration-atomic.test.mjs`、`p4-*`、`asof-graph-uncertain` 等。
+- 结果：`validity.js` / `classify.js` / `merge.js` / `retry.js` / `session-index.js` / `preference.js` 在本分支**没有测试**；weekly 测试仍是 3 个旧用例（无 CAS/rollback/validity 覆盖）。
+
+### 10.4 迁移测试（临时库，全部实测）
+
+| 场景 | 结果 |
+|---|---|
+| 全新库初始化 | version=4、valid_from 在、`idx_mem_valid`/`idx_mem_scope_key` 建好 |
+| 真实 v3 schema 升级 | version→4；`scope_type/updated_at/revision` 回填正确 |
+| 有效性列缺失（从 v4 drop 后重开） | 4 列全部补回、索引重建 |
+| 索引缺失 | `idx_mem_valid`、`idx_mem_scope_key` 重建 |
+| 重复启动 | 幂等，version=4 |
+| schema 版本高于代码（5>4） | 抛 `E_SCHEMA_NEWER_THAN_CODE`，version 保持 5，无结构损伤 |
+| 迁移中途结构错误（memory_revisions 缺 invalidation，且先 drop 有效性列） | 抛 `E_SCHEMA_MIGRATION_INCOMPLETE`；**version 保持 3、valid_from 未残留、索引未残留** → 事务回滚成立 |
+| 非法版本值（`abc`） | 抛 `E_SCHEMA_VERSION_INVALID` |
+
+补充：main 的 v3 DDL 已含 validity 列，所以「补列」路径需用「drop 后再开」验证（已覆盖）。
+
+### 10.5 负向对照（直接探针，非仓库测试）
+
+| # | 变异 | 结果 |
+|---|---|---|
+| N1 | current 仅按 status | 断言 `future valid_from must be excluded` 失败 |
+| N2 | 去 valid_from | 同上失败 |
+| N3 | 去 valid_to | `expired valid_to must be excluded` 失败 |
+| N4 | 去 superseded | `superseded must be excluded` 失败 |
+| N5 | asOfHistory 误排除 superseded | `as-of history must keep superseded with valid_to` 失败 |
+| N8 | 迁移失败仍升级 schema_version | `failed migration must not bump schema_version (got 4)` 失败 |
+| N6 | merge 不用事务 | **NOT RUN**：本分支无 merge 测试；无回滚断言可依 |
+| N7 | weekly CAS 前不重读 | **NOT RUN**：本分支 weekly 仅 3 个旧用例，无 CAS/rollback 测试 |
+| N9 | 非 owner 注入主人偏好 | **NOT RUN**：index.js 受 P0 阻塞；代码审查显示 `ownerSession` 守卫存在 |
+
+### 10.6 代码接口核查（静态）
+
+- 所有相对 import 可解析，唯一例外 `lib/time/anchor.js`（P0）。
+- `validity.js` 导出 `validitySql/isValidAt/resolveSourceTs/VALIDITY_PRESETS`，调用方（p4/session-index/daily/weekly/handoff/preference/remembered）用法一致；`resolveSourceTs(undefined)` 取 now、非法值返回 `E_BAD_SOURCE_TS`（实测）。
+- `retry.js` 依赖的 `updateMemory(db,id,patch,expectedRevision,{now,invalidation})` 与 `withP4WriteQueue(fn)` 均存在且签名兼容。
+- `index.js`：preference 注入按 sid 去重（`preferenceDone`）；session-index 在 `hitsInjectEnabled` 之前执行并独立判定；所有提前返回路径用 `withSessionIndex` 带上已生成块；`dispose` 清理 `preferenceRetryTimer`。
+- `SCHEMA_VERSION=4` 与迁移逻辑一致；版本校验在结构检查前，版本写入在结构检查后、事务内。
+
+### 10.7 边界
+
+- 只读验证；未改分支代码、未提交/推送；未连生产库（全部临时目录 + 独立 `DY_MEMORY_DIR`）；未启动插件、未重启、未改 profile/config；未改共享 HANDOFF/REPORT。
+- **临时库迁移验证**：已完成（见 10.4）。**真实生产库迁移验证：NOT RUN**。
