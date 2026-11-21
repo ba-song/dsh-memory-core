@@ -53,7 +53,7 @@ test('对话摘录：只收 user/self，排除工具事件与群聊，取最近 
   assert.ok(!text.includes('群里的话'))
 })
 
-test('日结去重候选：只比较 current 记忆，同时保留 90 天窗口和排序上限语义', async () => {
+test('日结去重候选：只比较 current 记忆，同时保留 90 天窗口和倒序语义', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-daily-validity-'))
   const { db } = openDb(dir)
   const at = Date.UTC(2026, 10, 21)
