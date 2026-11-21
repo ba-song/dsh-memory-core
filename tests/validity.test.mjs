@@ -26,7 +26,7 @@ const D = 24 * H
 /* ─────────────────────────── 1. helper 单元 ─────────────────────────── */
 
 test('validity: 预设与枚举完整', () => {
-  assert.deepEqual(Object.keys(VALIDITY_PRESETS).sort(), ['asOfHistory', 'asOfNeighbor', 'asOfStrict', 'current', 'currentTodoActiveEmpty', 'currentTodoLegacy'].sort())
+  assert.deepEqual(Object.keys(VALIDITY_PRESETS).sort(), ['asOfHistory', 'asOfNeighbor', 'asOfStrict', 'current', 'currentPreferenceCandidate', 'currentTodoActiveEmpty', 'currentTodoLegacy'].sort())
   assert.deepEqual([...VALIDITY_MODES], ['current', 'asof'])
   assert.deepEqual([...SUPERSEDED_POLICIES], ['enforce', 'ignore', 'guard'])
   assert.equal(presetOf('current').superseded, 'enforce')
@@ -63,6 +63,21 @@ test('validity: legacy todo presets preserve distinct status domains with curren
     assert.match(r.sql, /valid_to IS NULL OR valid_to>\?/)
     assert.match(r.sql, /superseded_by IS NULL OR superseded_by=0 OR superseded_by=''/)
   }
+})
+
+test('validity: preference merge candidate preset allows pending but enforces current time/supersede rules', () => {
+  const candidate = validitySql({ at: T, preset: 'currentPreferenceCandidate' })
+  assert.match(candidate.sql, /status='active' OR status='pending'/)
+  assert.match(candidate.sql, /valid_from IS NULL OR valid_from<=\\?/)
+  assert.match(candidate.sql, /valid_to IS NULL OR valid_to>\\?/)
+  assert.match(candidate.sql, /superseded_by IS NULL OR superseded_by=0 OR superseded_by=''/)
+  assert.deepEqual(candidate.params, [T, T])
+  assert.equal(isValidAt({ status: 'active' }, T, 'currentPreferenceCandidate'), true)
+  assert.equal(isValidAt({ status: 'pending' }, T, 'currentPreferenceCandidate'), true)
+  assert.equal(isValidAt({ status: 'pending', valid_from: T + 1 }, T, 'currentPreferenceCandidate'), false)
+  assert.equal(isValidAt({ status: 'pending', valid_to: T }, T, 'currentPreferenceCandidate'), false)
+  assert.equal(isValidAt({ status: 'pending', superseded_by: 9 }, T, 'currentPreferenceCandidate'), false)
+  assert.equal(isValidAt({ status: 'archived' }, T, 'currentPreferenceCandidate'), false)
 })
 
 test('validity: as-of 三种预设的差异', () => {
