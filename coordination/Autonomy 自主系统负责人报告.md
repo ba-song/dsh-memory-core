@@ -3,7 +3,7 @@
 > 会话：Autonomy 自主系统负责人
 > 覆盖任务：`AUTO-ARCH-AUDIT-01`、`AUTONOMY-RECOVERY-SEMANTICS-DESIGN-01/02/03/04`
 > 迭代规则：本文件覆盖式更新、版本号递增，不新增同类文件
-> 最近更新：2026-11-22 00:50 (Asia/Shanghai) · v5（新增 §17 设备配置只读核查）
+> 最近更新：2026-11-22 01:35 (Asia/Shanghai) · v6（新增 §18 生产变更：关闭屏幕变化触发）
 > 性质：只读设计修订。未改任何源码/DB/profile/配置；未创建实现分支；未启动 scheduler/executor/staging；未部署/重启；未改 `HANDOFF.md`/`REPORT.md`；未修改 Android 报告
 
 ## 版本历史
@@ -16,6 +16,7 @@
 | v4 | 2026-11-21 10:44 | 跨模块差异收口 A–H：未 ack 保留、ack 校验、nextWake reason、紧急唤醒 floor、hardlink 降级、队列背压、ledger 保留与 tombstone、merged 语义；初判 `PARTIAL` |
 | v4-r2 | 2026-11-21 10:53 | 复核 Android v4（`3dd5d32`）：A–D、F–H 已书面确认；E 采用 Android 的 60s 观察窗，双方一致 → 改判 `DESIGN ALIGNED` |
 | v5 | 2026-11-22 00:50 | 新增 §17 `AUTONOMY-PROFILE-READONLY-01`：设备实际 profile、22 个字段真实值、运行状态、6 条执行路径启用条件、冲突与 UNKNOWN |
+| v6 | 2026-11-22 01:35 | §18 `AUTONOMY-DISABLE-SCREEN-TRIGGER-01`：生产 profile 关闭 `triggers.device.enabled`、插件重载、运行态验证；发现遗留定时器，结论 **BLOCKED**（需 DSH 进程重启） |
 
 ---
 
@@ -517,3 +518,95 @@ P4  以上全部失败 → 不发布，保留 tmp + 写 .pending 标记 + 事件
 本任务**没有改变任何状态**：未写 profile/配置/文件/DB；未启动/停止任何 watcher 或 timer；未执行 tick；未调用 poll/send/write/execute/launch/tap；未发送 QQ/抖音/邮件；未写记忆/日记/档案；未重启 DSHA/DSH/插件；未输出任何密钥、token、密码、邮箱或私人正文（owner QQ/邮箱仅以数量/脱敏形式出现）。
 
 证据均为 2026-11-22 00:26–00:50 实时读取；命令退出码：`curl /app/version` 200、`/app/device` 200、`curl 3091` exit 7、`dy_life_status` ok=true、`dy_bridge_status` ok=true、DB 只读查询成功。
+
+
+---
+
+## 18. AUTONOMY-DISABLE-SCREEN-TRIGGER-01 · 生产变更记录
+
+> 执行：Autonomy 自主系统负责人（应 DSH 设备任务）｜时间：2026-11-22 01:12–01:35 (+08)
+> 授权：项目负责人明确授权"只关闭屏幕变化触发"；未授权删除代码、扩大范围、重启 DSHA/设备
+> 结论：**BLOCKED**（配置已改并已加载；但一个**遗留定时器**仍在轮询，插件重载无法清除，需要 DSH 进程重启）
+
+### 18.1 基线与路径
+
+| 项 | 值 |
+|---|---|
+| 设备 | vivo V2154A · Android 14 (SDK 34) · DSHA `0.2.1-rc.2` |
+| 生产 profile | `web`（`dsh web` ≡ `--profile web`；`DSHA_STARTUP_PROFILE=web`） |
+| 配置文件 | `/root/.dsh/profiles/web/cordis.patch.yml` |
+| DSH 进程 | PID 20189，启动 2026-11-21 09:52:55，**变更期间未重启** |
+| 变更前 mtime / sha256 | 2026-11-21 09:39:58 / `8de618086d1618a5fe8fc48415e3ae8c4a5e2cdc27a4a94b60bd0490032fcb0d` |
+| 变更后 mtime / sha256 | 2026-11-22 01:29:35 / `e5a0290495b84618e75a04beaeb0e3366a67341ddfdf296ca5ecc5fe6d51decc` |
+
+### 18.2 修改内容
+
+```yaml
+# id: autonomy · config.triggers.device（原第 114–121 行）
+         excludeApps:
+           - dsh.android.client
+-        enabled: true
++        enabled: false
+       notification:            # 未改，仍 enabled: true
+```
+
+- 仅一行变更；`triggers.enabled`（true）、`triggers.notification`（true）、`files`（[]）均未改。
+- 备份：`/root/.dsh/profiles/web/cordis.patch.yml.bak-screen-trigger-20261122-011500`（sha256 同变更前）。
+- 变更后完整 diff：**只有 `device.enabled: true → false` 一行**（插件管理器临时写入的 `disabled: false` 已在 01:29:35 移除，不移除不影响语义）。
+
+### 18.3 重载过程（未重启 DSH）
+
+1. 01:15:05 写文件后，等待 HMR 自动重载；`dy_life_status` 仍报 `device.enabled=true` → HMR 未使插件重启。
+2. 原因（源码证据）：`triggers.device.enabled` 在 Config schema 标记 `.volatile()`，cordis 对"仅 volatile 字段变化"走 `updateVolatile` 不重启 fiber；而 `loadConfig` 在 `lib/config.js:321` 用 `bool(raw...)` **快照**该值，运行中不会随 volatile 引用变化。→ 必须重启插件实例。
+3. 01:21:5x / 01:22:09、01:26:39 / 01:28:49 两次通过插件管理器把 `dsh-autonomy` 组件 **Off → On**（等价"重载插件"），未重启 DSH 进程、未重启 App/设备。
+4. 重载后 `apply` 日志（`device-trigger.log`）：
+   `2026-11-21T17:28:49.485Z {"ev":"apply",...,"device":{"enabled":false,...},"notification":{"enabled":true,...}}`
+5. 组件 Off 期间 `dy_life_status` 不可用（`unknown tool`），证明插件实例确实停止；On 后恢复。
+
+### 18.4 运行态验证
+
+| 项 | 结果 | 证据 |
+|---|---|---|
+| `triggers.device.enabled` | **false** | `dy_life_status` 01:30:55；apply 日志 17:28:49Z |
+| `triggers.enabled` | true（未改） | 同上 |
+| `triggers.notification` | **true、endpoint 3091、interval 5s**（未改） | 同上；`notification-trigger.log` 仍在 5s 周期写 `fetch failed`（既有故障，未处理） |
+| `home.enabled` / `home.dice.enabled` | true / true（未改） | status；`config.js` 启动路径 `startHomeLoop()` 仅在 `cfg.enabled && home.enabled` 时挂表 |
+| `douyinInbox` | enabled/started/subscribed（未改） | status.douyinInbox |
+| `tick.enabled` / `realSafe` | false / false（未改）；6 executor 仍全 mock | status |
+| 其他触发（purpose/mail/file） | purpose 定时器活动（01:29 刷新）、mail 60s 轮询、files=[] | status.purpose/mail |
+| DSH 进程 | PID 20189 未变 | `/root/.dsha-web.pid` |
+| 变更后异常日志 | autonomy.log 17:22–17:30 无 error/warn；仅正常 mail_poll | 日志 |
+
+### 18.5 异常：遗留定时器仍在轮询（BLOCKED 原因）
+
+**事实**：`device-trigger.log` 在插件重载后仍每 60s 出现 `poll`：
+
+```
+17:23:05, 17:25:05, 17:26:05, 17:27:05, 17:28:05, 17:29:05, 17:30:05 (Z)
+```
+
+**判定为"非当前实例"的遗留定时器**：
+- 01:26:39 组件 **Off**（`dy_life_status` 不可用），但 01:27:05、01:28:05 仍有 `poll`；
+- 该日志文件只有 `dsh-autonomy/lib/run/device-triggers.js` 会写（全仓 grep 仅此一处）；
+- 当前实例 `cfg.triggers.device.enabled=false`，`index.js:206` 的条件不会创建新触发器；
+- ⇒ 定时器属于更早的插件实例（进程内遗留），`ctx.on('dispose')` 未能清掉，插件 disable/enable 也无法触达。
+
+**影响**：
+1. 屏幕变化触发仍会每 60s 轮询 `/app/ui/dump`，不符合验收"不再持续轮询"；
+2. 该遗留实例的 `onTrigger` 仍可能在屏幕变化且距上次 fire ≥30min 时调用旧 `home.awake`，即**仍可能唤醒 Home**（上次 `fired` 为 01:14:05，下一次窗口 01:44 之后）；
+3. 配置本身已正确，DSH 进程重启后新实例不会创建触发器，遗留定时器也会随进程消失。
+
+**根因（待代码修复，本轮不改代码）**：疑似 `loadConfig` 对 volatile 字段做快照 + 重载路径未保证旧 fiber 的定时器全部 dispose；需要单独缺陷单与回归测试。
+
+### 18.6 结论与所需动作
+
+**结果：`BLOCKED`。**
+
+- 已完成：配置修改、备份、插件重载、运行态 `device.enabled=false`、其他触发未改、无代码/DB/外发/重启；
+- 未完成：停止遗留定时器轮询。**唯一安全方式 = 重启 DSH web 进程**（不是 DSHA App、不是设备）。本任务未授权重启 DSH，故停在门禁。
+- 建议：负责人在维护窗口授权一次 DSH web 进程重启（App 的 HarnessService 会自动拉起）；重启后验证 `device-trigger.log` 不再新增 `poll`，并确认 Home 定时唤醒/骰子/通知触发仍在。
+- 备选（不推荐）：保留现状，等下一次自然重启生效；期间遗留定时器可能继续轮询/唤醒。
+
+### 18.7 边界声明
+
+未删除/修改任何代码；未改 DB/记忆/日记；未改 Douyin/douyinInbox/Memory/Persona/EI/Channel Bridge/Tick；未修复通知触发；未执行真实外发；未重启 DSH/DSHA/设备；未改 `HANDOFF.md`/`REPORT.md`。
