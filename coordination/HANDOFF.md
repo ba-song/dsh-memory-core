@@ -4036,3 +4036,40 @@ A–E 合计为 P4 基线之上 30 个提交；每一段均为纯前进，没有
 ### 75.5 本次授权边界
 
 本次仅扩展只读诊断输出并修正 v4 分支测试范围；没有修改汐的实际记忆状态或自动行为。没有合并 main、部署、重启、启动 staging 或运行真实执行器。
+
+
+---
+
+## 76. 四专业智能体接管只读审计（2026-11-22）
+
+完整报告：coordination/DSH-FOUR-AGENTS-TAKEOVER-REPORT.md
+
+### 76.1 审计范围与边界
+
+- 实际核对 Memory、Persona/EI、Channel Bridge、Douyin 四个仓库的默认分支、全部分支、HEAD、compare、文件树、AGENTS、开放 PR、最新文档与可见 Actions。
+- 新增交叉核对 ba-song/dsh-autonomy 与 DSH-APP/DSHA；Android 宿主仓库现已可读取，并已读 main 根 AGENTS.md 与相关嵌套规范。
+- 本轮仅 GitHub 只读；GPT 未运行 Node/Android 测试，未连接设备/真实 QQ/抖音，未读取生产 profile，未改产品源码、配置、生产 DB 或权限。
+
+### 76.2 关键结论
+
+- 四专业仓库均无 AGENTS.md、无开放 PR；Memory 有 12 分支，Persona 有 4 分支，Channel Bridge 与 Douyin 各只有 main。
+- Memory minimal-integration 当前 HEAD 为 a63f994e001da2e6636ed07c75988fa681ecaf7c，仍 IMPLEMENTED / WAITING REVERIFY；MEMORY-REPORT-0021 的 194/190/4 结果对应旧 HEAD 8d0f3ad，不能代替新 HEAD 复验。
+- Memory wake-capture 与 minimal-integration diverged，且共同修改 index/schema、schema 版本不同；禁止直接合并。M1、Batch E 仍是大范围未合并栈。
+- Persona EI-1 的 21/21、324/324 仅代码隔离 PASS，设备复验 NOT RUN。EI-2A 未获授权；EI-2 设计修订分支 blob 670e5a34 与报告分支实际 blob d79bd124 不一致。
+- Channel Bridge 的 550/550 来自并发编辑工作树，不绑定当前 main HEAD；当前实现已有 group-turn episode 与 group transcript raw archive 写入，与 README“不写记忆”概述不一致。
+- Douyin watcher 默认关闭；Autonomy 存在真实自动私信回复路径并自动传 confirm:true。Douyin notifyWatchDeliver 与 Autonomy 通知订阅同时启用可能重复投递。
+- Autonomy 默认关闭/dryRun，但源码存在 realSafe 真实执行器注册路径；真实 profile 开关尚未读取。必须先由 DSH 做只读 profile 核对。
+- Android/Autonomy 恢复协议的 60 秒观察窗已在 Autonomy v4-r2 采纳，但 Android 报告仍标 PARTIAL；f2fs/PRoot、kill/reboot、fsync、ENOSPC、双 worker、FGS/OEM/force-stop 等真机/运行期项目仍 NOT RUN。
+
+### 76.3 建议下一步
+
+1. DSH 只读核对 Autonomy、Douyin、Channel Bridge 的实际 profile 开关与服务 mode；不改配置、不启动、不发送。
+2. Memory 专项在新 worktree 对 a63f994 做全量、专项和 N9 复验；不得升级 schema 或改生产。
+3. Persona 专项同步 EI-2 设计与报告分支基线；EI-2A 继续等待负责人授权。
+4. Channel Bridge、Douyin 在各自精确 main HEAD 复跑单测；仅 fake transport。
+5. Autonomy/Douyin 联合审查自动回复与通知重复投递；Autonomy/Channel Bridge 联合审查 QQ send gate。
+6. Android/Memory 分别准备 Home 永久档案与恢复协议的设备验收清单；任何故障注入需另行授权。
+
+### 76.4 授权声明
+
+本次未授权 EI-2A、生产记忆写入、自动回复、QQ 外发、真实 tick、Home 自动唤醒、profile 修改、Android 权限扩大、kill/reboot、staging、部署、重启或生产 DB 操作。
