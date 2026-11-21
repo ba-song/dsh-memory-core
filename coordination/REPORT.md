@@ -673,3 +673,89 @@ A–E 合计为 P4 基线之上 30 个提交。五批代码已按顺序累计在
 未写生产 DB，未修改生产插件/profile/config；未启动 staging；未执行真实 weekly 调度/apply；未部署、重启或合并主线。生产只读核查、staging、主线合并与部署均需独立授权。
 
 Android / Autonomy v4 设计对齐与真实设备后台恢复验证计划继续保留，尚未进行设备验证。
+
+
+---
+
+# REPORT-0016 · GPT 项目接管审计（2026-11-21）
+
+> 关联共享交接：HANDOFF-0074。
+> 性质：GitHub 只读审计与项目状态同步；本轮未修改产品源码、测试、生产数据库、配置或设备状态。测试数字均明确标注来源，不把专项报告当作本轮 GPT 实测。
+
+## 1. 审计范围与工具可用性
+
+- 已读取 Memory、Persona/EI、Autonomy 仓库分支、关键提交、HANDOFF、REPORT 和专项报告。
+- 可访问：ba-song/dsh-memory-core、ba-song/dsh-persona-core、ba-song/dsh-autonomy、私有备份仓库 ba-song/dsha-selfbuilt-plugins。
+- 当前工具无法访问 Android 宿主源码仓库 DSH-APP/DSHA；Android 源码证据暂以 Android 专项报告引用为准，需后续由 DSH 提供可核验的本地证据。
+- Memory、Persona、Autonomy 及插件备份仓库根目录均未发现 AGENTS.md；后续代码修改仍需检查目标目录的嵌套 AGENTS.md。
+- 对关键提交查询 GitHub Actions 与 combined status 未发现 workflow runs/status。隔离测试证据来自专项智能体本地报告，本轮 GPT 未运行 Node 测试。
+
+## 2. Memory
+
+### 2.1 最小集成分支
+
+- 仓库：ba-song/dsh-memory-core
+- 分支：feat/memory-validity-minimal-integration
+- HEAD：8d0f3adc48b1f30f213ad30c3f0330da54ef1c83
+- main：752cd0861e9c86c9f7be4bdf18302fa72a3b95dd
+- compare：ahead 42 / behind 0
+- 前任 GPT 五项修复均已在目标分支核实存在。
+- Memory 智能体 MEMORY-MINIMAL-INTEGRATION-REVERIFY-03 报告：194 tests / 190 pass / 4 fail / 0 skip，结论 BLOCKED。
+- 失败拆分：dy_memory_auto_list 缺少 M1 的 status/retryCount/lastError 只读诊断字段 1 项；schema-v5 / episode_rewrite_snapshots 断言 3 项，而目标分支仍为 schema v4。
+- 交叉分支核对：M1 分支包含 auto_list 诊断字段和 schema v5；P0 原子迁移分支包含 schema-v5 迁移。最小集成分支与二者分叉。不得为通过测试擅自把 v4 升级到 v5，或引入改变汐实际记忆行为的实现。
+- N9 非 owner 注入专项由 Memory 智能体报告为 PASS；尚非设备或生产验证。
+
+### 2.2 自主唤醒自动写入
+
+- 分支：feat/memory-wake-capture
+- HEAD：0fdae98860be9fb71f74081c1cf79fa963227ae2
+- compare main：ahead 14 / behind 0
+- Memory 专项报告记录定向 8/8、全量 143/143、N1–N10 负向对照 PASS；生产/设备验证 NOT RUN。
+- 初步静态审查确认只接受 autonomy-home-wake / autonomy-home-manual，owner scope，回合摘要，sourceKey 幂等，每日上限与向量去重。
+- 与最小集成分支 diverged；双方均修改 lib/index.js、lib/store/schema.js，schema 分别为 v4 与 v3。不可直接合并。运行期接入会改变汐的长期记忆内容，须负责人当前明确批准。
+
+### 2.3 A–E 累计栈与主线合并风险
+
+- 分支：feat/memory-validity-batch-e
+- HEAD：4bf92aad8c069e92f3521e6a7cdf4c7b79559e3c
+- compare main：ahead 300 / behind 0，涉及 117 文件。
+- A–E 是 P4 基线之上的线性 30 提交；P4 基线本身已领先 main 270 提交、112 文件。
+- Memory 专项报告记录累计全量 305/305 ×4、0 fail / 0 skip；GPT 本轮未运行测试。
+- 直接合并会带入此前 270 个提交及 A–E 的 30 个提交，范围含 recall、archive、rules、M3、Home 等。暂不合并 main，不 rebase/cherry-pick；需先确定整体接收或窄范围拆分方案。
+
+## 3. M1 / M3 / Home
+
+- M1 文档仍标记 57 条存量 preference 未回填，需负责人逐条授权；不批量升级。
+- M3 event-chain selector 和隔离测试存在，但尚未接入主召回排序或自动注入；当前仅作独立诊断候选。
+- M3 评测模板 15 条查询仍未人工标注；未完成标注与快照固定前，不报告正式 Recall@K、MRR、nDCG。
+- updateMemory 文本修订的 vectors、entities、relations、quote/provenance 派生一致性仍是设计审查项，存在旧索引残留风险；不对真实记忆执行修改。
+- Home 永久档案实现、测试和 exporter 存在于 Batch E 累计分支；完整真实 Android 文件系统/设备验收仍缺失。
+
+## 4. Emotion Intelligence
+
+- 仓库：ba-song/dsh-persona-core
+- main：a84c7badd1e6c971a66b6c39dd4f7ab795df4b90
+- EI-1 目标：3a1376184491d94b02d4c3ad4990a957e85acb48；专项报告定向 21/21、全量 324/324、0 fail / 0 skip；设备复验 NOT RUN。
+- EI-2 设计修订位于 fix/ei1-source-ref-experiencer-contract @ 8ccb8a922a789d8d15157b9d99f9de0c20c8807b，设计 blob 670e5a34...。
+- EI-REPORT-0005 所在 ei/pre-ei2a-review-01 分支 @ 4992a313... 的设计文件 blob 为 d79bd124...，与报告声明的 670e5a34... 不一致；报告/设计分支需同步。
+- EI-2A NOT RUN，未获授权。owner 稳定 ID 仍待负责人最终确认。
+
+## 5. Android / Autonomy
+
+- Android ANDROID-REPORT-0004 v4：报告自身将 E 项 60 秒观察窗标为 PARTIAL；Autonomy v4-r2 已采纳 60 秒并宣告 A–H DESIGN ALIGNED。Android 专项报告需要由 Android 智能体更新。
+- Android kill/reboot、fsync、ENOSPC、hardlink 降级、inbox/outbox/ack 全链路、双 worker、FGS/OEM/force-stop 等真机验证均 NOT RUN。
+- dsh-autonomy main HEAD：6c4a4753b4737060211955b1f022cab2f1d39521，仅 main 分支。README/package.json 表明插件仍处于 dry_run + mock 阶段；v4 恢复协议是设计对齐，不是实现或真机运行。
+- DSH-APP/DSHA 源码仓库本轮不可访问；dsha-selfbuilt-plugins 是备份仓库，不替代宿主源码证据。
+
+## 6. 下一步
+
+1. Memory 最小集成：逐项裁定四个测试失败的分支范围，避免无授权 schema v5 迁移；对精确新 HEAD 复验全量测试与 N9。
+2. Memory 唤醒：完成与最小集成分支的文件级兼容方案和负向测试矩阵；未经负责人批准不接入运行期。
+3. A–E：保持隔离 PASS，不直接合并 300 commits；先制定窄范围集成方案。
+4. M1/M3/Home：保留 57 条 preference 逐条授权门槛；推进 M3 标注、updateMemory 一致性证据及 Home 真机验收准备。
+5. EI：统一设计与报告分支，准备 EI-1 设备复验；EI-2A 等待负责人授权。
+6. Android/Autonomy：Android 智能体同步 60 秒观察窗结论；设备验证计划待授权执行。
+
+## 7. 边界声明
+
+本报告不构成生产写入、生产迁移、staging、scheduler/executor 启动、合并、部署或重启授权。任何可能改变汐实际记忆、人格、情绪、召回、主动写入或行动行为的修改，均须先向负责人说明影响和后果并取得批准。
