@@ -3668,3 +3668,40 @@ GitHub compare：基线 `2a93031db3dfa1a1c7c34b7376aebe395493c57f` → HEAD `906
 - Batch D（daily）与 Batch E（weekly）尚未启动，必须分别评估并取得负责人明确授权。
 - EI/Persona、Android、Autonomy 未被本批触碰。Android / Autonomy v4 设计对齐继续保留项目主线，真实设备验证仍 NOT RUN，需另行安排与授权。
 - 本 PASS 仅代表 Batch C 隔离代码验收，不代表生产验证、集成、主线合并或部署通过。
+
+
+---
+
+## 62. Memory Batch D：daily 日结去重候选接入 current validity（HANDOFF-0065 · IMPLEMENTED / VERIFYING）
+
+> 仓库：`ba-song/dsh-memory-core`
+> 分支：`feat/memory-validity-batch-d`
+> 基线：Batch C PASS @ `fecbd09eaa5b5745ef02263b1bd506712c256150`
+> 当前 HEAD：`5500d04e0e49ebb8168e7356de3c082a9e0e722e`
+> 代码提交：`7684b1fef57202d9dc44ec8fcafd571779f94265`（daily 接入）
+> 测试说明提交：`5500d04e0e49ebb8168e7356de3c082a9e0e722e`（仅澄清测试标题）
+> GPT 复核：2026-11-21；测试尚待 Memory 智能体执行。
+
+### 62.1 范围与文件
+
+- compare 基线 `fecbd09eaa5b5745ef02263b1bd506712c256150` → HEAD `5500d04e0e49ebb8168e7356de3c082a9e0e722e`：ahead 2 / behind 0；仅两个预期文件。
+- `lib/consolidate/daily.js` blob `394138a185d176e87b789ca23c51f5d1ae16fa13`
+- `tests/consolidate.test.mjs` blob `2ce8f5227f896a84261657982111603eea9ba064`
+- 新增导出 `loadDailyDedupCandidates(db, at)`，内部调用 `validitySql({at:Number(at),preset:'current'})`。
+- daily 相似去重候选仍保留原有 90 天 created_at_epoch 下限、id DESC、LIMIT 500 和选择列；额外要求 current 状态、valid_from、valid_to、superseded_by 均符合 helper。
+- 正式写入阶段的 exact-text duplicate guard、LLM、style 文件、dryRun 报告、facts/lessons/shortterm/profile/meta 写入路径均未修改。
+- 新测试使用独立临时 DB 覆盖有效记录、valid_from NULL 旧记录、future valid_from、expired valid_to、superseded、archived、90 天窗口外记录，并验证倒序。
+
+### 62.2 GPT 静态复核
+
+- GitHub compare：ahead 2 / behind 0，恰好 `daily.js` 与 `consolidate.test.mjs` 两个文件。
+- HEAD 与两个 blob 已从 GitHub 回读核对；未修改 helper、weekly 或其他调用点。
+- 仓库树未发现根目录 AGENTS.md。
+- GPT 未运行 Node 测试；当前状态 **IMPLEMENTED / VERIFYING，不是 PASS**。
+
+### 62.3 验证要求与边界
+
+- 由 Memory 智能体在隔离 worktree 验证：`tests/consolidate.test.mjs`、`tests/validity.test.mjs` 定向测试；相关回归；全量 `npm test`；负向对照验证 future/expired/superseded 均会被旧 status-only 查询重新放入候选集；恢复后逐字节一致。
+- 不得修改代码或测试；不得修改共享 HANDOFF/REPORT（由 GPT 统一维护）。
+- 不写生产 DB，不修改生产插件/profile/config；不部署、重启、启动 staging；不合并主线；不处理 weekly / EI / Persona / Android / Autonomy。
+- Batch E（weekly）仍需独立评估和授权。Android / Autonomy v4 设计对齐及真机验证计划继续保留，不因 Memory 批次而搁置。
