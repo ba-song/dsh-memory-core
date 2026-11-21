@@ -3851,3 +3851,47 @@ GPT 已从 `coordination/project-handoff` 回读完整 MEMORY-REPORT-0017，并�
 - 下一步进入 **A–E 统一集成审查**：先只读核对分支祖先链、最终累计 diff、文件覆盖关系、调用点与统一 validity helper 语义、测试覆盖及跨批次兼容性；形成集成审查报告和风险清单。
 - 统一集成审查不自动授权合并、生产验证、staging 或部署。若发现需要改代码，先列明具体文件/风险/最小修复方案，再向负责人请求对应授权。
 - Android / Autonomy v4 设计对齐继续保留在项目主线；真实设备后台恢复验证仍 NOT RUN，不能因 Memory A–E 通过而搁置。
+
+
+---
+
+## 2026-11-21 17:5x · GPT 只读集成审查 · HANDOFF-0073（A–E 累计栈通过；主线合并范围待决）
+
+### A–E 分支祖先链核对
+
+GitHub compare 已确认五批不是互相分叉的五条待合并分支，而是严格线性累计：
+
+- P4 基线 `c437c460d8378cbf6493a5e4e12d673c4334d50f` → Batch A `5797324175f345ff82337f409d8406e5256ddfc3`：ahead 4 / behind 0。
+- Batch A → Batch B `2a93031db3dfa1a1c7c34b7376aebe395493c57f`：ahead 11 / behind 0。
+- Batch B → Batch C `fecbd09eaa5b5745ef02263b1bd506712c256150`：ahead 7 / behind 0。
+- Batch C → Batch D `5500d04e0e49ebb8168e7356de3c082a9e0e722e`：ahead 2 / behind 0。
+- Batch D → Batch E `4bf92aad8c069e92f3521e6a7cdf4c7b79559e3c`：ahead 6 / behind 0。
+
+A–E 合计为 P4 基线之上 30 个提交；每一段均为纯前进，没有 behind 或分叉。Batch E HEAD 是包含 A–E 全部变更的累计验证目标。
+
+### 跨批次静态审查
+
+在 Batch E 最终 HEAD 回读并核对以下调用点：
+
+- Batch A：`lib/inject/preference.js`、`lib/inject/remembered.js` 使用严格 `current`。
+- Batch B：`lib/inject/session-index.js` 的 episode 使用 `current`、todo 使用 `currentTodoActiveEmpty`；`lib/handoff/brief.js` 的项目 todo 使用 `currentTodoLegacy`、owner 类型统计使用 `current`。
+- Batch C：`lib/pref/merge.js` 候选使用 `currentPreferenceCandidate`，旧偏好比较使用 `current`；保留 pending 候选兼容及非 NULL valid_to 拒绝契约。
+- Batch D：`lib/consolidate/daily.js` 的相似去重候选使用 `current`，保留 90 天窗口、倒序和 LIMIT 500。
+- Batch E：`lib/consolidate/weekly.js` 的候选使用 `current`，dry-run/apply 同源，事务内复核、snapshot/CAS 与 valid_to clamp 保留。
+- 以上调用点最终均引用同一个 `lib/store/validity.js`；参数顺序与查询中的占位符顺序已静态核对。todo 的历史状态兼容域没有被严格 active 规则误覆盖。
+- Batch E 累计分支上的全量测试证据为 305/305 ×4，0 fail / 0 skip（由 Memory 智能体执行）；这是累计分支上的集成测试证据，不是生产或设备验证。
+
+### 主线合并范围风险（重要）
+
+- GitHub main 当前基线：`752cd0861e9c86c9f7be4bdf18302fa72a3b95dd`。
+- main → Batch E HEAD：ahead **300** / behind **0**，compare 涉及 **117 个文件**（62 added、55 modified）。
+- main → P4 基线 `c437c460d8378cbf6493a5e4e12d673c4334d50f`：已经 ahead **270** / behind **0**，涉及 **112 个文件**。
+- 因此 A–E 的 30 个提交建立在此前 270 个尚未进入 main 的提交之上。直接把 Batch E 分支合并到 main，不是单独合并 A–E，而是同时引入此前整段 270 提交、112 文件的既有 Memory 项目变更（包含 recall、archive、rules、M3、home archive 等范围）。
+- 这不代表这些既有变更有缺陷，但其合并范围不能默认为已获批准。当前**不执行 merge、rebase、cherry-pick 或部署**。
+
+### GPT 阶段裁决与下一步
+
+- **A–E 累计功能栈：祖先链与跨批次静态审查通过；累计分支全量测试 PASS。**
+- **主线合并：暂缓，等待负责人决定是否接受 main 之外的 270 个既有提交，或先确定更窄的集成基线/拆分策略。**
+- 生产只读核查、staging、真实 weekly apply、部署和重启均未执行；分别需要明确授权。
+- Android / Autonomy v4 设计对齐与真实设备验证计划继续保留，不因 Memory A–E 完成而搁置。
