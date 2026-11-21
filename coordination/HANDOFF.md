@@ -3611,3 +3611,60 @@ GitHub compare：基线 `2a93031db3dfa1a1c7c34b7376aebe395493c57f` → HEAD `906
 - 等待 Memory 智能体提交 `MEMORY-REPORT-0012`。
 - 本批不触碰生产 DB / 插件 / profile / config，不部署、不重启、不启动 staging、不合并主线。
 - Batch D（daily）和 Batch E（weekly）不在本轮授权范围；必须另行评估和授权。
+
+
+---
+
+## 61. Memory Batch C：preference merge 统一有效性接入（HANDOFF-0064 · 隔离代码验收 PASS）
+
+> 代码仓库：`ba-song/dsh-memory-core`
+> 分支：`feat/memory-validity-batch-c`
+> 基线：Batch B PASS @ `2a93031db3dfa1a1c7c34b7376aebe395493c57f`
+> 验证 HEAD：`fecbd09eaa5b5745ef02263b1bd506712c256150`
+> Tree：`b770e0b19ce6170c331129dc7f9a731dfcee88f1`
+> 专项报告：`MEMORY-REPORT-0013`；报告 commit `6acfdeb6607c0f0c202b917048af3090adfb5429`；blob `79bb4eb19c7d9a646fae1d7b1723478d94e6dca6`
+> GPT 复核：2026-11-21；本节由 GPT 统一整合。
+
+### 61.1 代码与提交核对
+
+- 修复前 HEAD：`906fca93ad92a19dcfe871caf3583596fb72fe2b`。
+- GitHub compare：ahead **1** / behind **0**，仅 `tests/preference-merge.test.mjs` 一文件，1 insertion / 1 deletion。
+- 修复提交：`fecbd09eaa5b5745ef02263b1bd506712c256150`，仅将 expired-valid_to fixture 主题由「咖啡」改为「椰子」，避免与前置 fixture 碰撞。
+- 四个文件 blob：
+  - `lib/pref/merge.js`：`d6d36773a44314030aa8bc65336768c6063e8f6e`
+  - `lib/store/validity.js`：`7aabea0efff2b9d5fe40acea19fcc4609f5e87e6`
+  - `tests/preference-merge.test.mjs`：`3907e7d948a743987e14c563a98b1195c43ac3c4`
+  - `tests/validity.test.mjs`：`fd00ecff76614f17544e5ac2e244692be38c6089`
+- GPT 实际读取报告、四个文件、修复 commit diff 和 compare；核对结果与报告一致。修复 commit 未修改业务代码，前三个未变文件（merge.js、validity.js、validity.test.mjs）与修复前保持一致。
+
+### 61.2 独立隔离测试证据
+
+以下测试由 Memory 智能体在独立 worktree 执行并报告，GPT 未亲自运行 Node 测试：
+
+| 项目 | 结果 |
+|---|---|
+| 定向 merge + validity | 25/25 × 3，0 fail / 0 skip |
+| preference-merge 单文件 | 1/1 |
+| 8 文件相关回归 | 42/42 |
+| 全量 `npm test` | **301/301 × 3，0 fail / 0 skip** |
+| 事务 / CAS / 回滚 | P1–P5 本轮重跑，全部符合预期 |
+| 负向对照 | 8 组全部按预期失败，恢复后逐字节一致 |
+| `git diff --check` | exit 0 |
+
+如实保留一次受污染运行：E2 负向对照期间 scratch 文件及变异态代码导致一次全量运行 302 项中 1 项失败；scratch 清理并恢复后，连续三次干净全量运行均为 301/301。该污染运行不计入干净 PASS 次数。
+
+### 61.3 GPT 独立代码审查与裁决
+
+- 候选预设 `currentPreferenceCandidate` 允许 active/pending，但要求当前 valid_from/valid_to 时间窗及未 superseded。
+- 候选侧继续保留旧契约：任何非 NULL valid_to（包括未来时间）均拒绝。
+- 旧偏好比较查询使用严格 current helper。
+- scope、同极性证据合并、反极性 supersede、pending 激活、冲突队列、revision/CAS 与 writeTx 事务结构均保留；修复提交本身只改测试 fixture。
+- **裁决：Batch C 隔离代码验证 PASS。** 测试证据来自 Memory 智能体报告；GPT 完成 GitHub 报告/代码/提交/compare 的独立核对，未亲自运行 Node 测试。
+
+### 61.4 未执行事项与后续门禁
+
+- 生产 DB / 生产插件 / profile / config 未触碰；生产 as-of 未运行。
+- 未部署、未重启、未启动 staging；未合并主开发分支。
+- Batch D（daily）与 Batch E（weekly）尚未启动，必须分别评估并取得负责人明确授权。
+- EI/Persona、Android、Autonomy 未被本批触碰。Android / Autonomy v4 设计对齐继续保留项目主线，真实设备验证仍 NOT RUN，需另行安排与授权。
+- 本 PASS 仅代表 Batch C 隔离代码验收，不代表生产验证、集成、主线合并或部署通过。
