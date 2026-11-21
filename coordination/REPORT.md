@@ -274,3 +274,51 @@ GPT 独立核对：
 - 尚未接入的调用点：session-index、handoff brief、preference merge、daily、weekly。
 - 下一建议为 Batch B（session-index + handoff brief），**尚未获负责人明确授权，不启动修改**。
 - 未写生产 DB，未修改生产插件/profile/config，未部署/重启/staging，未合并主线；未触碰 EI/Persona、Android、Autonomy。
+
+
+---
+
+## 2026-11-21 · GPT 统筹复核 · REPORT-0019（对应 HANDOFF-0062）
+
+### 1. Memory Batch B：session-index + handoff brief 接入统一 current validity
+
+- 仓库：`ba-song/dsh-memory-core`
+- 分支：`feat/memory-validity-b`
+- 基线：`5797324175f345ff82337f409d8406e5256ddfc3`
+- 验证 HEAD：`2a93031db3dfa1a1c7c34b7376aebe395493c57f`
+- Tree：`3d5e305ecf53f70b6f6090e4514346b8ce54ef91`
+- GitHub compare：ahead 11、behind 0；六个预期文件变更。
+- Memory 专项报告：`MEMORY-REPORT-0011`；commit `a8454b87bc3fdd45bbc755dfff532056120599c7`；blob `f04a7ea62df8bed4d8829c20bf29800bf514ef22`。
+
+### 2. GPT 独立复核
+
+GPT 实际读取专项报告、六个变更文件和 GitHub compare，核对 HEAD、tree、blob 均与报告一致。业务语义核对结果：
+
+- session-index episode 使用 current；todo 使用 `currentTodoActiveEmpty`，保留 active/空字符串旧状态域，并统一过滤 valid_from、valid_to、superseded_by。
+- handoff brief 项目 todo 使用 `currentTodoLegacy`，保留 active/空字符串/NULL兼容状态域和 project_id 限定；owner 标签统计使用严格 current。
+- decisions 不属于 memories，保持原查询。
+- owner scope、项目隔离、排序、LIMIT、文本截断及只读行为保留。
+- validity fixture 的 try/finally 清理和 session-index future/superseded todo 断言均已在实际 blob 中核实。
+- 三个测试文件没有 SQL `status=NULL` fixture；NULL差异由 JS 镜像覆盖。
+
+### 3. 隔离测试证据（由 Memory 智能体执行）
+
+GPT 未亲自运行 Node 测试。Memory 智能体第三轮报告：
+
+- 定向测试：session-index 1/1、handoff 1/1、validity 23/23。
+- validity 连续三次：23/23 × 3。
+- 相关七文件回归：19/19。
+- 全量 `npm test`：**300/300 × 3，0 fail、0 skip、exit 0**。
+- 八组负向对照全部按预期失败；恢复后逐字节一致。
+- `git diff --check` exit 0。
+- 前两轮发现的共享 DB fixture 污染和 session-index todo 覆盖缺口均已修复并复验。
+
+**GPT 裁决：Batch B 隔离代码验收 PASS。** 这不是生产运行时验证、集成、主线合并或部署 PASS。
+
+### 4. 风险、未执行事项与下一步
+
+- `doctor.test.mjs` 历史环境 flake 本轮三次全量均未复现；该文件不在本批 diff 中。
+- 生产 DB / 生产插件 / profile / config 未触碰；生产 as-of、设备验证、staging、集成、合并、部署均 NOT RUN。
+- 尚未接入调用点：preference merge、daily、weekly。
+- 下一建议批次为 **Batch C：preference merge**，必须等待负责人另行明确授权；不因 Batch B PASS 自动启动。
+- Android / Autonomy v4 仍保留在整体计划，真实设备验证另行安排与授权。
