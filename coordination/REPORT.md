@@ -624,3 +624,52 @@ GPT 未亲自运行 Node 测试；测试统计与负向对照证据来自 Memory
 生产 DB / 生产插件 / profile / config 未触碰；真实 weekly 调度/apply 未执行；staging、部署、重启、主线合并均 NOT RUN。生产验证、集成后的代码修改、主线合并与部署均需按范围另行授权。
 
 Android / Autonomy v4 设计对齐继续保留；真实设备后台恢复验证仍 NOT RUN，后续需独立安排，不能因 Memory A–E 通过而搁置。
+
+
+---
+
+## 2026-11-21 17:5x · GPT 只读集成审查 · REPORT-0029（对应 HANDOFF-0073）
+
+### 1. A–E 分支祖先链
+
+GitHub compare 核对结果：
+
+| 区间 | ahead | behind | 结论 |
+|---|---:|---:|---|
+| P4 `c437c460d8378cbf6493a5e4e12d673c4334d50f` → A `5797324175f345ff82337f409d8406e5256ddfc3` | 4 | 0 | 线性前进 |
+| A → B `2a93031db3dfa1a1c7c34b7376aebe395493c57f` | 11 | 0 | 线性前进 |
+| B → C `fecbd09eaa5b5745ef02263b1bd506712c256150` | 7 | 0 | 线性前进 |
+| C → D `5500d04e0e49ebb8168e7356de3c082a9e0e722e` | 2 | 0 | 线性前进 |
+| D → E `4bf92aad8c069e92f3521e6a7cdf4c7b79559e3c` | 6 | 0 | 线性前进 |
+
+A–E 合计为 P4 基线之上 30 个提交。五批代码已按顺序累计在 Batch E 分支，不需要把五个分支作为互不相关的分支合并；Batch E HEAD 是完整累计验证目标。
+
+### 2. 跨批次静态代码审查
+
+在 Batch E 最终 HEAD 回读并核对七个业务调用点：
+
+- Batch A：preference / remembered 注入使用统一 `current`。
+- Batch B：session-index episode 使用 `current`、todo 使用 `currentTodoActiveEmpty`；handoff brief 项目 todo 使用 `currentTodoLegacy`、owner 统计使用 `current`。
+- Batch C：preference merge 候选使用 `currentPreferenceCandidate`，旧偏好查询使用 `current`；pending 候选兼容及非 NULL valid_to 拒绝契约保留。
+- Batch D：daily 相似去重候选使用 `current`，保留 90 天窗口、倒序和 LIMIT 500。
+- Batch E：weekly 候选使用 `current`；dry-run/apply 共用候选来源，apply 在事务内重读并复核 revision/validity，snapshot 与 CAS 同事务，valid_to clamp 与失败回滚路径保留。
+- 所有调用点均使用最终统一 helper `lib/store/validity.js`。SQL 参数顺序按占位符位置核对；todo 历史状态兼容域未被严格 active 规则覆盖。
+
+累计分支测试证据来自 Memory 智能体：全量 305/305 ×4，0 fail / 0 skip；各批专项报告均已复核。GPT 未亲自运行 Node 测试。
+
+**结论：A–E 累计功能栈的祖先链、调用点和 helper 语义静态审查通过；累计分支隔离测试 PASS。** 这不是生产、设备或部署验证。
+
+### 3. 主线合并范围风险
+
+- GitHub main 基线：`752cd0861e9c86c9f7be4bdf18302fa72a3b95dd`。
+- main → Batch E HEAD：ahead **300** / behind **0**，涉及 **117 文件**（62 added、55 modified）。
+- main → P4 基线：ahead **270** / behind **0**，涉及 **112 文件**。
+- A–E 仅是 P4 基线之上的 30 个提交；因此直接合并 Batch E 分支会同时引入此前 270 个尚未进入 main 的提交及 112 文件的既有项目变更，包括 recall、archive、rules、M3、home archive 等功能范围。
+
+此前提交不等于有缺陷，但不能把它们默认为本轮 A–E 授权的一部分。故本轮不执行 merge、rebase、cherry-pick 或部署。需要负责人先确认整体 270 个提交是否进入 main，或决定采用更窄的基线/拆分集成策略。
+
+### 4. 未执行事项
+
+未写生产 DB，未修改生产插件/profile/config；未启动 staging；未执行真实 weekly 调度/apply；未部署、重启或合并主线。生产只读核查、staging、主线合并与部署均需独立授权。
+
+Android / Autonomy v4 设计对齐与真实设备后台恢复验证计划继续保留，尚未进行设备验证。
