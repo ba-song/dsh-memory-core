@@ -1,9 +1,9 @@
-# MEMORY-REPORT-0005 · Memory 记忆智能体报告
+# MEMORY-REPORT-0006 · Memory 记忆智能体报告
 
 > 会话：Memory 记忆智能体（Memory 领域专业智能体）
-> 覆盖任务：`MEM-P4-TEMPORAL-VERIFY-01`（v1）、`MEM-VALIDITY-R5-01`（v2）、`MEM-VALIDITY-IMPL-01`（v3）、`MEM-VALIDITY-INTEGRATION-01`（v4）、`MEM-VALIDITY-INTEGRATION-REVIEW-FIX-01`（v5，本轮）
+> 覆盖任务：`MEM-P4-TEMPORAL-VERIFY-01`（v1）→ `MEM-VALIDITY-R5-01`（v2）→ `MEM-VALIDITY-IMPL-01`（v3）→ `MEM-VALIDITY-INTEGRATION-01`（v4）→ `MEM-VALIDITY-INTEGRATION-REVIEW-FIX-01`（v5）→ `MEM-VALIDITY-GPT-FIX-VERIFY-01`（v6，本轮）
 > 仓库：`ba-song/dsh-memory-core`｜迭代规则：本文件覆盖式更新、版本号递增，不新增同类文件
-> 最近更新：2026-11-21 12:2x (Asia/Shanghai) · v5
+> 最近更新：2026-11-21 12:5x (Asia/Shanghai) · v6
 
 ## 版本历史
 
@@ -13,166 +13,177 @@
 | MEMORY-REPORT-0002 | 2026-11-21 10:5x | R5 双模式语义审查：4 种口径、as-of 生产缺失、2×2 谓词方案 |
 | MEMORY-REPORT-0003 | 2026-11-21 11:1x | 统一谓词 helper + P4 接入（4af81a2）：21 例新测试、279/279 |
 | MEMORY-REPORT-0004 | 2026-11-21 11:5x | recall / graph / event-chain 接入（38844d1）：13 例新测试、292/292 |
-| MEMORY-REPORT-0005 | 2026-11-21 12:2x | 复核修正：FTS 状态域、uncertain 时间边界（4b4f927）：5 例新测试、297/297 |
+| MEMORY-REPORT-0005 | 2026-11-21 12:2x | FTS 状态域 + uncertain 时间边界（4b4f927）：5 例新测试、297/297 |
+| MEMORY-REPORT-0006 | 2026-11-21 12:5x | 复核 GPT `697de1e`+`b4606e1`：**PARTIAL**（top-N 修复 PASS；graph-only 诊断回归 FAIL，全量 297/298） |
 
 ---
 
-## 0. 本轮结论（MEM-VALIDITY-INTEGRATION-REVIEW-FIX-01）
+## 0. 结论：**PARTIAL**
 
-| 复核项 | 判定 | 证据 |
+| 验证项 | 判定 | 证据 |
 |---|---|---|
-| 发现一：FTS 臂硬编码 `status='active'` | **FIXED / PASS** | 两处 FTS 子查询已移除硬编码；状态域只由 helper 决定；新增 FTS-only 回归测试 |
-| 发现二：uncertain 未尊重 as-of 时间边界 | **FIXED / PASS** | 新增 `uncertaintyWindowSql`（`created_at<=at`、`valid_from<=at`、`valid_to>at`），uncertain 现在接收 `at` |
-| 两个 reason 保持区分 | **PASS** | `unknown-validity` / `superseded-without-end` 分支独立；同一记录只出现一次 |
-| 定向测试 | **PASS** | `validity-review-fix` **5/5**；受影响 8 个测试文件 **46/46** |
-| 全量测试 | **PASS** | `npm test` **297/297**、0 fail、0 skip、exit 0 |
-| 负向对照 | **PASS** | 恢复 FTS 硬编码 → 1 例失败；移除 uncertain 时间窗 → 2 例失败；恢复后全绿 |
-| 生产数据 / 部署 | **未触碰** | 无部署、无重启、无 staging、无合并、无生产写入 |
+| 基线 HEAD 与两个提交 | **PASS** | HEAD = `b4606e1`，`4b4f927 → 697de1e → b4606e1` 父子链正确 |
+| 文件 blob 与 HANDOFF-0058 一致 | **PASS** | `recall.js` `75b4fb7f…`、`asof-graph-uncertain.test.mjs` `28425c24…`，与 HANDOFF §55.1 记载完全相同 |
+| 修改 A：`unknown-validity` 限定 unknownHop | **PASS（实现如述）** | `uncertainRows` 新增 `unknownIds`，SQL 仅对该集合检查 `TEMPORAL_UNKNOWN_SQL`；参数顺序正确 |
+| 修改 B：top-N 回归测试 | **PASS** | 新用例通过；负向对照 1 证明撤掉限定后它确实失败 |
+| **要求 5：graph-only unknownHop 既有诊断保留** | **FAIL** | `tests/asof-graph-uncertain.test.mjs:40` 既有用例失败；根因见 §6 |
+| 全量测试 0 fail / 0 skip | **FAIL** | 298 tests / **297 pass / 1 fail / 0 skip**，exit **1** |
+| 两组负向对照 | **对照组 1 PASS；对照组 2 不可区分** | 见 §5 |
+| 生产 DB / 部署 / staging | **未触碰** | 见 §8 |
 
-**总判定：隔离开发复核修正 PASS。不代表生产验证通过，也不代表获准合并或部署。**
+**判定理由**：GPT 的 top-N 误报修复本身正确且有回归测试保护；但「graph-only unknownHop 的既有诊断行为必须保留」这一条在当前实现下无法同时成立——既有测试直接失败。按任务要求「先定位和报告，不要擅自扩展修复范围」，本轮不修改代码，只提交证据与选项供 GPT 裁决。
 
 ---
 
-## 1. 基线与提交
+## 1. 基线与提交核对
 
 | 项 | 值 |
 |---|---|
-| 分支 | `feat/memory-validity-unified` |
-| 起点（复核基线） | `38844d120c25797f3a7cd2e41de3942a809b82b7`（已核对为分支 HEAD，未变化） |
-| **最终 HEAD / 远端** | **`4b4f927`**（`4b4f927…`，本地与远端一致） |
-| 本轮提交 | `1e468db` feat(validity) → `78c1556` fix(recall) → `4b4f927` test(validity) |
-| blob | `validity.js` `00c4d948…`｜`recall.js` `6cdd5a9e…`｜`validity-review-fix.test.mjs` `e050666e…`｜`asof.test.mjs` `b66a6bcd…`｜`asof-graph-uncertain.test.mjs` `f8edc284…`｜`validity-integration.test.mjs` `87e31509…` |
-| 环境 | Node **v24.19.0**、`node:sqlite`；独立 worktree；未安装/升级依赖 |
+| 仓库 / 分支 | `ba-song/dsh-memory-core` / `feat/memory-validity-unified` |
+| 本轮开始前 HEAD（任务给定） | `4b4f92751b6c8cc41c0935fc2b4c267cd9cbd4c9` |
+| **实际 HEAD（实测）** | **`b4606e1c66f1afb94cb154b7ec96423103477029`**（与预期一致） |
+| 提交 1 | `697de1ee11ec12fb41d2d5a701851635c9192827`，parent `4b4f92751b6c8cc41c0935fc2b4c267cd9cbd4c9` |
+| 提交 2 | `b4606e1c66f1afb94cb154b7ec96423103477029`，parent `697de1ee11ec12fb41d2d5a701851635c9192827` |
+| 本轮 diff（4b4f927→b4606e1） | `lib/recall/recall.js` ±28 / `tests/asof-graph-uncertain.test.mjs` +39，共 +57/−10 |
+| `recall.js` blob @ HEAD | `75b4fb7f184e1c614d8056ce7ab39f6d650a6f28`（HANDOFF-0058 §55.1 记载一致） |
+| `asof-graph-uncertain.test.mjs` blob @ HEAD | `28425c24c1f516305dd69bc9dc5ab4b63da13edb`（记载一致） |
+| coordination HEAD | `cabc7065b5c06867f76cda139267cd6ea1e3c9b3`（HANDOFF-0058"Memory and EI status"） |
+| `HANDOFF.md` / `REPORT.md` blob | `e439d51f3fcb830734f4bc69ec802327f42ab0b9` / `f1add923426b11b39a702e435597e184159800c9`（本轮已完整读取相关章节，未修改） |
+| 环境 | Node **v24.19.0**、`node:sqlite`；独立 worktree `/tmp/memaudit/verify`（detached @ b4606e1）；`node_modules` 复用既有目录，未安装/升级 |
 
 ---
 
-## 2. 修正说明一：FTS 关键词臂的状态域
+## 2. 代码核对（`697de1e`）
 
-**问题**：`searchBigramExpr()` / `searchTrigramExpr()` 在拼接 filter 时多写了一层 `status='active'`：
+`uncertainRows()` 新增 `unknownIds` 参数：
 
-```sql
--- 修正前
-SELECT rowid AS id FROM fts_bigram WHERE fts_bigram MATCH ?
-  AND rowid IN (SELECT id FROM memories WHERE status='active' AND ${filter.sql}) LIMIT ?
+```js
+const unknownList = [...new Set(unknownIds)].filter((id) => list.includes(id)).slice(0, 200)
+const unknownPh = unknownList.length ? unknownList.map(() => '?').join(',') : null
+const unknownClause = unknownPh ? `(id IN (${unknownPh}) AND (${TEMPORAL_UNKNOWN_SQL}))` : '0'
+...
+WHERE id IN (${ph}) AND ${w.sql} AND ${domain.sql} AND ${win.sql}
+  AND ((${guard.sql}) OR ${unknownClause}) LIMIT ?
+.all(...list, ...w.params, ...win.params, ...unknownList, Math.max(1, Number(limit) || 10))
 ```
 
-`filter.sql` 就是 `validitySql()` 的片段，已经包含状态域（current → `status='active'`；as-of → `NOT IN ('pending','merged')`）。再叠一层 `status='active'` 导致 as-of 下 FTS 臂永远看不到 `archived` / `expired`，而 allowedIds / graph / semantic 却能看到 → 各臂语义不一致。
+`recall()` 调用改为 `unknownIds: g.unknownHop.keys()`。
 
-**修正后**：
-
-```sql
-SELECT rowid AS id FROM fts_bigram WHERE fts_bigram MATCH ?
-  AND rowid IN (SELECT id FROM memories WHERE ${filter.sql}) LIMIT ?
-```
-
-**保持不变**：scope 过滤位置、`[expr, ...filter.params, 50]` 的参数顺序、rowid 子查询形态、LIMIT。
-**证据**：新测试构造无实体词的语料，先断言 `graphCandidates(db,'极光')` 的 direct/hop/unknownHop 全为空（排除 graph 兜底），再断言 as-of 能找到 archived/expired、current 找不到、pending/merged 始终排除。
+**参数顺序核对**：SQL 文本顺序为 `id IN (list)` → `scope` → `domain`（无参） → `win`（3 参） → `guard`（无参）/ `unknownPh` → `LIMIT`；绑定顺序 `list, w.params, win.params, unknownList, limit` 一一对应 ✅。
+**空集处理**：`unknownList` 为空时 `unknownClause='0'` 且不追加参数 ✅（负向对照 2 即走此路径）。
 
 ---
 
-## 3. 修正说明二：uncertain 必须尊重 as-of 时间边界
-
-**问题**：`uncertainRows()` 没有 `at`，只查状态域 + 两个 reason 条件。于是「创建于判定之后」「valid_from 晚于判定点」「valid_to 不晚于判定点」这类**已能判定**的行会被误报成 uncertain。
-
-**修正**：新增 `uncertaintyWindowSql({ at })`（helper 单一来源），并在 `uncertainRows` 中与候选集取交集：
-
-```sql
-created_at_epoch <= ?
-AND (valid_from IS NULL OR valid_from <= ?)
-AND (valid_to IS NULL OR valid_to > ?)
--- params 顺序固定 [at, at, at]（创建 / 起点 / 终点）
-```
-
-与裁决逐条对应：
-
-| 裁决 | 实现 |
-|---|---|
-| 1. `created_at_epoch > at` 排除 | `created_at_epoch<=?` |
-| 2. `valid_from > at` 排除 | `(valid_from IS NULL OR valid_from<=?)` |
-| 3. `valid_to <= at` 排除 | `(valid_to IS NULL OR valid_to>?)` |
-| 4. 遗留 unknown-validity 仅当无真实 `valid_from` 且 `created<=at` | `TEMPORAL_UNKNOWN_SQL`（含 `valid_from IS NULL`）+ 上述窗口 |
-| 5. superseded-without-end 仅当已创建/开始且无明确结束 | `uncertaintySql` + 上述窗口 |
-| 6. 两个 reason 明确区分 | 单行按 `superseded_by≠0 且 valid_to IS NULL` → `superseded-without-end`，否则 `unknown-validity`；每行只出现一次 |
-| 7. 只标记、不进权威结果 | 候选集先剔除已返回结果；权威结果仍由 `validitySql` 决定 |
-
-**一个必须让 GPT 知道的事实**：在 `asOfHistory`（允许 `COALESCE(valid_from, created_at_epoch)` 近似）下，`valid_from IS NULL` 且 `created<=at` 的行**已经是权威结果**（带 `validFromApproximated`），因此不会被标成 `unknown-validity`。也就是说：**`unknown-validity` 这个 reason 在当前 asOfHistory 路径上几乎不可触发**（只在候选因 top-N 截断而未被返回时可能出现）。
-本轮按裁决保留了该分支与 reason 区分（不作死代码清理），并在测试中把「创建晚于 at 必须不误报」作为回归守卫。**是否需要给某些调用方改用 `asOfStrict` 以恢复 unknown-validity 语义，需 GPT 裁决。**
-
-**既有测试的调整（必要且需说明）**：`tests/asof.test.mjs`、`tests/asof-graph-uncertain.test.mjs`、`tests/validity-integration.test.mjs` 里各有一条 fixture 把「创建于 as-of 之后的无起点行」断言为 uncertain——这正是本轮要修的误分类。已按新裁决调整：
-- `asof.test.mjs`：新增一条「valid_from 已过 + 已替代但无终点 + created<=at」的行承担 uncertain 透传断言；原 unknown 行改为断言「不得误报」；`before`（去年 12 月）断言 uncertain 为 0。
-- `asof-graph-uncertain.test.mjs`：unknown 行 `createdAt` 改为 `at - 1000`（创建于判定之前），保留 `unknown-validity` 覆盖。
-- `validity-integration.test.mjs`：inconsistent 行补 `createdAt: JAN`（否则被新边界正确排除）。
-
----
-
-## 4. 新增测试（`tests/validity-review-fix.test.mjs`，5 例）
-
-| # | 用例 | 断言要点 |
-|---|---|---|
-| 1 | FTS 臂：as-of 命中 archived / expired | 前置 graph 臂全空；as-of 结果含 archived+expired；current 不含；pending/merged 始终排除 |
-| 2 | `uncertaintyWindowSql` 契约 | `params=[at,at,at]`；3 个占位符；子句顺序 created→valid_from→valid_to；alias 前缀；NaN → `E_BAD_TIMESTAMP` |
-| 3 | uncertain 边界（6 行 fixture） | 近似起点行属权威结果；created>at / valid_from>at / valid_to≤at 均不进 uncertain；只有 inconsistent 进 `superseded-without-end`；同一 id 不重复 |
-| 4 | created>at 不得误报 unknown-validity | 未来创建的无起点行既不在结果也不在 uncertain |
-| 5 | current 视图无 `uncertain` 字段 | 既有 API 行为不变 |
-
----
-
-## 5. 测试与负向对照
-
-### 5.1 定向 / 回归 / 全量（真实执行）
+## 3. 定向测试（真实执行）
 
 | 命令 | 结果 | 退出码 |
 |---|---|---|
-| `node --test tests/validity-review-fix.test.mjs` | tests **5** / pass **5** / fail 0 / skip 0 | **0** |
-| `node --test tests/asof.test.mjs tests/asof-graph-uncertain.test.mjs tests/validity-integration.test.mjs tests/validity.test.mjs tests/validity-review-fix.test.mjs tests/p4.test.mjs tests/event-chain.test.mjs tests/graph.test.mjs tests/graph-scope-isolation.test.mjs` | tests **46** / pass **46** / fail 0 | **0** |
-| `npm test` | tests **297** / pass **297** / fail **0** / **skipped 0**（约 41 s） | **0** |
-| `git diff --check` | 无输出 | **0** |
-| `git status --short` | 仅 `?? node_modules`（符号链接） | **0** |
+| `node --test tests/asof-graph-uncertain.test.mjs` | tests **2** / pass **1** / fail **1** / skip 0 | **1** |
+| `node --test tests/validity-review-fix.test.mjs` | tests 5 / pass 5 / fail 0 / skip 0 | **0** |
+| `node --test tests/asof.test.mjs` | tests 1 / pass 1 / fail 0 / skip 0 | **0** |
+| `node --test tests/validity-integration.test.mjs` | tests 13 / pass 13 / fail 0 / skip 0 | **0** |
+| 完整有效性集合（上述 + validity / p4 / event-chain / graph / graph-scope-isolation，9 文件） | tests **47** / pass **46** / fail **1** / skip 0 | **1** |
 
-> 297 = 上一轮 292 + 本轮新增 5。
+失败用例与断言：
 
-### 5.2 负向对照（scratch 修改后恢复，逐字节比对一致）
+```
+✖ as-of recall reports graph-only unknown-validity neighbours as uncertain
+  tests/asof-graph-uncertain.test.mjs:40
+  assert.ok(rows.uncertain.some((row) => Number(row.id) === unknownId))
+  → actual false
+```
 
-| 对照 | 操作 | 结果 |
+其余单文件：`validity.test` 21/21、`validity-review-fix` 5/5、`p4.test` 1/1、`event-chain` 2/2、`graph` 1/1、`graph-scope-isolation` 1/1，全部 exit 0。
+
+---
+
+## 4. 全量测试
+
+```
+npm test
+tests 298 / pass 297 / fail 1 / skipped 0
+EXIT=1
+```
+
+比上一轮 297 增加 1（即 `b4606e1` 新增的 top-N 用例），与预期数量一致；**但未达 0 fail**，唯一失败项即 §3 的既有 graph-only 用例。
+
+---
+
+## 5. 负向对照（scratch，恢复后逐字节一致）
+
+### 对照组 1：撤销 `unknownIds` 限定（回到 v5 的"全部候选"规则）
+
+| 配置 | graph-only 用例 | top-N 用例 | 退出码 |
+|---|---|---|---|
+| 撤销限定后 | ✔ PASS | **✖ FAIL** | 1 |
+| 恢复 GPT 代码 | **✖ FAIL** | ✔ PASS | 1 |
+
+→ **符合预期**：新 top-N 测试确实是有效守卫（撤掉修复它就失败）。但也证明两组行为在现有 graph 设计下**互斥**。
+
+### 对照组 2：`recall()` 不传 `unknownHop`（改传 `[]`）
+
+| 配置 | graph-only 用例 | 退出码 |
 |---|---|---|
-| FTS 状态域 | 把 `status='active' AND` 加回两处 FTS 子查询 | **1 例失败**（FTS 历史状态测试），exit 1 |
-| uncertain 时间边界 | 从 `uncertainRows` 移除 `uncertaintyWindowSql` 及其参数 | **2 例失败**（边界用例 + 未来误报守卫），exit 1 |
-| 恢复 | `diff` 与备份一致 | 5/5 PASS |
+| 传 `[]` | ✖ FAIL | 1 |
+| GPT 原实现（传 `g.unknownHop.keys()`） | ✖ FAIL | 1 |
+
+→ **未按预期区分**。原因不是对照写错，而是该 fixture 的 `unknownHop` 本来就是空集（见 §6），所以「传/不传」结果相同。**不能据此声称"恢复了就通过"。**
 
 ---
 
-## 6. 生产与边界
+## 6. 根因分析（关键证据）
 
-- 未写/删/迁移/回填生产 DB；生产库仅此前只读副本，本轮**未再查询**；未执行生产召回或注入。
-- 未改生产插件目录、profile/config；未部署、未重启、未启动 staging。
+用与失败用例完全相同的 fixture 直接观测 `graphCandidates()` / `recall()`（临时 DB，只读）：
+
+| 场景 | direct | hop | unknownHop | 结果 | uncertain |
+|---|---|---|---|---|---|
+| **A 可近似**（`valid_from IS NULL`，`created_at = at-1000`，与非种子共享实体） | `[1]` | **[2]** | **[]** | `[1]` | `[]`（用例期望 `[2:unknown-validity]`） |
+| **B 已替代无终点**（同上但 `superseded_by=9`） | `[1]` | `[]` | `[2]` | `[1]` | `['2:superseded-without-end']` |
+| **C 创建晚于判定点**（`created_at = 2026-12-01`） | `[1]` | `[]` | `[2]` | `[1]` | `[]`（被时间窗排除） |
+
+**机理**：`graphCandidates()` 的 hop 查询使用 `asOfHistory` 过滤，而 `unknownHop` 的定义是「连接到的实体邻居中**不在 hop 里**的 unknown 行」。
+- 场景 A：该行通过 `asOfHistory`（近似有效）→ 进入 **hop** → 被排除出 unknownHop → `unknownIds` 为空 → 永远不会产生 `unknown-validity`。
+- 场景 B：该行被 guard 排除出 hop → 进入 unknownHop，但因为 `superseded_by≠0`，reason 优先判为 `superseded-without-end`。
+- 场景 C：进入 unknownHop，但被 `uncertaintyWindowSql`（`created_at<=at`）排除。
+
+**结论**：`697de1e` 之后，`unknown-validity` 这个 reason **在三条可能路径上全部不可达**。既有用例断言的正是场景 A 的诊断行为，因此必然失败。
+这与我上一轮（MEMORY-REPORT-0005 §7）标注的风险一致：近似起点接管后 `unknown-validity` 已趋近死分支；本轮改动把它彻底关闭，并触发回归。
+
+---
+
+## 7. 供 GPT 裁决的选项（本轮未实施）
+
+| 选项 | 做法 | 影响 |
+|---|---|---|
+| **A** | graph 的 hop 在 as-of 下改用 `asOfStrict`（近似有效行不进入 hop，落入 unknownHop） | graph-only 诊断恢复；但图臂看不到近似有效节点，与关键词/语义臂语义不一致 |
+| **B** | 保留当前实现，改写/删除既有 graph-only 用例，承认 `unknown-validity` 已停用（或仅在 `asOfStrict` 调用方保留） | 少一条诊断；需明确 reason 生命周期 |
+| **C** | 让 graph 同时返回 `hopStrict`（asOfStrict 集合）用于 unknownHop 归属判断，hop 仍用 asOfHistory | 两全；但同一行会同时是「近似有效结果」与「诊断候选」，需定义是否重复（现有 `uncertain` 已剔除结果） |
+
+无论选哪条，**当前 HEAD `b4606e1` 不能标 PASS**（全量 1 fail）。
+
+---
+
+## 8. 边界声明
+
+- 未写入、删除、回填、迁移生产 DB；本轮未打开生产库（仅 `readOnly` 临时库）。
+- 未修改生产插件目录、profile/config；未部署、未重启、未启动 staging。
 - 未合并 `feat/m1-preference-memory` 或 main；未改 Persona/EI/Autonomy/Android。
-- 未改 `lib/index.js`（未映射 `validFromApproximated`）；未接入 preference / session-index / remembered / merge / daily / weekly / brief。
-- 未修改共享 `HANDOFF.md` / `REPORT.md`；仅更新本会话报告。
-- 未安装/升级依赖；所有测试使用 `/tmp` 临时库。
-- **隔离开发复核修正 PASS ≠ 生产 as-of 验证通过 ≠ 获准合并或部署。**
+- 未修改共享 `HANDOFF.md` / `REPORT.md`（已核对 blob 未变，仅更新本会话报告）。
+- 负向对照全部在 scratch 副本进行，`diff` 与备份逐字节一致后恢复；工作区 `git status --short` 仅 `?? node_modules`。
+- **本轮是隔离开发验证，不是生产 as-of 验证，也不构成合并/部署授权。**
 
 ---
 
-## 7. 尚存风险与未覆盖路径
-
-| 项 | 说明 |
-|---|---|
-| `unknown-validity` 在 asOfHistory 下几乎不可触发 | 近似起点把这些行变成权威结果；需裁决定是否保留/改调用方为 asOfStrict（见 §3 末） |
-| 排序元数据查询仍 `status=? 'active'` | `recall.js` 中只取 importance/created_at 用于排序权重；历史行会落到默认值（不影响是否返回），属既有权重近似，未在本轮范围 |
-| `countBlockedMatches` 仍 `status='active'` | 越权审计计数，非权威结果集，未改 |
-| graph `unknownHop` 仍以 `status='active'` 限定 | 保持图臂候选集不漂移；与 as-of 状态域不完全一致，属已知残留 |
-| top-N 截断可能让「已近似有效的行」落进 uncertain | 遗留 reason 分支在有大量关键词候选时才可能触发；属 reason 语义问题，需随上一条裁决一起处理 |
-| 生产 as-of | **NOT RUN**（生产插件为旧版） |
-| 其他调用点 | preference / session-index / remembered / merge / daily / weekly / brief 仍用旧谓词（按授权未动） |
-
-## 8. 证据索引
+## 9. 证据索引
 
 | 内容 | 命令 | 退出码 |
 |---|---|---|
-| HEAD / 提交 | `git log --oneline -4`（`4b4f927 / 78c1556 / 1e468db / 38844d1`） | 0 |
-| blob | `git rev-parse HEAD:<path>`（6 个文件） | 0 |
-| 新增定测 | `node --test tests/validity-review-fix.test.mjs` | 0 |
-| 回归 | 8 个受影响测试文件合并运行（46） | 0 |
-| 全量 | `npm test`（297） | 0 |
-| 负向对照 ×2 | FTS 回退 → 1 fail；时间窗移除 → 2 fail | 1（预期） |
-| 工作树 | `git diff --check`、`git status --short` | 0 |
+| 远端 HEAD / 提交链 | `git ls-remote`；`git log -1 --format='%H parent=%P'` | 0 |
+| blob | `git rev-parse b4606e1:<path>` | 0 |
+| 定向（4 文件） | 见 §3 | 1 / 0 / 0 / 0 |
+| 完整有效性集合（9 文件） | `node --test …` | **1**（47/46/1） |
+| 全量 | `npm test` | **1**（298/297/1/0） |
+| 负向对照 1 | 撤销 `unknownIds` 限定 → top-N 用例失败 | 1（预期） |
+| 负向对照 2 | 传 `[]` → graph-only 仍失败（不可区分） | 1 |
+| 根因观测 | `/tmp/dbg-why.mjs` 三场景输出（A/B/C） | 0 |
+| 工作树 | `git status --short`、`git diff --check` | 0 |
