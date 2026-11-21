@@ -582,3 +582,45 @@ Memory 智能体须在修复后 HEAD `37fb441fbe39dee715340f8204c16e3a3fe4782e` 
 - HEAD/blob、工作区、scratch 清理和恢复后逐字节一致性核验。
 
 不得把首轮 scratch 6/6 或 GPT 的静态复核当作正式复验 PASS。所有生产、staging、部署、合并仍未授权。
+
+
+---
+
+## 2026-11-21 17:4x · GPT 统筹复核 · REPORT-0028（对应 HANDOFF-0072）
+
+### 1. Batch E 第三轮复验结果与独立核对
+
+- 仓库：`ba-song/dsh-memory-core`
+- 分支：`feat/memory-validity-batch-e`
+- 验证 HEAD：`4bf92aad8c069e92f3521e6a7cdf4c7b79559e3c`
+- tree：`efff01dc63e8bddcdbeb79c430692cf4e26f18aa`
+- 相对 Batch E 原始实现基线 `e3976101a14356819a15d09b69ee4328f194887b`：ahead 2 / behind 0；仅 `tests/weekly.test.mjs` 变化（2 additions / 2 deletions）。
+- `weekly.js` blob：`61083aaaaff3fbc6927490045a92246ee9b1d05f`；`weekly.test.mjs` blob：`a8cf3cdb362a76a6fe29072840b495325994471a`；`validity.js` blob：`7aabea0efff2b9d5fe40acea19fcc4609f5e87e6`。
+- Memory 专项报告：MEMORY-REPORT-0017；报告 commit `d590bf5208482c159bed8ce9fd9946eda0a34ff8`；blob `3dfe3645a0480fefa3c0b77a9f9c4b19fdf37b00`。
+
+GPT 已实际读取 MEMORY-REPORT-0017 完整正文、weekly.js、weekly.test.mjs、validity.js、修复提交 diff 与 compare。修复将未来 validTo 从 importance 0.7 keeper fixture 移至 importance 0.6 member fixture；固定 now 参数保留；断言及业务代码未改。报告与 GitHub 内容一致。
+
+### 2. 隔离测试证据（由 Memory 智能体执行）
+
+- weekly + validity 定向测试：30/30 × 3，0 fail / 0 skip。
+- weekly 单文件：6/6。
+- 六文件回归：53/53，0 fail / 0 skip。
+- 全量 `npm test`：**305/305 × 4，0 fail / 0 skip**。
+- E1–E7 七组负向对照全部由预期语义断言失败证明；正式文件恢复后逐字节一致。
+- 工作区 `git diff --check` exit 0、`git diff --stat` 为空；仅报告记录的既有 `node_modules` 未跟踪符号链接。
+
+GPT 未亲自运行 Node 测试；测试统计与负向对照证据来自 Memory 智能体独立 worktree 报告。
+
+### 3. GPT 独立代码审查与裁决
+
+已复核 weekly 候选 current validity、dry-run/apply 同源、`BEGIN IMMEDIATE` 后重读 keeper/member、revision 与 validity 复核、snapshot 与 CAS 同事务、`valid_to=min(原值,now)`、snapshot 保留迁移前原值、缺表/写入失败/CAS 未命中整体 rollback、keeper importance 更新门禁及无 status-only 降级路径。未发现阻断性代码问题。
+
+**GPT 裁决：Batch E 隔离代码验证 PASS。至此 Batch A–E 五批均完成隔离代码验证 PASS。**
+
+### 4. 下一步与授权边界
+
+下一阶段为 A–E 统一集成审查，先进行只读核对：分支祖先链、累计 diff、文件覆盖关系、helper 语义一致性、跨批次调用点、事务与兼容性、全量测试覆盖及潜在冲突。先形成审查报告与风险清单，不自动修改代码、不合并主线、不部署。
+
+生产 DB / 生产插件 / profile / config 未触碰；真实 weekly 调度/apply 未执行；staging、部署、重启、主线合并均 NOT RUN。生产验证、集成后的代码修改、主线合并与部署均需按范围另行授权。
+
+Android / Autonomy v4 设计对齐继续保留；真实设备后台恢复验证仍 NOT RUN，后续需独立安排，不能因 Memory A–E 通过而搁置。
