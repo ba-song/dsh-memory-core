@@ -7,7 +7,8 @@ const DIR = mkdtempSync(join(tmpdir(), 'dy-cons-'))
 process.env.DY_MEMORY_DIR = DIR
 const { openDb } = await import('../lib/store/db.js')
 const { parseConsolidation, maskText } = await import('../lib/consolidate/llm.js')
-const { buildDigestText, gatherWindow } = await import('../lib/consolidate/daily.js')
+const { buildDigestText, gatherWindow, loadDailyDedupCandidates } = await import('../lib/consolidate/daily.js')
+const { insertMemory } = await import('../lib/store/memories.js')
 const { memoryScore, accessFactorOf, emotionFactorOf } = await import('../lib/maintain/factors.js')
 
 test('日结解析：过滤临时状态/隐私/坏主语，保留合法条目', () => {
@@ -50,6 +51,42 @@ test('对话摘录：只收 user/self，排除工具事件与群聊，取最近 
   assert.ok(text.includes('#2 [汐] 汐早'), 'TEXT2='+text)
   assert.ok(!text.includes('dy_say'))
   assert.ok(!text.includes('群里的话'))
+})
+
+test('日结去重候选：只比较 current 记忆，同时保留 90 天窗口和排序上限语义', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-daily-validity-'))
+  const { db } = openDb(dir)
+  const at = Date.UTC(2026, 10, 21)
+  try {
+    const add = (text, opts = {}) => insertMemory(db, {
+      kind: 'fact', text, createdAt: opts.createdAt ?? at - 86400000,
+      status: opts.status ?? 'active',
+      validFrom: opts.validFrom ?? null,
+      validTo: opts.validTo ?? null,
+      layer: 'auto',
+    })
+    const current = await add('current daily candidate', { validFrom: at - 1000 })
+    const legacyNoStart = await add('legacy null valid_from candidate')
+    const future = await add('future daily candidate', { validFrom: at + 1 })
+    const expired = await add('expired daily candidate', { validFrom: at - 1000, validTo: at })
+    const superseded = await add('superseded daily candidate', { validFrom: at - 1000 })
+    db.prepare('UPDATE memories SET superseded_by=? WHERE id=?').run(999999, superseded)
+    const archived = await add('archived daily candidate', { status: 'archived' })
+    const tooOld = await add('outside daily lookback', { createdAt: at - 90 * 86400000 - 1 })
+
+    const rows = loadDailyDedupCandidates(db, at)
+    const ids = rows.map((row) => Number(row.id))
+    assert.ok(ids.includes(current), '当前有效记录应参与相似度去重')
+    assert.ok(ids.includes(legacyNoStart), 'valid_from NULL 的旧记录仍按 current helper 兼容')
+    for (const id of [future, expired, superseded, archived, tooOld]) {
+      assert.ok(!ids.includes(id), `无效/超窗记录不应参与日结去重：#${id}`)
+    }
+    assert.ok(rows.every((row) => row.created_at_epoch >= at - 90 * 86400000))
+    assert.deepEqual(ids, [...ids].sort((a, b) => b - a), '候选仍按 id DESC')
+  } finally {
+    try { db.close() } catch {}
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 test('多因子：最近访问/情绪/关系都会加权重', () => {
