@@ -3525,7 +3525,7 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 
 ## 59. Memory Batch B：session-index + handoff brief 统一 current 有效性接入（HANDOFF-0062）
 
-> 代码分支：`feat/memory-validity-b` @ `2a93031db3dfa1a1c7c34b7376aebe395493c57f`
+> 代码分支：`feat/memory-validity-batch-b` @ `2a93031db3dfa1a1c7c34b7376aebe395493c57f`
 > 基线：Batch A `5797324175f345ff82337f409d8406e5256ddfc3`
 > 专项报告：`MEMORY-REPORT-0011`，报告 commit `a8454b87bc3fdd45bbc755dfff532056120599c7`，blob `f04a7ea62df8bed4d8829c20bf29800bf514ef22`
 > GPT 复核时间：2026-11-21；本节由 GPT 统一整合。
