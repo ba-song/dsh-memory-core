@@ -516,7 +516,9 @@ GPT 未亲自运行 Node 测试。Memory-REPORT-0014 报告：
 - 当前 HEAD：`e3976101a14356819a15d09b69ee4328f194887b`
 - compare：ahead 4 / behind 0；仅 weekly.js 与 weekly.test.mjs 两个文件变化。
 - 实现提交：`1bcd2f3f3dbbdcb09a109e81a6d86fec29ca87fb`
-- 初始测试提交：`4cefcaba79fc5f6e8dc121545fbf10aa569ab60c`\n- 后续 valid_to 收敛实现提交：`fef2cb771a8fc81026c57533187f1dd83b0a0666`\n- 对应边界测试提交：`e3976101a14356819a15d09b69ee4328f194887b`
+- 初始测试提交：`4cefcaba79fc5f6e8dc121545fbf10aa569ab60c`
+- 后续 valid_to 收敛实现提交：`fef2cb771a8fc81026c57533187f1dd83b0a0666`
+- 对应边界测试提交：`e3976101a14356819a15d09b69ee4328f194887b`
 - weekly.js blob：`61083aaaaff3fbc6927490045a92246ee9b1d05f`
 - weekly.test.mjs blob：`42f0234bb5475c740dcdc6c451de7c498659f2b0`
 
@@ -527,7 +529,8 @@ GPT 未亲自运行 Node 测试。Memory-REPORT-0014 报告：
 - apply 在写事务内重新检查 keeper/member 的 current validity、业务域和 revision，避免使用事务外扫描的陈旧候选。
 - member revision snapshot 与 supersede 更新处于同一事务；更新使用 revision + validity 条件 CAS。
 - 删除旧 catch 后的 status-only 降级写入。缺失快照表、CAS 未命中或其他写错误均整体回滚。
-- keeper importance 更新增加 revision/current 条件；只有成功 supersede 至少一个 member 时才提升。\n- supersede 时将 `valid_to` 收敛为 `min(原 valid_to, now)`（NULL 视为 now），revision 快照保留迁移前的原值。\n- supersede 时将 `valid_to` 收敛为 `min(原 valid_to, now)`（NULL 视为 now），快照保留原值；新增测试验证未来 valid_to 不会延长已被替代记录的有效期。
+- keeper importance 更新增加 revision/current 条件；只有成功 supersede 至少一个 member 时才提升。
+- supersede 时将 `valid_to` 收敛为 `min(原 valid_to, now)`（NULL 视为 now），revision 快照保留迁移前的原值；新增测试验证未来 valid_to 不会延长已被替代记录的有效期。
 - 新增测试覆盖候选有效性边界、缺 revision 表失败关闭及 CAS 未命中 rollback。
 
 ### 3. GPT 静态复核
