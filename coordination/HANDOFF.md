@@ -3764,7 +3764,9 @@ Memory 智能体报告的隔离测试证据（GPT未亲自运行 Node 测试）�
 - 当前实现 HEAD：`e3976101a14356819a15d09b69ee4328f194887b`
 - compare：ahead 4 / behind 0；仅 `lib/consolidate/weekly.js`、`tests/weekly.test.mjs` 两个文件变化。
 - 实现提交：`1bcd2f3f3dbbdcb09a109e81a6d86fec29ca87fb`
-- 初始测试提交：`4cefcaba79fc5f6e8dc121545fbf10aa569ab60c`\n- 后续 valid_to 收敛实现提交：`fef2cb771a8fc81026c57533187f1dd83b0a0666`\n- 对应边界测试提交：`e3976101a14356819a15d09b69ee4328f194887b`
+- 初始测试提交：`4cefcaba79fc5f6e8dc121545fbf10aa569ab60c`
+- 后续 valid_to 收敛实现提交：`fef2cb771a8fc81026c57533187f1dd83b0a0666`
+- 对应边界测试提交：`e3976101a14356819a15d09b69ee4328f194887b`
 - weekly.js blob：`61083aaaaff3fbc6927490045a92246ee9b1d05f`
 - weekly.test.mjs blob：`42f0234bb5475c740dcdc6c451de7c498659f2b0`
 
