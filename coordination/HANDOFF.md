@@ -3414,3 +3414,67 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - 未写生产 DB、未改生产插件目录/profile/config；未部署、重启、启动 staging；未合并主开发分支；未修改 Persona/EI/Android/Autonomy。
 - 下一步由 GPT 统一整合共享 HANDOFF/REPORT；Memory 后续调用点分批评估，生产验证、主线合并和部署均须另行安排/授权。
 - Android 与 Autonomy v4 设计对齐仍保留项目主线；当前无任务运行，不得遗忘，真实设备验证仍待后续安排与授权。
+
+
+---
+
+## 57. Memory 剩余七调用点只读审查与分批建议（HANDOFF-0060）
+
+> 基线：`feat/memory-validity-unified` @ `c437c460d8378cbf6493a5e4e12d673c4334d50f`
+> 本节为 GPT 基于 GitHub 文件/blob 的只读代码审查；未改源码、测试或生产数据。
+
+### 57.1 已核对文件与 blob
+
+| 调用点 | 路径 | blob |
+|---|---|---|
+| preference 注入 | `lib/inject/preference.js` | `086b3e180050c1156af12b05affd89dbad69c8df` |
+| session index | `lib/inject/session-index.js` | `355eb7a1bbc88d86e692b13f0bc511359cd0f33a` |
+| remembered 注入 | `lib/inject/remembered.js` | `dc11425f2cdcc78ff5b9b86418b2fb44b5666ad5` |
+| preference merge | `lib/pref/merge.js` | `2a801eefb4647b8ce3d1e31e2c1c0ad43e92cdf9` |
+| daily consolidate | `lib/consolidate/daily.js` | `643d8026bf482dc0a5c76db9be8243f7ef77059a` |
+| weekly consolidate | `lib/consolidate/weekly.js` | `a2d1178196f89dfd46d64f79f6e4136b76e6436f` |
+| handoff brief | `lib/handoff/brief.js` | `0a111c003f2e0ac8cad746d5f16f2b412381555a` |
+| validity helper | `lib/store/validity.js` | `00c4d948ccb2973d48d95aebb07d230c8f44854c` |
+
+### 57.2 语义分类与风险
+
+1. **低风险只读注入：preference / remembered**
+   - 两者当前均筛 `status='active'`、`valid_to IS NULL OR valid_to>now`，但没有统一检查 `valid_from` 与 `superseded_by`。
+   - 可优先评估接入 `validitySql({preset:'current',at:now})`；保留 scope、kind、meta persist、预算、排序和跳过原因。
+   - remembered 当前使用内部 `Date.now()`，应考虑增加可注入 `now` 参数以便确定性测试，不改变默认行为。
+
+2. **混合兼容语义只读注入：session-index / handoff brief**
+   - session-index episode 当前 status active；todo 当前允许 `status IN ('active','')`，不能直接替换成 helper 的 current（其状态域严格为 active）而丢失旧数据兼容。
+   - handoff brief 的 project todo 允许 NULL/空/active，且按 project_id 限定；owner 标签统计只筛 active。需保留 project、owner 隔离和遗留 status 规则，先设计是否扩展 helper 状态域或拆分查询，不宜机械套用 current。
+   - handoff brief 的 decisions 表不是 memories，不接入 memory validity helper。
+
+3. **事务写路径：preference merge**
+   - incoming candidate 允许 active/pending；不能对 candidate 直接套 current preset，否则会拒绝合法 pending 激活流程。
+   - 对比旧 preference rows 的查询可以考虑 current preset，但需保留同 scope、kind、long_term meta、quarantine、冲突队列、时间和事务内 revision/CAS 语义。
+   - 属事务写路径，应单独实施和验证，不与只读注入混合。
+
+4. **日结候选去重：daily**
+   - existing 候选目前为最近 90 天 active，未统一检查 valid_from/valid_to/superseded_by。
+   - 纯 SELECT 候选可评估 current helper；但后续 exact-text duplicate guard 当前跨状态全表查重，语义与「当前有效候选去重」不同，不得顺手改为同一谓词。
+   - daily 还有 LLM、style 文件、profile、短期记忆及写库副作用；仅做候选筛选变更时必须严格保持其余流程不变。
+
+5. **周结聚类与 supersede：weekly**
+   - 候选当前为 active + layer=auto + lookback + kind 白名单；未统一检查时间起点/终点/接班指针。
+   - apply 路径会写 revision、更新 status/superseded_by/valid_to/importance，且有旧 schema fallback；必须将候选查询与事务内 UPDATE 的条件一起设计，避免 stale candidate 或失败时退回不完整的时间语义。
+   - 风险最高，必须单独批次，不能只改 SELECT 后就宣称完成。
+
+### 57.3 建议批次（待负责人授权）
+
+- **Batch A：preference + remembered**（只读注入，优先推进；可复用 current helper）。
+- **Batch B：session-index + handoff brief**（先明确 legacy todo status 的兼容规则，再实施）。
+- **Batch C：preference merge**（独立事务语义审查与实现）。
+- **Batch D：daily consolidate**（先只处理候选查询，不碰其他副作用）。
+- **Batch E：weekly consolidate**（最后单独处理读写事务、CAS 与 legacy fallback）。
+
+每批均要求隔离分支、定向测试、全量测试、负向对照、实际 blob/HEAD 核验；由 Memory 智能体执行本地测试，GPT 负责代码审查和共享 HANDOFF/REPORT 整合。
+
+### 57.4 当前门禁
+
+- 本轮仅只读审查；没有获得上述新调用点的代码修改授权。
+- 不得把此前 helper + P4/recall/graph/event-chain 的授权解释为自动涵盖这七个调用点。
+- 下一步建议先启动 Batch A；需负责人明确授权后，GPT 才在隔离分支修改源码，并交由 Memory 智能体本地验证。
