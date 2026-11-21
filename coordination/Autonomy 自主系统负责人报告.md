@@ -1,483 +1,368 @@
-# AUTONOMY-REPORT-0003 · Autonomy 自主系统负责人报告（恢复语义正式设计 v3）
+# AUTONOMY-REPORT-0004 · Autonomy 自主系统负责人报告（恢复协议差异收口 v4）
 
 > 会话：Autonomy 自主系统负责人
-> 覆盖任务：`AUTO-ARCH-AUDIT-01`、`AUTONOMY-RECOVERY-SEMANTICS-DESIGN-01/02/03`
+> 覆盖任务：`AUTO-ARCH-AUDIT-01`、`AUTONOMY-RECOVERY-SEMANTICS-DESIGN-01/02/03/04`
 > 迭代规则：本文件覆盖式更新、版本号递增，不新增同类文件
-> 最近更新：2026-11-21 09:58 (Asia/Shanghai) · v3
-> 性质：只读设计修订。未改源码；未创建分支；未写生产 DB；未启动 scheduler/executor/staging；未部署/重启；未改 `HANDOFF.md`/`REPORT.md`
+> 最近更新：2026-11-21 10:44 (Asia/Shanghai) · v4
+> 性质：只读设计修订。未改任何源码/DB/profile/配置；未创建实现分支；未启动 scheduler/executor/staging；未部署/重启；未改 `HANDOFF.md`/`REPORT.md`；未修改 Android 报告
 
 ## 版本历史
 
 | 版本 | 时间 | 变更摘要 |
 |---|---|---|
-| v1 | 2026-11-21 09:40 | 首次建档：基线、11 项矩阵、状态机、lease/verifier/Android 接口、P0-a 拆分 |
+| v1 | 2026-11-21 09:40 | 首次建档：基线、11 项矩阵、状态机、lease/verifier/接口、P0-a 拆分 |
 | v2 | 2026-11-21 09:49 | 落实 GPT 12 项裁决：heartbeat、executor_started、fencing、错误分类、verifier 标准、取消、迁移、消费、nextWake |
-| v3 | 2026-11-21 09:58 | 请求/回执持久性（inbox/outbox + ledger + ack）、recovery.lock 续租、runtime stale 与 lease 分离、nextWake 统一、文件原子性/磁盘满/清理、迁移补齐 v1 与 v4 副本、隔离演练证据 |
+| v3 | 2026-11-21 09:58 | 请求/回执持久性、recovery.lock 续租、runtime stale 与 lease 分离、nextWake、原子性、迁移补齐 |
+| v4 | 2026-11-21 10:44 | 跨模块差异收口 A–H：未 ack 保留、ack 校验、nextWake reason、紧急唤醒 floor、hardlink 降级、队列背压、ledger 保留与 tombstone、merged 语义；给出 `PARTIAL` 结论与 4 项 Android 待确认 |
 
 ---
 
-## 0. 给 GPT 的阅读导航
+## 0. 结论（先看这一节）
 
-本轮只改 6 处，其余沿用 v2：
+**本轮结果：`PARTIAL`。**
 
-| 修订 | 章节 |
-|---|---|
-| 1 请求/回执持久性（A/B/C 选型） | §8.1–8.4 |
-| 2 recovery.lock 续租与接管 | §4.6 |
-| 3 runtime stale 与 action lease 分离 | §6.3 |
-| 4 nextWake 与 Android 统一 | §8.6 |
-| 5 文件持久性与原子性 | §8.9 |
-| 6 迁移补齐 | §9.2–9.4 |
+- Autonomy 侧 8 项（A–H）全部给出可执行的单一口径，内部矛盾已消除；
+- 其中 **4 项需要 Android v4 书面确认**（未 ack 不删、`verifier_retry`、紧急 floor、hardlink 降级协议），确认后即为 `DESIGN ALIGNED`；
+- 无 `BLOCKED` 项；无需要负责人授权的技术前提（仅代码实现阶段需要）。
 
-**一句话**：把"单文件覆盖"改成"**一请求一文件 + Autonomy 侧持久 ledger + 逐请求回执 + 显式 ack**"；doorbell 文件只做加速、不做真相；recovery.lock 与 action fencing 分成两把锁；runtime 心跳过期只给"查看资格"，执行权回收必须走 lease/进程死亡证据 + CAS + fencing。
+### 0.1 八项差异总表
 
-**设计状态**：本报告为设计提案；代码实现、DSH 实机、staging 均 NOT RUN；生产 DB 未修改（§14 分三类列明）。
+| 项 | Android v3 口径 | Autonomy v3 口径 | GPT 裁决 | v4 统一口径 | 状态 |
+|---|---|---|---|---|---|
+| A 未 ack 回执 | §3.5 "未 ack 不得删除" 但 "或 7 天 TTL"；§3.12 "未 ack 7 天"（自相矛盾） | 未 ack 不自动删；7 天 TTL 前置条件苛刻 | 未 ack 不自动删除 | **不自动删除**；保留期无上限；仅人工审计清理 | Autonomy 已收口；Android 需删 TTL |
+| B ack 校验 | `{schema,attemptId,readAt,result,receiptSha256}` | 同字段，未定义校验细节 | 字节级 SHA-256 必须相等 | 四条件全满足才算 ack；不等则保持未 ack 并记原因 | Autonomy 已收口；Android 需按字节写入 |
+| C nextWake reason | 枚举 `backoff|lease|budget|none` | 增加 `verifier_retry` | `verifier_retry` 合法 | 合法；`mode=recover`、`allowDefer=false`；带 `fallbackReason=lease` 兼容旧版 | Autonomy 已收口；Android 需接受 |
+| D allowDefer=false | 仍设 1min floor | 不得被普通 10min 推迟 | 普通下限不得介入；系统延迟必须记录 | 无普通 floor；紧急 floor 仅为系统能力下限（≤1min）且必须记 `DEFERRED_BY_SYSTEM+actualAt` | 需 Android 明确 1min 是系统下限 |
+| E hardlink 降级 | link 失败→O_EXCL 直写 final，读取失败→隔离 | 允许短暂重试 | 统一安全方案，避免半文件误判 | **禁止直写 final**：link → renameat2(NOREPLACE) → 锁+rename；读取方 2s 重试窗后才 quarantine | 需 Android 采纳 |
+| F 队列背压 | inbox 500/80% 预警；outbox 500/BACKPRESSURE | 同 500/backpressure | 明确告警与恢复责任 | 双队列各 500、预留 10 控制槽；80% 告警；满则拒绝新请求；不得删未 ack；修复 ack 优先于人工清理 | Autonomy 已收口 |
+| G ledger 保留 | `recovery_requests` TTL **1h** | 30 天 + 未 ack 永久 | 统一；同 attemptId 不得因过期重执行 | 明细 30 天 + **永久 tombstone**；attemptId 永不复用；过期请求回执 expired | Autonomy 已收口；Android 需删除 1h 假设 |
+| H merged | §3.4 排队 vs §3.7 "若必须合并"（模糊） | §8.3 排队 vs §8.2 merged（内部矛盾） | v1 默认不合并执行 | **v1 不合并执行**；仅同 intent 去重时返回 `merged`/`duplicate`；每个 ID 独立终态回执 | Autonomy 已收口 |
 
 ---
 
-## 1. 基线（2026-11-21 09:55–10:00 复核）
+## 1. 基线（2026-11-21 10:41–10:50 重新核对）
 
 | 对象 | 值 | 方式 |
 |---|---|---|
-| `ba-song/dsh-memory-core` `coordination/project-handoff` | `01afc56cd8067a089e26525cba276a5ed2abf262` | `git fetch` + `ls-remote` |
-| 本报修订前 blob | `899528d74538d6033bc4128a906cfe486d7b7880`（v2） | `git rev-parse` |
-| `coordination/HANDOFF.md` | `f8ffa40d4c27c04d23ff74b123bf2b7044821976`（未改） | 同上 |
-| `coordination/REPORT.md` | `e219f707cc4363c53704fbe389f786148142326e`（未改） | 同上 |
-| `ba-song/dsh-autonomy` main | `6c4a4753b4737060211955b1f022cab2f1d39521`（无新提交） | 双向核对 |
-| 生产 autonomy | `/root/.dsh/plugin-src/dsh-autonomy`，无 `.git`，早于 GitHub HEAD | 目录/diff |
-| 生产 profile | `tick.enabled=false`、`realSafe=false`、`dryRun=false`、`sendEnabled=true` | 只读 |
-| 生产 DB | `user_version=4`；代码 `SCHEMA_VERSION=3` | 只读副本 |
-| `/root` 文件系统 | **f2fs**（`/dev/block/dm-44`，223G，53% 使用） | `stat -f` / `df`（09:55） |
-
-与 Android v2（`03edfd6`）无冲突；本报新增的 inbox/outbox/ack 目录需 Android 联合确认（§8.11）。
+| `ba-song/dsh-memory-core` `coordination/project-handoff` | `5e0159beff49e798101b11dc647030218f4fd4d6`（Memory 报告新增） | `git fetch` + `ls-remote` |
+| 本报修订前 blob | `59b3b3b192c5e9f7be55b613a316372c22bcddff`（v3） | `git rev-parse` |
+| Android v3 commit / blob | `a48fc33b89e9247b4cf282538d0a9ebc5c537c87` / `461a67d6e1fce877dbdeac2a3360830f66f6e594` | 同上（本轮未改） |
+| `HANDOFF.md` / `REPORT.md` | `f8ffa40d…` / `e219f707…` | 未改 |
+| `ba-song/dsh-autonomy` main | `6c4a4753b4737060211955b1f022cab2f1d39521` | 双向核对，无新提交 |
+| `/root` 文件系统 | f2fs（`/dev/block/dm-44`） | `stat -f` |
 
 ---
 
-## 2. 状态机（沿用 v2，补充请求状态）
+## 2. A · 未 ack 回执的保留策略
 
-### 2.1 action 状态
+**Android v3 原口径**：§3.5 "未 ack 的回执不得删除" 与 "Autonomy 见到 ack（或 7 天 TTL）才清理 outbox" 并存；§3.12 又写 "未 ack 回执 7 天"——**同一份文档内自相矛盾**。
 
-物理值 `planned/leased/running/done/failed/aborted` + 新增 `unknown/cancelled`；对外 `done→succeeded` 走统一映射层（`lib/state-map.js`，待实现）。
+**Autonomy v3 原口径**：未 ack 不自动删；7 天 TTL 只能在"完整复制进 ledger + 记审计事件"后执行。
 
-### 2.2 action 转换（不变）
+**GPT 裁决**：未 ack outbox 不自动删除；不得因未收到 ack 静默丢失回执。
 
-`planned→leased→running→done|failed|unknown`；`unknown→done|planned|cancelled`；终态不可回退；所有转换带 `state_version` CAS；无证据不得 `failed`。
+**v4 统一口径**：
 
-### 2.3 新增：请求记录状态（`recovery_requests`）
+1. **正常自动路径只有一条**：`ack` 通过校验 → 10 分钟后删除 outbox 文件（先写 `OUTBOX_ACKED_CLEANED` 事件）。**不存在 TTL 自动删除路径。**
+2. 保留期：未 ack 回执**无上限保留**；ledger 明细 30 天，但 tombstone 永久（§G）。
+3. 500 条上限与告警：
+   - ≥400（80%）→ 每次恢复写 `OUTBOX_HIGH {count}`，并出现在回执 `queue.outboxHigh=true`；Android/HUD 展示黄条；
+   - =500 → 停止**新恢复**，回执 `rejected/BACKPRESSURE`（占用预留控制槽，见 §F）；已有请求继续处理；**不删除任何未 ack 回执**。
+4. 防永久堵塞（三层，按优先级）：
+   - **第一层 ack 修复**：每次恢复与 60s 维护循环执行 `ACK_REPAIR`——对 `finished` 且 10 分钟未 ack 的 attempt，用**完全相同字节**重写 outbox 文件（sha 不变），触发 Android §3.7 #9 的"补读未 ack"路径；记录 `ACK_REPAIR_REWRITTEN`。多数未 ack 由此自愈。
+   - **第二层背压降级**：outbox 满时仅停"新恢复"，健康检查、ack 校验、清理、修复继续运行；恢复完成后回执 `backpressure=true`，Android 侧退避并延迟新唤醒（不丢请求）。
+   - **第三层人工清理**（最后手段，非自动）：见下。
+5. **人工清理流程**（owner-only，需 HUD/工具显式操作）：
+   1. 查 `outbox/<id>.json` 与 `ack/`，确认缺失原因（`ACK_WRITE_FAILED` / `RECEIPT_INVALID` / 设备丢失）；
+   2. 先执行一次 `ACK_REPAIR` 并等待至少一次唤醒；仍无 ack 才进入下一步；
+   3. 操作员输入 `reason`、`operatorId`，系统校验 outbox 文件的 `sha256` 与 ledger 记录一致；
+   4. 把回执原文（≤64KB）写入 ledger `report_json`（若尚未写入）；
+   5. 删除 outbox 文件，写不可歧义审计：`OUTBOX_PURGED_BY_OPERATOR {attemptId, sha256, operatorId, reason, purgedAt, priorAckState:'never'}` 到 `action_log` 与 `dsha-autonomy-events.jsonl`；
+   6. tombstone 置 `purged_by_operator`，保留 attemptId 与 sha。
+6. **禁止**：用 TTL、磁盘清理脚本、`find -delete`、inbox 清理顺带删除 outbox；任何删除未 ack 回执且无上述审计的行为视为数据丢失缺陷。
 
-```
-received → queued → running → done | merged
-                              ↘ rejected | expired | duplicate
-done/merged → acked → purged
-```
+**仍未解决**：Android v3 的 7 天 TTL 必须由 Android v4 删除；否则以 Autonomy 侧"不读不删"为准，但 Android 可能先删（需联合确认）。
 
-`merged` 是**该请求 ID 的终态**（不是丢失）：`leader_attempt_id` 指向真正执行的请求；leader 的回执 `mergedFrom[]` 列出全部被合并 ID。
-
----
-
-## 3. lease 过期（不变）
-
-过期唯一去向 `unknown`；CAS 置 `unknown_since/unknown_reason`；同事务写 `action_log` 与请求队列表；只有 `confirmed_succeeded` 才 `done`，`confirmed_not_executed` 才重排。
-
----
-
-## 4. 心跳、租约与 recovery.lock
-
-### 4.1 action lease 参数（不变）
-
-`heartbeatMs = clamp(leaseMs/3, 15s, 60s)`；`leaseTtl=3×heartbeat`；`leaseMs=max(leaseSec*1000, timeoutMs*2+15s)`；grace 60s。
-
-### 4.2 续租（不变，同一 UPDATE 写 heartbeat+lease）
-
-```sql
-UPDATE actions SET heartbeat_at=?, lease_until=?, state_version=state_version+1
- WHERE id=? AND status IN ('leased','running')
-   AND lease_owner=? AND fencing_token=? AND state_version=?
-```
-
-`changes=0` → 所有权丢失 → 停止提交；迟到结果只作 verifier 低置信证据。
-
-### 4.3 过期判定（v3 修订：与 runtime stale 分离，见 §6.3）
-
-### 4.4 旧 runtime 识别（不变）
-
-### 4.5 不变式（不变）
-
-### 4.6 recovery.lock 完整规则（本轮新增）
-
-**独立于 action 锁**：recovery.lock 保护"恢复流程的状态写入权"，action fencing 保护"执行结果的提交权"。
-
-```
-表 recovery_lock(id=1, owner TEXT, token INTEGER, heartbeat_at INTEGER,
-                 expires_at INTEGER, epoch INTEGER)
-参数：recoveryHeartbeatMs = 20s；recoveryTtlMs = 60s（3×）
-```
-
-- **获取**（CAS，新建或过期接管）：
-  ```sql
-  INSERT INTO recovery_lock(id,owner,token,heartbeat_at,expires_at,epoch)
-  VALUES(1,?,1,?,?,1)
-  ON CONFLICT(id) DO UPDATE SET
-    owner=excluded.owner, token=recovery_lock.token+1,
-    heartbeat_at=excluded.heartbeat_at, expires_at=excluded.expires_at,
-    epoch=recovery_lock.epoch+1
-  WHERE recovery_lock.owner IS NULL OR recovery_lock.expires_at < ?
-  ```
-  `changes=1` → 拿到锁；`0` → 别人持有。
-- **续租**（CAS，只能 owner）：
-  ```sql
-  UPDATE recovery_lock SET heartbeat_at=?, expires_at=?
-   WHERE id=1 AND owner=? AND token=?
-  ```
-  `changes=0` → **锁已丢失**。
-- **长时间 verifier**：每个 action 处理前后各续租一次；单 verifier 超时 3s；若一批 50 条，最坏 150s，靠"每条续租"覆盖，不靠单次 TTL。
-- **续租失败后的 worker 行为**：
-  1. 立即停止**状态写入**（不再改任何 action 状态）；
-  2. 允许完成当前只读 verifier（无副作用）；
-  3. 写部分报告 + `RECOVERY_LOCK_LOST` 事件；
-  4. 退出恢复，不清理、不回滚别人的工作。
-- **旧 worker 迟到结果拒绝**：恢复期间的 action 状态更新必须带锁 token 谓词：
-  ```sql
-  UPDATE actions SET status=?, ..., state_version=state_version+1
-   WHERE id=? AND state_version=?
-     AND EXISTS(SELECT 1 FROM recovery_lock WHERE id=1 AND owner=? AND token=?)
-  ```
-  `changes=0` → `RECOVERY_FENCED_OUT`，旧 worker 不得重试该写入。
-- **过期后第二个 worker 接管**：`expires_at < now` → 新 worker CAS 获取，`token+1`、`epoch+1`；旧 worker 的下一次续租与状态写入全部失败。
-- **审计**：`recovery_lock_acquired / renewed / lost / takeover` 写 `action_log` 与 `dsha-autonomy-events.jsonl`。
+**章节**：§2、§5、§7。**验收**：T-A1 无 ack 时 30 天不删；T-A2 400 条出 `OUTBOX_HIGH`；T-A3 500 条时新恢复得 `BACKPRESSURE` 且旧回执仍在；T-A4 `ACK_REPAIR` 重写字节 sha 不变；T-A5 人工清理产生完整审计 6 字段。
 
 ---
 
-## 5. executor attempt 与 fencing（沿用 v2）
+## 3. B · ack 校验
 
-顺序：`TX1 领取（attempt+fencing）→ TX2 executor_started → 执行 → 结果 CAS（owner+token+state_version）`。
-边界：fencing 只阻止重复提交状态，不撤销已发出的外部请求（§5.3 v2）。
-恢复期的状态写入额外受 recovery.lock token 约束（§4.6）。
+**Android v3 原口径**：`ack/<attemptId>.json = {schema, attemptId, readAt, result, receiptSha256}`；写失败下次重试。
 
----
+**Autonomy v3 原口径**：字段一致，未定义校验顺序与失败原因码。
 
-## 6. 恢复入口与触发证据分离
+**GPT 裁决**：`ack.receiptSha256` 必须等于 outbox 文件**原始字节**的 SHA-256；四条件全满足才可认定 ack。
 
-### 6.1 入口（不变）
-
-`dyAutonomy.recover({requestId, reason, bootId?, source?})`；`apply()` 无条件挂 `scheduleRecovery(10s)`，与 `tick.enabled` 无关；`tick({trigger:'resume'})` 不再承担恢复。
-
-### 6.2 处理顺序（不变）
-
-取锁 → 扫描 → CAS 认领 → 分类 → verifier → 落状态 → 回执。
-
-### 6.3 runtime stale 与 action lease 分离（本轮修订）
-
-**两个资格必须分开：**
-
-| 证据 | 恢复扫描资格 | 执行权回收资格 | 说明 |
-|---|---|---|---|
-| runtime 心跳过期（>2 周期） | ✅ | ❌ | 只说明"可能出事"，不能证明执行权失效 |
-| action lease 到期 + grace | ✅ | ✅ | 时间证据（中等强度） |
-| `bootId` 改变 | ✅ | ✅ | 强证据：旧 boot 的进程必已死 |
-| `runtimeId` 改变 + 旧 PID 不存在 + 心跳超 2 周期 | ✅ | ✅ | 进程确认退出 |
-| host 显式 `stopping` 事件 | ✅ | ✅ | 主动退出 |
-| `cancel_requested` | ✅ | ❌（取消走取消通道） | 不能替代回收 |
-| action 已 `unknown` | ✅ | — | 直接进 verifier |
-
-**规则**：
-1. 只满足"扫描资格"时，只做**只读核查**（verifier/状态查询），**不得**改 action 状态、不得重排、不得判失败；
-2. 满足"回收资格"才允许 `leased/running → unknown`，且必须 action CAS + `state_version`；
-3. **lease 仍有效时，不得仅因 runtime heartbeat stale 重新执行**；即使 verifier 说"看起来没做"，也要等 lease 到期或拿到强证据（bootId/进程死亡）；
-4. 重排只发生在 `confirmed_not_executed` 之后，并生成新 attempt（fencing+1）。
-
----
-
-## 7. 错误、验证、取消（沿用 v2）
-
-- 错误分类：`not_sent / sent_unconfirmed / rejected / internal / verification`；`sent_unconfirmed` 必须 `unknown`；unknown 不计失败率/熔断。
-- verifier 四条成功标准；`read_only` 升级为 `result_binding`；仅格式正确不得 `succeeded`。
-- 取消：副作用前可直转 `cancelled`；副作用后只置 `cancel_requested`，按真实结果落状态并标 `cancel_after_effect`。
-
----
-
-## 8. 请求/回执持久性与 Android 契约（本轮重写）
-
-### 8.1 选型：A + B 混合，C 只做加速
-
-| 方案 | 优点 | 缺点 | 结论 |
-|---|---|---|---|
-| A 一请求一文件 | 无覆盖、天然幂等、重启可恢复 | 无 ack/合并状态，目录扫描成本 | **采纳为传输层** |
-| B SQLite ledger + 文件通知 | 合并/ack/重启恢复最强，可追溯 | Android 不能共享 DB（违反所有权） | **采纳为 Autonomy 内部真相层** |
-| C 单文件 + generation + ack watermark | 文件最少 | 覆盖即丢请求；watermark 无法恢复被覆盖 ID；合并不可追溯 | **只保留 generation 做 doorbell 加速** |
-
-**最终结构**：
-
-**路径与 Android v3 已对齐**（`03edfd6`→`a48fc33` 采用 `/root/.dsha-wake/`）：
+**v4 统一口径**：
 
 ```
-/root/.dsha-wake/inbox/<attemptId>.json    Android 写 / Autonomy 读 / Android 清理
-/root/.dsha-wake/outbox/<attemptId>.json   Autonomy 写 / Android 只读 / Autonomy 清理
-/root/.dsha-wake/ack/<attemptId>.json      Android 写 / Autonomy 读 / Android 清理
-/root/.dsha-wake/legacy/                   v2 单文件迁移备份（只读，1 个版本后删）
-/root/.dsha-autonomy-events.jsonl          Autonomy 写
-/root/.dsha-android-events.jsonl           Android 写
+认定 ack 当且仅当：
+1) attemptId 匹配：ack.attemptId == 文件名 == ledger.attempt_id
+2) schema/version 合法：schema == 1
+3) receiptSha256 匹配：sha256(outbox 原始字节) == ack.receiptSha256 == ledger.receipt_sha256
+4) ack 完整可解析：JSON 合法、字段齐全、readAt >= outbox mtime
 ```
 
-**权威性**：`outbox/<attemptId>.json` 的逐请求回执是权威；`recovery_requests` ledger 是合并/ack/重启恢复的权威；`generation` 在请求体内，**不再单独设 doorbell 文件**（目录 watch + 5s 轮询已足够，见 §8.7）。
-**Android 复杂度**：写 1 个小请求文件 + 读 1 个回执文件 + 写 1 个 ack 标记；不读 DB、不加锁、不解释语义。
+- 失败码：`ACK_ATTEMPT_MISMATCH` / `ACK_SCHEMA_INVALID` / `ACK_SHA_MISMATCH` / `ACK_INVALID` / `ACK_STALE`；
+- 失败处理：**保持未 ack**、outbox 不删、写事件（含期望 sha 与实际 sha 前 8 位），下次维护重试；
+- **哈希对象是原始字节**，不是重新序列化的 JSON；Autonomy 在写回执时把 `receipt_sha256` 记入 ledger，避免二次读取差异；
+- ack 文件本身也必须原子写（Android 侧 tmp+rename/link）；半写 ack 视为 `ACK_INVALID`。
 
-### 8.2 六条保证的落地
+**仍未解决**：Android 必须以字节级方式计算（不能 JSON 序列化后再哈希）；需在 Android v4 明确。
 
-| 保证 | 机制 |
-|---|---|
-| 1 请求 ID 不静默丢失 | 请求先落盘为独立文件；Autonomy 先写 ledger 再删/归档 inbox 文件；解析失败进 quarantine，**绝不删除** |
-| 2 重复请求幂等 | `attemptId` 为文件名 + ledger 主键；重复文件直接归档，返回同一回执（`duplicate:true`） |
-| 3 合并请求全可追溯 | 每个 ID 都有独立回执：leader=`done + mergedFrom[]`，被合并者=`merged + mergedInto`；ledger 双字段落库 |
-| 4 回执在 ack 前不清除 | 只有 `ack/<id>.json` 出现且保留期到才删 outbox 文件；未 ack 不自动删除；任何 TTL 清理必须先复制进 ledger 并记事件 |
-| 5 重启可恢复 | 启动扫 inbox（未 ingest）+ ledger（未完成）+ outbox（已完成后丢失的回执重写） |
-| 6 轮询兜底 | 5s 目录扫描（按文件名/mtime），不依赖 doorbell；doorbell 丢失也能全部找回 |
+**章节**：§3、§7。**验收**：T-B1 篡改一个字节 → 不认 ack；T-B2 attemptId 不符 → 不认；T-B3 schema=2 → 不认；T-B4 合法 ack → 10min 后清理并留事件。
 
-### 8.3 并发场景
+---
 
-| 场景 | 处理 |
-|---|---|
-| 多个不同 attemptId 消费前连续到达 | 一请求一文件，互不覆盖；ledger 逐条 `received` |
-| 恢复期间多个请求覆盖 | 不合并执行；进 `queued` 队列，当前完成后逐条处理；回执各自独立 |
-| Android 未读旧回执就有新回执 | 新回执是新文件，不覆盖旧文件 |
-| 进程重启后未确认请求 | inbox 未 ingest 的重放；ledger `received/queued/running` 重新排队（`running` 先按恢复规则转 unknown 再验证）；`done/merged` 未 ack 的重写回执 |
-| 合并请求的结果 | leader 回执带 `mergedFrom[]`；每个被合并 ID 单独回执 `merged + mergedInto`；ledger 记录 `leader_attempt_id` |
+## 4. C · nextWake reason：`verifier_retry`
 
-### 8.4 请求生命周期（ledger）
+**Android v3 原口径**：枚举 `backoff|lease|budget|none`。
 
-`received → queued → running → done|merged`；异常 `rejected|expired|duplicate`；`done|merged → acked → purged`。
-TTL：`recovery_requests` 保留 30 天；未 ack 的 permanent；purged 仅标记不删审计。
+**Autonomy v3 原口径**：新增 `verifier_retry`，未定义兼容策略。
 
-### 8.5 pendingTasks 五分类（不变）
+**GPT 裁决**：`verifier_retry` 是合法 reason；Android 不得降级成普通 budget 周期；旧版本需兼容。
 
-`pending / unknown / blocked / recovering / running`。
-
-### 8.6 nextWake 统一（本轮修订）
+**v4 统一口径**：
 
 ```json
-{ "schema":1, "notBefore":1795201800000, "latest":1795205400000,
-  "reason":"lease|backoff|verifier_retry|budget|none", "mode":"check|recover",
-  "allowDefer":false, "confidence":0.8, "at":1795201800000 }
+{ "notBefore": 0, "latest": 0, "reason": "verifier_retry",
+  "fallbackReason": "lease", "mode": "recover",
+  "allowDefer": false, "confidence": 0.85, "at": 0 }
 ```
 
-- `at` = `notBefore` 的兼容别名；
-- `allowDefer=false`（紧急核实，如 lease 到期/回执丢失）：**请求按 notBefore 调度，不得被普通 10min 周期下限无理由推迟**；Android 若因系统能力延后，必须记 `DEFERRED_BY_SYSTEM` + `actualAt`；
-- `allowDefer=true`（budget/none）：受普通 10min 最小间隔约束；
-- `latest` 是硬截止，`notBefore > latest` 时取 `latest`；
-- **24h 只是最大兜底间隔**（无 nextWake 时的默认上限），不是任何任务的默认等待；
-- `confidence` 表示"对紧急度的置信"，不是任务成功率。
+- 语义：某 action 处于 `unknown`，verifier 需在退避点重跑（1m/5m/30m/2h/6h）；
+- `mode=recover`（必须走恢复入口，不是普通 check）；
+- `allowDefer=false`（紧急核实，见 §D）；
+- `confidence`：首次重验 0.9，连续失败递减，最低 0.5；
+- **兼容**：同时输出 `fallbackReason:"lease"`；Android 旧版本不认识 `verifier_retry` 时按 `fallbackReason` 处理（lease 属紧急类，不会被降级为 budget）；Android 新版本忽略 `fallbackReason`；
+- 旧版本若既不认识 reason 又无 fallback（异常情况）→ 必须按 `lease` 处理并记 `NEXT_WAKE_UNKNOWN_REASON`，**禁止**按 `budget` 处理。
 
-### 8.7 消费机制（沿用 v2）
+**仍未解决**：Android v4 需把 `verifier_retry` 加入枚举并声明忽略 `fallbackReason`。
 
-host 内部调用 + `fs.watch('/root/.dsha-wake/inbox')` 去抖 300ms + 5s 目录轮询；Autonomy 60s 维护循环再兜底一次。dir watch 失败自动退回纯轮询。**不依赖 doorbell**。
+**章节**：§4、§6。**验收**：T-C1 reason 合法被接受；T-C2 旧解析器用 fallback=lease；T-C3 不得出现 budget 降级；T-C4 mode=recover 且 allowDefer=false。
 
-### 8.8 回执字段（沿用 v2）
+---
 
-`schema, attemptId, requestId, result, errorCode, runtimeId, bootId, startedAt, finishedAt, pendingTasks, recovery, nextWake`；新增 `mergedFrom[] | mergedInto | duplicate`。
+## 5. D · `allowDefer=false` 的调度下限
 
-### 8.9 文件持久性与原子性（本轮新增，与 Android v3 §3.6 对齐）
+**Android v3 原口径**：普通周期 10min；`allowDefer=false` 仍设 **1min floor**；受 Doze/JobScheduler 限制。
 
-**写**（请求/回执/ack 统一）：
+**Autonomy v3 原口径**：紧急核实不得被普通 10min 下限无理由推迟。
+
+**GPT 裁决**：不允许普通周期下限介入；notBefore 已到尽快调度；系统原因延迟必须写 `DEFERRED_BY_SYSTEM` 与实际时间；不得把系统延迟伪装成 Autonomy 主动 defer。
+
+**v4 统一口径**：
 
 ```
-1) 同目录创建 .tmp-<attemptId>-<pid>-<rand>，O_CREAT|O_EXCL，0600
-2) write 全量 → fsync(fd) → close
-3) 发布：
-   - 请求（不可覆盖）：link(tmp, final)；目标已存在则失败 → 换 attemptId/seq，绝不覆盖
-   - 回执/ack（本模块独占文件名）：rename(tmp, final)
-   - 不支持 link 时退化为 O_EXCL create final → write → fsync（读取方必须校验完整性）
-4) fsync(dirfd)（目录项落盘）
-5) unlink(tmp)；启动时清理 >1h 的 .tmp-*
+effective = clamp( max(notBefore, now + systemFloor), latest, now + 24h )
+systemFloor:
+  allowDefer=false → systemMinEmergency（Android 声明，必须 ≤ 1min；0 也可）
+  allowDefer=true  → 10min（普通周期下限）
 ```
 
-**读**：整文件读（≤64KB）→ JSON 解析 → 校验 `schema=1` 且 `attemptId` 与文件名一致；失败重试 3×50ms；仍失败 → 移入 `<name>.corrupt-<ts>` + 事件，**绝不静默删除**。
+- **1min 只能是"系统能力下限"，不是策略下限**：Android 必须把该值写入事件 `SCHED_POLICY {systemMinEmergency: 60000}`，并可被 Autonomy 读取（事件日志或回执能力声明）；
+- `notBefore <= now` 时立即调度（在系统能力内），不得再叠加 10min；
+- 任何 >systemFloor 的延迟都必须是系统原因，写 `DEFERRED_BY_SYSTEM {requestedAt, actualAt, delayMs, systemReason: doze|job|alarm|oem}`；
+- **禁止**：把 `DEFERRED_BY_SYSTEM` 写成 Autonomy 的 `deferred` 回执；`deferred` 只能由 Autonomy 自己产生；
+- `latest` 是硬上界：错过记 `MISSED_WINDOW`，下一次唤醒立即执行；
+- 24h 仅是最大兜底，不是默认等待。
 
-**损坏恢复**：corrupt 文件保留供重放；ledger 中已 ingest 的请求不受影响；未 ingest 的请求由 Android 重试（同 attemptId 幂等）。
+**仍未解决**：Android v4 需声明 `systemMinEmergency ≤ 1min` 且可被观测；若设备实测必须 >1min（如 Doze 深睡），需在事件里说明，不改变契约。
 
-**磁盘空间不足**：
-- 请求侧（Android）：写失败保留旧文件，记 `STORAGE_LOW` 并退避，不降级到 `/sdcard`；
-- Autonomy：回执写失败 → ledger 保持 `done/merged` 未 ack，退避重写；**未落盘的回执不得标记 acked**；inbox 满（500）→ 新请求 `INBOX_FULL`，不删未 ack 条目；outbox 满（500）→ `rejected/BACKPRESSURE`，不丢旧回执。
+**章节**：§5、§6。**验收**：T-D1 allowDefer=false 时无 10min 叠加；T-D2 系统延迟产生 `DEFERRED_BY_SYSTEM` 且不产生 Autonomy `deferred`；T-D3 latest 错过 → `MISSED_WINDOW` 后立即执行。
 
-**权限**：文件 `0600`、目录 `0700`；只用 `/root`（f2fs），不用 `/sdcard`（FUSE 不支持原子 rename）。
+---
 
-**保留/清理（与 Android v3 一致）**：
-- inbox：Android 收到 ack 后 24h 清理；过期请求 7 天清理（记事件）；
-- outbox：Autonomy 见到 ack 后 10min 清理；**未 ack 不自动删除**（GPT 硬要求）。若运维确需 7 天 TTL，只能在报告已完整复制进 ledger 后执行，并记 `OUTBOX_TTL_PURGED` 事件；Android 侧仍按 `UNCONFIRMED` 处理，不得据此重做；
-- ack：Android 写入后 24h 清理；
-- corrupt：30 天；
-- ledger：30 天（未决/未 ack 除外）；
-- 上限：inbox/outbox 各 500 条，80% 记 `INBOX_HIGH`。
+## 6. E · hardlink 不可用时的降级发布
 
-### 8.10 与 Android v3 的一致性
+**Android v3 原口径**：link 优先；不可用时 `O_EXCL create final → write → fsync`；读取失败 → 移入 corrupt。
 
-| 项 | Android v3 | 本报 v3 | 状态 |
-|---|---|---|---|
-| 目录 | `/root/.dsha-wake/{inbox,outbox,ack,legacy}` | 同 | ✅ 已对齐 |
-| 请求载体 | 一请求一文件，attemptId 文件名 | 同 | ✅ |
-| 回执 | 逐请求 outbox，merged 两边可终态 | 同 | ✅ |
-| ack | Android 写 `ack/<id>.json`（含 receiptSha256） | 同；Autonomy 校验 sha256 后再清理 | ✅ |
-| 原子发布 | link 优先，rename 用于独占文件 | 同 | ✅ |
-| 清理归属 | inbox/ack 由 Android；outbox 由 Autonomy | 同 | ✅ |
-| 消费 | 目录 watch + 5s 轮询 + 60s 维护 | 同 | ✅ |
-| nextWake reason | `backoff|lease|budget|none` | 增加 `verifier_retry` | ⚠ 需 Android 接受新增枚举 |
+**Autonomy v3 原口径**：请求用 link，回执用 rename；读取失败允许 3×50ms 重试。
 
-### 8.11 仍需 Android 确认的 3 点
+**GPT 裁决**：统一安全方案，避免读取方把"写入中的半文件"误判为损坏。
 
-1. `ack/<id>.json` 的 `receiptSha256` 必须与 outbox 文件字节一致（Autonomy 以此判定"已读且完整"，不一致则视为未 ack 并保留）。
-2. `INBOX_FULL` / `BACKPRESSURE` 的退避与告警口径（Android 侧不得因满而删除未 ack 条目）。
-3. nextWake 新增 `verifier_retry` reason 的接受（若拒绝，Autonomy 退回 `lease` + confidence）。
+**问题本质**：`O_EXCL create final → 写` 会让 final 在写完成前就可见；读取方无法区分"半写"与"损坏"。
 
-## 9. 迁移（本轮补齐）
+**v4 统一口径（禁止直写 final）**：
 
-### 9.1 版本链（不变）
+```
+发布（按可用性顺序，逐级降级）：
+P1  link(tmp, final)                        # 不覆盖；目标存在 → EEXIST → 换 seq
+P2  renameat2(tmp, final, RENAME_NOREPLACE) # 原子且不覆盖
+P3  lock(final.lock, O_EXCL) → 检查 final 不存在 → rename(tmp, final) → unlink lock
+    # 仅当 P1/P2 都不可用（ENOSYS/EOPNOTSUPP/EPERM）
+    # 持锁期间其他 writer 失败；崩溃遗留 lock 由启动清理（>1h）
+P4  以上全部失败 → 不发布，保留 tmp + 写 .pending 标记 + 事件 `PUBLISH_UNSUPPORTED`
+    读取方把 .pending 视为"未发布"，绝不解析 tmp
+```
 
-v1 基础表 → v2 reflections → v3 purpose/home_activities（补显式）→ v4 no-op → v5 recovery 对象 + actions 新列。
+**读取方规则**：
 
-### 9.2 迁移矩阵（本轮补 v1/v5/未来/逐级中断/v4 副本）
+1. 只处理匹配 `^[a-z0-9-]{1,96}\.json$` 的 final 文件；忽略 `.tmp-*`、`.part-*`、`.lock`、`.pending`；
+2. final 存在但解析失败 → **不立即隔离**：在 `readRetryWindowMs=2000` 内重试 4×500ms；
+3. 重试窗后仍失败 → 移入 `corrupt/<name>.corrupt-<ts>` + 事件 `WAKE_FILE_INVALID`；**保留原文件**；
+4. 崩溃残留：`.tmp-*`/`.lock` >1h → 启动清理并记 `TMP_CLEANED`；final 永不预删；
+5. 防覆盖：final 存在即视为已发布，读取方以 attemptId 幂等；writer 侧 EEXIST 必须换 seq，不得 rename 覆盖。
 
-| 起点 | 步骤 | 结果 |
+**f2fs / PRoot 适用性**：P1 link 与 P2 renameat2 在 f2fs 上"是否可用"**尚未实测（NOT RUN）**；P3 只依赖 POSIX rename（f2fs 支持、PRoot 转发），但**原子性仍未在本机实测**。若 P1–P3 全部不可用，P4 保证"不发布、不误判、不丢失"，但会退化为需要人工/后续版本修复——这是诚实的能力边界。
+
+**仍未解决**：Android 需采纳"禁止直写 final"；DSH 需实测 link/renameat2/P3 三条路径（NOT RUN）。
+
+**章节**：§6、§9。**验收**：T-E1 模拟 link 失败 → 走 P2/P3，final 始终完整；T-E2 读取方在 2s 窗口内不隔离；T-E3 崩溃残留 lock/tmp 被清理且 final 不动；T-E4 P4 时请求不丢失、不误判。
+
+---
+
+## 7. F · INBOX_FULL / BACKPRESSURE
+
+**Android v3 原口径**：inbox 500、80% `INBOX_HIGH`、满则 `INBOX_FULL` 不删未 ack；outbox 500、满则 `BACKPRESSURE`。
+
+**Autonomy v3 原口径**：同上限，未明确责任与恢复。
+
+**GPT 裁决**：明确预警、拒绝、退避、保护旧回执、责任归属；不得删未 ack 腾空间。
+
+**v4 统一口径**：
+
+| 项 | 规则 |
+|---|---|
+| 容量 | inbox 500（其中 10 个预留控制槽）；outbox 500（10 个预留控制槽，用于 `BACKPRESSURE/rejected` 回执） |
+| 80% | 双方各写 `INBOX_HIGH` / `OUTBOX_HIGH`；回执 `queue` 字段带计数；HUD 黄条 |
+| 满 | inbox：Android 拒绝新请求 `INBOX_FULL`，退避 1/2/4/8/16/32/60min（日封顶 48 次）；outbox：Autonomy 停新恢复，回执 `BACKPRESSURE` |
+| 禁止 | 删除未 ack 条目、把旧回执移到 `/sdcard`、用"清理"腾空间 |
+| 告警责任 | inbox：Android 主责（写 `dsha-android-events.jsonl`）；outbox：Autonomy 主责（写 `dsha-autonomy-events.jsonl` + 回执） |
+| 恢复责任 | 先 `ACK_REPAIR`（§A 第一层）→ 再 ack 校验 → 再清理；人工清理仅最后手段（§A 第三层） |
+| 观测 | 回执 `queue: {inbox, outbox, ackPending, inboxHigh, outboxHigh}`；Android 不解释语义，只展示 |
+
+**仍未解决**：预留控制槽数量（10）需与 Android 对齐；inbox 由 Android 清理、outbox 由 Autonomy 清理的归属不变。
+
+**章节**：§7、§8。**验收**：T-F1 80% 出告警；T-F2 满时拒绝新请求且旧条目仍在；T-F3 `ACK_REPAIR` 后可继续处理；T-F4 任何路径都不删未 ack。
+
+---
+
+## 8. G · `recovery_requests` 保留时间与 attemptId 幂等
+
+**Android v3 原口径**：§3.7 #5 `recovery_requests(attempt_id PK)` **TTL 1h**，命中返回缓存回执。
+
+**Autonomy v3 原口径**：§8.4 30 天；未 ack 永久。
+
+**GPT 裁决**：统一；同 attemptId 不得因记录过期而重新执行。
+
+**v4 统一口径**：
+
+| 对象 | 保留 | 说明 |
 |---|---|---|
-| 0（空库） | DDL + v1..v5 | v5 |
-| 1 | 2,3,4,5 | v5 |
-| 2 | 3,4,5（含补 v3） | v5 |
-| 3 | 4,5 | v5 |
-| 4 | 5 | v5 |
-| 5 | 重复迁移 | 幂等，v5 |
-| >5 | 拒绝 | `SCHEMA_TOO_NEW`，只读降级，禁止降级 |
+| ledger 明细 `recovery_requests` | **30 天** | 含 report_json、merged 关系、ack 状态 |
+| **tombstone** `attempt_tombstones` | **永久**（极小行） | `attempt_id PK, first_seen_at, finished_at, final_state, receipt_sha256, purged_by, purged_at` |
+| 幂等判定 | attemptId 永不重用 | 新请求命中 tombstone → 直接返回终态（`duplicate=true`），不执行；若 receipt 已删则回执 `duplicate/EXPIRED_TOMBSTONE` |
+| 过期请求 | `requestedAt + 10min < now` 或 `now > deadline` | 回执 `expired/REQUEST_EXPIRED`，不恢复；仍写 tombstone |
+| 清理顺序 | 先写 tombstone，再删明细 | 中断也不会出现"明细没了、tombstone 没写" |
 
-### 9.3 中断与校验规则
+- Android 的 1h TTL 只是"热缓存"口径，**不能作为幂等依据**；跨 1h 后的重复 attemptId 必须由 Autonomy tombstone 拦截；
+- tombstone 行大小 <200B，按 10 万条估算 <20MB，可长期保留；
+- tombstone 清理只在负责人明确授权下进行（当前不设计自动清理）。
 
-- 每个版本一个 `BEGIN IMMEDIATE … COMMIT`；`user_version` 同事务更新；
-- 失败 `ROLLBACK`，版本保持旧值，可重跑；
-- 前：`PRAGMA quick_check` + 备份副本；后：期望表/列/索引 + `foreign_key_check` + `user_version`；
-- 不接触生产 DB；只用隔离副本。
+**仍未解决**：Android 需删除"1h 后即可重发同 attemptId"的假设；重发必须使用新 attemptId（`seq+1`）。
 
-### 9.4 隔离演练结果（/tmp，已完成）
-
-命令 `node /tmp/audit/mig-probe/probe2.mjs`（09:56，exit 0）：
-
-```
-from=0/1/2/3/4        → v5，表/列/外键全 PASS
-每个起点重复迁移        → PASS
-逐级中断（v2/v3/v4/v5 各注入一次）→ 版本保持旧值；重跑 → v5 PASS
-future v6             → 设计为拒绝
-v4 隔离副本升级        → before {v:4, actions:238, ticks:495, logs:1100}
-                         after  {v:5, actions:238, ticks:495, logs:1100}  PASS
-ALL PASS
-```
-
-> 这是**临时副本演练**，不是生产迁移，也不是 DSH 实机验证。
+**章节**：§8、§11。**验收**：T-G1 31 天后同 attemptId 不执行；T-G2 明细删后仍返回终态；T-G3 中断在"写 tombstone 前"可重跑且不重复执行；T-G4 过期请求回执 expired。
 
 ---
 
-## 10. 故障场景
+## 9. H · merged 语义
 
-### 10.1 原 13 类（修订行）
+**矛盾核对**：
+- Autonomy v3 §8.3 写"不合并执行；进 queued 队列逐条处理"；§8.2 又定义 leader/`mergedFrom`/`mergedInto` → **内部矛盾**。
+- Android v3 §3.4 "一次一个 inflight" 与 §3.7 #7 "不合并执行…若必须合并（同 kind 且当前 inflight）" → **模糊**。
 
-| # | 场景 | 状态 | 恢复动作 | 自动重试 | 人工 |
-|---|---|---|---|---|---|
-| 1 | 执行前退出 | leased→unknown | 无 executor_started + 契约 → 判未执行 → planned | 是 | 否 |
-| 2 | 执行中退出 | running→unknown | verifier | 否 | 视结论 |
-| 3 | 外部完成未提交 | running→unknown | verifier=confirmed → done | 否 | 否 |
-| 4 | 部分完成 | unknown | partial + compensating | 否 | 是 |
-| 5 | verifier 不可用 | unknown | verification_error，退避重验 | 只重验 | 3 次后 |
-| 6 | lease 重复领取 | 第二 CAS 失败 | LEASE_LOST | — | 否 |
-| 7 | 双 worker 恢复 | 一把锁 + CAS | 输家 LOCK_LOST/TOKEN 失败 | — | 否 |
-| 8 | Android 重复唤醒 | 无变化 | attemptId 幂等 + 同回执 | — | 否 |
-| 9 | 时间变化 | — | 只影响"是否怀疑" | 否 | 否 |
-| 10 | 手机重启 | leased/running→unknown | bootId 变 → 强证据回收 | 视结论 | 视结论 |
-| 11 | DB 锁定 | — | BEGIN IMMEDIATE + busy 重试 | 是 | 否 |
-| 12 | 网络不可用 | failed(not_sent)/unknown(sent_unconfirmed) | 分类处理 | 仅 not_sent | 否 |
-| 13 | 取消与恢复并发 | cancelled 或保留 | state_version CAS | — | 副作用后可能 |
+**GPT 裁决**：v1 默认不合并不同 attemptId 的实际执行，只允许显式去重/合并策略；所有 attemptId 仍须有独立终态回执。
 
-### 10.2 本轮新增 5 类
+**v4 统一口径**：
 
-| # | 场景 | 处理 |
-|---|---|---|
-| 14 | 多请求连续到达 | 一文件一请求 + ledger 逐条，互不覆盖 |
-| 15 | 合并请求 | 每个 ID 独立回执；leader 记 mergedFrom |
-| 16 | 回执未 ack 就被新回执写入 | 新文件不覆盖；未 ack 永不清理 |
-| 17 | recovery.lock 过期被接管 | token+1；旧 worker 续租/写入全部失败 |
-| 18 | runtime stale 但 lease 有效 | 只读核查，不回收、不重跑 |
+1. **v1 不合并执行**：所有不同 attemptId 一律排队，按 `requestedAt` 升序逐条处理，一次一个。
+2. `merged` 只允许一种情形：**同一 intent 的去重**——新请求的 `intentKey`（kind+target+content hash）与当前 inflight 的 leader 相同，且在去重窗口（默认 10min）内。此时新请求不执行，回执 `merged` + `mergedInto=leader`；leader 回执 `mergedFrom[]`（≤5）。
+3. leader 已结束但仍在去重窗口内 → 回执 `duplicate` + `duplicateOf=leader` + 复制 leader.result；不执行。
+4. 超出窗口 / intent 不同 → **独立执行**（新 attemptId），不得 merged。
+5. 每个 attemptId 必须有且仅有一个终态回执（`done|rejected|expired|failed|merged|duplicate`），不存在"被合并后没有回执"的 ID。
+6. `mergedFrom` 超过 5 个时，多余请求回执 `duplicate`（不再进入 leader 列表）。
+
+**仍未解决**：`intentKey` 的规范（kind+target+content hash）需与 Memory/channel 统一内容 hash 口径；v1 可先只对 `send_qq`/`write_diary` 启用去重，其余不启用。
+
+**章节**：§9、§11。**验收**：T-H1 不同 intent 不 merged 且各自执行；T-H2 同 intent 10min 内 merged 且两 ID 都有回执；T-H3 leader 结束后 duplicate；T-H4 超窗独立执行；T-H5 每个 ID 终态唯一。
 
 ---
 
-## 11. 验收矩阵（13 项 + 本轮 9 项）
+## 10. 已冻结基线（v2/v3 摘要，不再改动）
 
-| # | 验收点 | 层 | 断言 |
-|---|---|---|---|
-| 1–13 | v2 原 13 项 | 单元/集成 | 不变 |
-| 14 | 连续请求不丢 | 集成 | 3 个请求 → 3 条 ledger + 3 个回执 |
-| 15 | 合并全可追溯 | 集成 | 每个 ID 有回执；leader.mergedFrom 完整 |
-| 16 | 未 ack 不清除 | 集成 | 无 ack 时 outbox 文件仍在 |
-| 17 | 重启恢复未确认 | 集成 | 未 ingest/未完成/回执丢失三类均恢复 |
-| 18 | 轮询兜底 | 集成 | 关 doorbell 仍能消费 |
-| 19 | lock 续租失败停写 | 集成 | token 失效后 0 次状态写入 |
-| 20 | lock 过期安全接管 | 集成 | 第二 worker 接管，旧 worker 写入被拒 |
-| 21 | runtime stale 不越权 | 集成 | lease 有效时状态不变 |
-| 22 | 回执写失败不丢 | 集成 | ENOSPC 模拟下 ledger 保持未 ack，恢复后重写 |
-| 23 | 紧急唤醒不被普通下限推迟 | 集成 | allowDefer=false 时按 notBefore（系统延后需记录） |
-
-隔离演练已覆盖：迁移矩阵、inbox/outbox 语义（3 请求 + 合并 + 重复 + 损坏 + 丢回执重写 + ack）。其余为设计/待测（§14）。
+- 状态：`planned/leased/running/done/failed/aborted` + `unknown/cancelled`；`done→succeeded` 映射层；
+- lease：`heartbeat=clamp(lease/3,15s,60s)`、`ttl=3×heartbeat`、同一条 UPDATE 写 heartbeat+lease、CAS；
+- executor：`TX1 领取+fencing → TX2 executor_started → 执行 → 结果 CAS`；
+- recovery.lock：owner/token/20s/60s、CAS 续租、失败停写、token+1 接管、状态写入带锁 token 谓词；
+- 双资格：runtime stale 只给扫描资格；回收需 lease 到期/bootId 变更/进程确认退出；
+- 错误分类：`not_sent / sent_unconfirmed(unknown) / rejected / internal / verification`；unknown 不计失败率/熔断；
+- verifier：四条成功标准；`read_only` 用 `result_binding`；
+- 取消：副作用后只置 `cancel_requested`，按真实结果落状态并标 `cancel_after_effect`；
+- 迁移：v1..v5 版本链、逐级/重复/中断/拒绝降级。
 
 ---
 
-## 12. AUTO-R1…R7（更新）
+## 11. 队列、回执与保留（v4 汇总表）
 
-| 编号 | 内容 | 依赖 | 验收 |
-|---|---|---|---|
-| R1 | 排序 + 连续失败纯函数 + 索引 | — | 11.#1–2 |
-| R2 | 错误分类 + unknown 统计 | R1 | 11.#9/12 |
-| R3 | verifier 框架 + verification 表 + result_binding | R2 | 11.#5/6/9 |
-| R4 | lease + heartbeat + 过期→unknown | R1–R3 | 11.#2/3 |
-| R5 | action attempt + fencing + 迟到拒绝 | R4 | 11.#4/7 |
-| R6 | 恢复入口 + 请求持久性（inbox/outbox/ledger/ack）+ recovery.lock + nextWake | R4/R5 | 11.#1/6/7/8/10/11 + 14–23 |
-| R7 | 迁移 v5 + 校验 + 中断演练 | R2/R3 | 11.#13 + §9.4 |
-| R8/R9 | diary/send verifier（外部回执缺失） | R3 + Memory/channel | BLOCKED |
+| 对象 | 写入方 | 清理方 | 保留 | 备注 |
+|---|---|---|---|---|
+| inbox/<id>.json | Android | Android | ack 后 24h；过期 7d（记事件） | 满 500 → `INBOX_FULL` |
+| outbox/<id>.json | Autonomy | Autonomy | ack 后 10min；**未 ack 永久** | 满 500 → `BACKPRESSURE` |
+| ack/<id>.json | Android | Android | 24h | 字节级 sha 校验 |
+| corrupt/ | Autonomy | Autonomy | 30d | 不丢原件 |
+| recovery_requests | Autonomy | Autonomy | 30d | 明细 |
+| attempt_tombstones | Autonomy | 不自动清理 | 永久 | 幂等根 |
 
 ---
 
-## 13. 未解决
+## 12. 演练与证据（保留 v3 结果，标明性质）
 
-1. **Android 联合确认**：inbox/outbox/ack 三目录与 doorbell 改动（§8.10/8.11）。
-2. **`fs.watch` 目录监听**在 f2fs 与 PRoot 下的稳定性需实机验证（当前仅 Android 报告 `/root` 文件级 watch 可用）。
-3. **fsync 成本**：f2fs 上每请求 2 次 fsync（文件+目录）的延迟未测。
-4. **ENOSPC 行为**：Android 侧写失败的重试策略未定。
-5. **清理保留期**（7/24h/30d）需负责人确认。
-6. **生产 `user_version=4` 来源**仍 INCONCLUSIVE。
-7. **外部回执缺失**：R8/R9 仍 BLOCKED。
+**已完成的隔离演练（/tmp 临时库/文件，非实机）**：
+- 迁移 `probe2.mjs`（09:56，exit 0）：from 0/1/2/3/4、重复、逐级中断重跑、v4 副本（238 actions/495 ticks/1100 logs 不变）全 PASS；
+- inbox/outbox `inbox.mjs`：3 请求、合并/重复/损坏/丢回执重写/单 ack 全 PASS；
+- fencing `fencing.mjs`：并发领取、非 owner 续租、迟到提交拒绝 PASS。
 
----
-
-## 14. 状态分类（GPT 要求）
-
-### 14.1 已完成的隔离演练（/tmp，非生产）
-- 迁移矩阵：from 0/1/2/3/4、重复、逐级中断重跑、v4 副本升级（数据量不变）——PASS。
-- inbox/outbox：3 请求、合并、重复、损坏隔离、丢回执重写、ack 语义——PASS。
-- fencing/lease：并发领取、非 owner 续租、迟到提交拒绝——PASS。
-
-### 14.2 尚未执行的测试
-- DSH 实机：kill/reboot、fs.watch 目录、fsync 延迟、ENOSPC。
-- Android 侧：写请求/读回执/写 ack 的真实实现。
-- 集成：双 worker 真并发、恢复锁接管、nextWake 调度。
-- staging：全部 NOT RUN。
-
-### 14.3 设计提案（未实现）
-- 状态机映射层、inbox/outbox 目录协议、recovery.lock 表、runtime/lease 双资格、nextWake 契约、v5 迁移脚本。
+**NOT RUN**：DSH kill/reboot、`fs.watch` 目录长稳、`fsync` 延迟、ENOSPC、link/renameat2 在 f2fs 的可用性、Android 侧真实实现、双 worker 真并发、staging、生产迁移。
 
 ---
 
-## 15. 证据索引
+## 13. 验收测试汇总（本轮新增）
 
-| 证据 | 命令/位置 | 结果 |
-|---|---|---|
-| 基线 | `git ls-remote` / `rev-parse`（09:55） | handoff `01afc56`；v2 blob `899528d7` |
-| `/root` fs | `stat -f -c %T /root`；`df -h /root` | f2fs；dm-44 223G |
-| 迁移演练 | `node /tmp/audit/mig-probe/probe2.mjs` | ALL PASS（含 v4 副本 238/495/1100 不变） |
-| inbox/outbox 演练 | `node /tmp/audit/mig-probe/inbox.mjs` | PASS（6 条保证） |
-| fencing 演练 | `node /tmp/audit/mig-probe/fencing.mjs` | PASS |
-| 代码事实 | `dsh-autonomy@6c4a475:lib/run/actions.js`、`lib/run/tick.js`、`lib/index.js` | 见 v2 §2 |
+| ID | 断言 |
+|---|---|
+| T-A1–A5 | 未 ack 不删/告警/背压/修复/人工审计 |
+| T-B1–B4 | ack 四条件与失败码 |
+| T-C1–C4 | `verifier_retry` 合法与兼容 |
+| T-D1–D3 | 紧急 floor 与系统延迟记录 |
+| T-E1–E4 | 降级发布不产生半文件误判 |
+| T-F1–F4 | 队列背压不丢数据 |
+| T-G1–G4 | tombstone 幂等 |
+| T-H1–H5 | merged/duplicate/排队边界 |
 
-## 16. 边界声明
+---
 
-本轮只读设计修订：未改源码；未创建分支；未写生产 DB；未启动 scheduler/executor/staging；未部署/重启；未改 `HANDOFF.md`/`REPORT.md`/`PROJECT.md`；未与 DSH 直接联系；未自行开始 AUTO-R1…R7。
+## 14. 仍未解决的问题（按优先级）
+
+1. **Android v4 需确认 4 项**：未 ack 不删（删 7d TTL）、`verifier_retry`（删旧枚举假设）、紧急 floor 属系统下限、hardlink 降级（禁止直写 final）。
+2. Android 需删除 `recovery_requests` 1h TTL 作为幂等依据的假设（改 tombstone）。
+3. `intentKey` 内容 hash 口径需与 Memory/channel 统一（v1 可仅对两类外发启用）。
+4. f2fs 上 link/renameat2/P3 锁+rename 三条路径未实测（NOT RUN）。
+5. 预留控制槽数量（10）与 outbox 满时回执写入的原子性需联调。
+6. `systemMinEmergency` 的设备实测值（Doze 深睡可能 >1min）。
+7. 外部回执型 verifier（`send_qq`/`write_diary`）仍因缺 API 而 BLOCKED（不影响本轮 A–H）。
+
+---
+
+## 15. 结果与边界声明
+
+**结果：`PARTIAL`。**
+- Autonomy 侧 A–H 全部收口，内部矛盾（未 ack 7 天、merged 排队、ledger 1h vs 30d、半文件隔离）已消除；
+- 剩余 4 项为 Android v4 书面确认，不涉及 Autonomy 再设计；
+- 无 BLOCKED 项。
+
+**边界**：本轮只读设计修订；未改任何源码/DB/profile/配置；未创建实现分支；未启动 scheduler/executor/staging；未部署/重启；未改 `HANDOFF.md`/`REPORT.md`；未修改 Android 报告或替 Android 作设备权限决定；未开始 AUTO-R1…R7。
+
+**设计通过 ≠ 代码实现；源码实现、DSH 实机、staging、生产迁移均 NOT RUN；生产数据库未修改。**
