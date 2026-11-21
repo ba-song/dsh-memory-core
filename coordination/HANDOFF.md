@@ -2,9 +2,9 @@
 
 > 文件：`coordination/HANDOFF.md`  
 > 交接分支：`coordination/project-handoff`  
-> 版本：`HANDOFF-0056`
-> 更新时间：2026-11-21 00:48（Asia/Shanghai）
-> 更新者：DSH  
+> 版本：`HANDOFF-0058`
+> 更新时间：2026-11-21（Asia/Shanghai）
+> 更新者：GPT  
 > 性质：当前协作状态的单一入口；覆盖式维护，Git commit 历史保留旧版本。
 
 ---
@@ -3315,3 +3315,66 @@ tar -xzf "$STAGE/candidate-v4.tar.gz" \
 - 未改生产 DB、冲突队列、记忆状态、profile、main。
 - 未运行生产数据修复、staging/host、部署或重启。
 - EI-2/EI-3/生产集成仍 NOT RUN。
+
+
+---
+
+## 55. Memory 有效性复核、EI-2 设计裁决与 Android/Autonomy 状态保留（HANDOFF-0058）
+
+> 完整报告：`coordination/REPORT.md`（REPORT-0015）
+> REPORT commit：`0b4e1569435d3e2f60c97daf2a47ef1251b4ab5c`
+> REPORT blob：`f1add923426b11b39a702e435597e184159800c9`
+> 基于 HANDOFF-0057 所在文件 blob：`f8ffa40d4c27c04d23ff74b123bf2b7044821976`
+> 本轮仅开发分支源码/设计文档和协调文档；生产 DB/profile/config、部署、重启、staging 均未触碰。
+
+### 55.1 Memory：统一有效性谓词复核
+
+- 仓库：`ba-song/dsh-memory-core`
+- 分支：`feat/memory-validity-unified`
+- Memory 智能体复核修正 commit：`4b4f92751b6c8cc41c0935fc2b4c267cd9cbd4c9`
+- Memory 专项报告：`MEMORY-REPORT-0005`，commit `9f04ed3ef9c5ab8073f6fc3f417617007de1ea65`，blob `949e2512893445db778443b3988acc5927668c73`
+- Memory 智能体报告的隔离测试：5/5 新测试、46/46 受影响测试、297/297 全量、0 fail/0 skip；负向对照 FTS 回退 1 fail、时间窗移除 2 fail。
+- GPT 后续复核发现：普通关键词候选可能仅因 top-N 截断未返回，不应被标记为 `unknown-validity`；graph 的 `unknownHop` 则仍需保留保守诊断。
+- GPT 已在同一隔离分支提交：
+  - `697de1ee11ec12fb41d2d5a701851635c9192827`：`unknown-validity` 限定为 graph `unknownHop` 来源；`superseded-without-end` 仍检查全部相关候选。
+  - `b4606e1c66f1afb94cb154b7ec96423103477029`：新增 top-N 误报回归测试。
+- 最新两个文件 blob：
+  - `lib/recall/recall.js`：`75b4fb7f184e1c614d8056ce7ab39f6d650a6f28`
+  - `tests/asof-graph-uncertain.test.mjs`：`28425c24c1f516305dd69bc9dc5ab4b63da13edb`
+- **状态：待 Memory 专项本地复验**。GPT 提交后尚未复跑，不能标 PASS。已提供给 Memory 智能体的验证提示词 WritingBlock ID `62041`；要求定向/全量测试及两组负向对照，完成后更新 MEMORY-REPORT-0006。
+- 未合并主开发分支；未写生产 DB；未部署/重启/staging。
+
+### 55.2 EI：EI-1 收口与 EI-2A 前置审查
+
+- 仓库：`ba-song/dsh-persona-core`
+- EI-1 代码目标：`3a1376184491d94b02d4c3ad4990a957e85acb48`
+- EI-1 source/tests blob：`cf033ec8400ea38e717481a46a5bfe834276a4a5` / `eb17cb0f2c67450a145f38d1a582bef6d90b07c8`
+- EI-REPORT-0004 记录定向 21/21、全量 324/324、0 fail/0 skip；结论为**代码隔离验收 PASS**，DSHA/设备复验 NOT RUN。
+- GPT 更新 `EI-2-PERSISTENCE-DESIGN-01.md`：
+  - commit：`8ccb8a922a789d8d15157b9d99f9de0c20c8807b`
+  - blob：`670e5a34a1916a8b104ebfd1004b525236677d4c`
+- B1 confidence_kind/source、B2 `legacy:event:<event_id>`、D3 最早截止规则已写入设计；D2 third_party 会话内临时 ID、D4 旧 348 条先 unknown/shadow、D5 阈值未校准、D6 legacyFallback、D7 outbox/inbox 留到 EI-2D 均已裁决。
+- D1 owner ID 推荐跨受信任设备共享 opaque UUID，但最终由负责人确认；EI-2A 可先保留 unknown/空 ID。
+- 新增 `EI-REPORT-0005.md`：Persona 分支 `ei/pre-ei2a-review-01`，commit `4992a313f72326caa4b5e84558005a53db239af0`，blob `e23d98c920f1a9979e1e83400123288e3ee8c88f`。
+- **EI-2A 未获授权、未启动**；生产写入、迁移、staging、部署、重启均未执行。
+
+### 55.3 Android 与 Autonomy：v4 设计对齐继续保留
+
+- Android v4：commit `3dd5d321929b8f3e308663f48bc55292bce4de8a`，blob `76924c81f6b5b165e55dd797f3927408b84bfac9`。
+- Autonomy v4：commit `1925037998a301550e96112e042ed6eb05df2440`，blob `26584df51148547baa357b109bf55aac43865ac0`。
+- 两条线当前无任务运行，但必须保留在项目主线。v4 设计对齐不等于实机验收。
+- 后续重点仍是 DSHA 真机 kill/reboot、双 worker、目录 watch、fsync、ENOSPC、f2fs 发布路径与 staging 验证；启动真机/staging/生产操作须由负责人另行安排/授权。
+
+### 55.4 当前任务状态与边界
+
+| 专题 | 当前状态 | 下一步 |
+|---|---|---|
+| Memory validity | 待 DSH/Memory 专项复验 | 完成 62041 提示词任务，更新 MEMORY-REPORT-0006 |
+| EI | 无运行任务；EI-1 隔离 PASS，EI-2 设计已修 | 等待 D1 负责人确认；EI-2A 需单独授权 |
+| Android | 无运行任务；v4 DESIGN ALIGNED | 后续安排实机验证前置工作，需授权 |
+| Autonomy | 无运行任务；v4 DESIGN ALIGNED | 后续安排实机验证前置工作，需授权 |
+
+- GPT 与 DSH 仍由负责人唯一中转；GPT 不直接联系 DSH。
+- 本轮没有修改生产 DB、生产插件目录、profile/config；没有部署、重启、staging 或生产迁移。
+- HANDOFF 与 REPORT 由 GitHub Contents 更新接口顺序提交为相邻 commits；接口未暴露可复用 tree SHA，故未能将两文件放入单一 commit。REPORT commit/blob 已在本节明确记录；后续如工具支持单 tree commit，再恢复同 commit 更新。
+- 后续更新者必须重新读取最新 HANDOFF/REPORT blob SHA，按 SHA 并发保护更新，不得覆盖他人并发内容。
