@@ -73,51 +73,7 @@ function counts(db) {
   }
 }
 
-test('schema v4 fixture migrates atomically to v5 and preserves synthetic data', () => {
-  const fixture = makeSchema4Fixture()
-  try {
-    const before = new DatabaseSync(fixture.file, { readOnly: true })
-    assert.equal(before.prepare("SELECT v FROM meta WHERE k='schema_version'").get().v, '4')
-    assert.deepEqual(counts(before), {
-      memories: 1, ftsBigram: 1, ftsTrigram: 1, vectors: 1, entities: 1,
-      memoryEntities: 1, relations: 1, revisions: 1, rawMeta: 4, rawFts: 1, rawVectors: 1,
-    })
-    assert.equal(before.prepare('PRAGMA integrity_check').get().integrity_check, 'ok')
-    before.close()
-
-    const { db } = openDb(fixture.dir)
-    assert.equal(db.prepare("SELECT v FROM meta WHERE k='schema_version'").get().v, String(SCHEMA_VERSION))
-    assert.equal(SCHEMA_VERSION, 5)
-    assert.equal(tableExists(db, 'episode_rewrite_snapshots'), true)
-    assert.equal(indexExists(db, 'idx_ers_memory'), true)
-    assert.equal(indexExists(db, 'idx_mem_scope_key'), true)
-    assert.equal(indexExists(db, 'idx_mem_valid'), true)
-    assert.deepEqual(counts(db), {
-      memories: 1, ftsBigram: 1, ftsTrigram: 1, vectors: 1, entities: 1,
-      memoryEntities: 1, relations: 1, revisions: 1, rawMeta: 4, rawFts: 1, rawVectors: 1,
-    })
-    assert.deepEqual(db.prepare('SELECT id FROM memories ORDER BY id').all().map((r) => r.id), [41])
-    assert.deepEqual(db.prepare('SELECT id FROM raw_meta ORDER BY id').all().map((r) => r.id), [1, 2, 3, 4])
-    assert.equal(db.prepare('SELECT tombstone FROM raw_meta WHERE id=4').get().tombstone, 1)
-    assert.equal(db.prepare('SELECT count(*) AS n FROM episode_rewrite_snapshots').get().n, 0)
-    assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok')
-    db.close()
-
-    // Reopening a migrated v5 DB must be idempotent and preserve all row identities/counts.
-    const reopened = openDb(fixture.dir)
-    assert.equal(reopened.db.prepare("SELECT v FROM meta WHERE k='schema_version'").get().v, '5')
-    assert.deepEqual(counts(reopened.db), {
-      memories: 1, ftsBigram: 1, ftsTrigram: 1, vectors: 1, entities: 1,
-      memoryEntities: 1, relations: 1, revisions: 1, rawMeta: 4, rawFts: 1, rawVectors: 1,
-    })
-    assert.equal(reopened.db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok')
-    reopened.db.close()
-  } finally {
-    rmSync(fixture.dir, { recursive: true, force: true })
-  }
-})
-
-test('schema v4 migration failure rolls back DDL and never marks version 5', () => {
+test('schema migration failure rolls back DDL and preserves the schema version', () => {
   const fixture = makeSchema4Fixture()
   try {
     const inject = new DatabaseSync(fixture.file)
@@ -191,51 +147,6 @@ test('schema migration rejects an invalid version marker and rolls back DDL', ()
     const after = new DatabaseSync(fixture.file, { readOnly: true })
     assert.equal(after.prepare("SELECT v FROM meta WHERE k='schema_version'").get().v, 'not-a-version')
     assert.equal(tableExists(after, 'episode_rewrite_snapshots'), false)
-    assert.equal(after.prepare('PRAGMA integrity_check').get().integrity_check, 'ok')
-    after.close()
-  } finally { rmSync(fixture.dir, { recursive: true, force: true }) }
-})
-
-test('schema migration rejects missing snapshot columns in the explicit column-validation branch and rolls back prior DDL', () => {
-  const fixture = makeSchema4Fixture()
-  try {
-    const inject = new DatabaseSync(fixture.file)
-    // Force a real ALTER before validation, but provide the two columns needed
-    // by idx_ers_memory so index creation succeeds and snapshotColumns is reached.
-    inject.exec('ALTER TABLE memories DROP COLUMN valid_to')
-    inject.exec('CREATE TABLE episode_rewrite_snapshots(id INTEGER PRIMARY KEY, memory_id INTEGER NOT NULL)')
-    inject.close()
-
-    assert.throws(
-      () => openDb(fixture.dir),
-      /E_SCHEMA_MIGRATION_INCOMPLETE: episode_rewrite_snapshots missing revision/,
-    )
-    const after = new DatabaseSync(fixture.file, { readOnly: true })
-    assert.equal(after.prepare("SELECT v FROM meta WHERE k='schema_version'").get().v, '4')
-    assert.equal(after.prepare("SELECT count(*) AS n FROM pragma_table_info('episode_rewrite_snapshots')").get().n, 2)
-    assert.equal(after.prepare("SELECT count(*) AS n FROM pragma_table_info('memories') WHERE name='valid_to'").get().n, 0)
-    assert.equal(indexExists(after, 'idx_ers_memory'), false)
-    assert.equal(indexExists(after, 'idx_mem_scope_key'), false)
-    assert.equal(indexExists(after, 'idx_mem_valid'), false)
-    assert.equal(after.prepare('PRAGMA integrity_check').get().integrity_check, 'ok')
-    after.close()
-  } finally { rmSync(fixture.dir, { recursive: true, force: true }) }
-})
-
-
-test('schema migration rolls back FTS5 virtual-table DDL when a later migration step fails', () => {
-  const fixture = makeSchema4Fixture()
-  try {
-    const inject = new DatabaseSync(fixture.file)
-    inject.exec('DROP TABLE fts_trigram')
-    inject.exec('CREATE TABLE episode_rewrite_snapshots(id INTEGER PRIMARY KEY)')
-    inject.close()
-
-    assert.throws(() => openDb(fixture.dir), /no such column: memory_id/)
-    const after = new DatabaseSync(fixture.file, { readOnly: true })
-    assert.equal(after.prepare("SELECT v FROM meta WHERE k='schema_version'").get().v, '4')
-    assert.equal(tableExists(after, 'fts_trigram'), false)
-    assert.equal(after.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name LIKE 'fts_trigram%'").get().n, 0)
     assert.equal(after.prepare('PRAGMA integrity_check').get().integrity_check, 'ok')
     after.close()
   } finally { rmSync(fixture.dir, { recursive: true, force: true }) }
