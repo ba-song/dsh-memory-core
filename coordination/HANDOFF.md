@@ -3895,3 +3895,99 @@ A–E 合计为 P4 基线之上 30 个提交；每一段均为纯前进，没有
 - **主线合并：暂缓，等待负责人决定是否接受 main 之外的 270 个既有提交，或先确定更窄的集成基线/拆分策略。**
 - 生产只读核查、staging、真实 weekly apply、部署和重启均未执行；分别需要明确授权。
 - Android / Autonomy v4 设计对齐与真实设备验证计划继续保留，不因 Memory A–E 完成而搁置。
+
+
+---
+
+## 2026-11-21 23:34 · GPT 接管审计 · HANDOFF-0074
+
+> 本节为新任 GPT 接管后的第一轮 GitHub 只读审计。审计范围：Memory、Persona/EI、Autonomy、Android/DSHA 文档与分支关系。未修改任何产品源码、测试、数据库、配置或生产状态；仅更新本共享交接文档与 REPORT。
+> 审计时间：2026-11-21 23:34 Asia/Shanghai。
+> 当前授权：普通技术审查、分支/文档治理可自主推进；任何可能改变汐实际记忆、人格、情绪、召回、主动写入或行动行为的改动，必须先向负责人清楚说明影响和后果并取得批准。
+
+### 74.1 GitHub 访问与治理检查
+
+- 已确认可读取并通过 GitHub 工具更新 ba-song/dsh-memory-core、ba-song/dsh-persona-core、ba-song/dsh-autonomy；另可读取私有备份仓库 ba-song/dsha-selfbuilt-plugins。
+- dsh-memory-core 与 dsh-persona-core 根目录 AGENTS.md 均返回 NOT_FOUND；dsh-autonomy 与 dsha-selfbuilt-plugins 根目录也未发现 AGENTS.md。本轮没有修改代码；后续修改前仍须检查目标目录是否存在更深层 AGENTS.md。
+- 当前 GitHub 工具可见的 DSHA Android 源码仓库 DSH-APP/DSHA 不在可访问仓库列表中。Android 报告引用其 main 36d89b7，但本轮无法从该仓库独立读取源码；必须将这一点作为证据限制，不得把 Android 报告等同于本轮源码复核。
+- 对关键提交 8d0f3adc、0fdae988、4bf92aad、协调分支 099f351 及 EI-1 目标 3a137618 查询 GitHub Actions/combined status，未返回 workflow runs 或状态项。以下测试数字均来自专项智能体的本地报告，不是本轮 GPT 运行，也没有 GitHub CI 佐证。
+- Memory、Persona、Autonomy 的仓库读取成功；本轮没有访问生产数据库、设备、staging 或执行器。
+
+### 74.2 Memory 当前分支与状态
+
+| 工作线 | 当前核对 HEAD | 相对 main | 当前结论 |
+|---|---|---:|---|
+| main | 752cd0861e9c86c9f7be4bdf18302fa72a3b95dd | 基线 | 当前主线 |
+| 最小集成 | 8d0f3adc48b1f30f213ad30c3f0330da54ef1c83 | ahead 42 / behind 0 | BLOCKED：194 tests / 190 pass / 4 fail |
+| 自主唤醒写入 | 0fdae98860be9fb71f74081c1cf79fa963227ae2 | ahead 14 / behind 0 | 专项报告隔离验证 PASS；生产/设备 NOT RUN |
+| A–E 累计栈 | 4bf92aad8c069e92f3521e6a7cdf4c7b79559e3c | ahead 300 / behind 0 | A–E 隔离验证 PASS；不能视为 main 集成 |
+| 协调文档 | coordination/project-handoff @ 099f351332ac73ae68206888e91615a40367db3f | 独立文档分支 | HANDOFF-0073 早于最新专项 Memory 报告，现由本节补齐 |
+
+**最小集成分支：**
+
+- 已核实前任 GPT 的五项修改均存在：长期偏好命中过滤、普通 recall 接入过滤、明确长期偏好 vivid 豁免、有效性预设断言更新、冻结 schema-v4 fixture。
+- Memory 智能体最新 MEMORY-MINIMAL-INTEGRATION-REVERIFY-03 报告：194 tests / 190 pass / 4 fail / 0 skip，结论 BLOCKED。
+- 4 项失败并非同一种原因：1 项为 dy_memory_auto_list 未输出 M1 的 status/retryCount/lastError 诊断字段；另 3 项为 schema-v5 / episode_rewrite_snapshots 测试，而本分支仍为 schema v4。
+- 已交叉核对：M1 分支 feat/m1-preference-memory（HEAD 7548e49e...）含 auto_list 诊断字段并采用 schema v5；P0 原子迁移分支 fix/p0-atomic-schema-migration（HEAD dd939cc7...）含 schema-v5 迁移。最小集成分支与二者分叉，不能把这些测试失败直接判成 validity helper 业务缺陷，也不能未经评估把 v5 迁移代码带入 v4 分支。
+- N9 非 owner 注入专项：Memory 报告称 owner 私聊挂载正常、非 owner mount 被跳过，过滤发生在 scope 限制后的 recall 结果上；该证据为专项报告，不是本轮实机验证。
+- 下一步必须先对四项失败做范围裁定。不得为了让测试变绿而放宽有效性断言、把 v4 静默升级到 v5，或擅自引入会改变汐记忆行为的代码。只读诊断输出可单独评估；如需改变记忆写入/召回行为，先请负责人批准。
+
+**自主唤醒自动写入分支：**
+
+- DSH 专项报告记录定向 8/8、全量 143/143、N1–N10 负向对照 PASS；当前只代表隔离代码验证。
+- 本轮静态读取了唤醒摘要写入实现、事件入口和专项测试。实现仅接受 autonomy-home-wake 与 autonomy-home-manual，按 owner scope 写入 episode，self 文本用于摘要、thought 仅作辅助上下文，并有 sourceKey 幂等、每日上限及向量去重。
+- **交叉兼容性阻塞：** 唤醒分支与最小集成分支从 main 分叉（两者比较为 diverged，42 vs 14 commits）；均修改 lib/index.js 和 lib/store/schema.js。最小集成分支 schema v4，唤醒分支 schema v3。不能直接合并或用唤醒分支覆盖最小集成分支。
+- 若将唤醒自动写入接入汐当前运行路径，会改变汐的长期记忆内容和自主回合行为；在负责人当前明确批准前，不实施合并、cherry-pick 或运行期接入。先完成只读兼容设计和独立复验。
+
+### 74.3 A–E、M1、M3 与 Home 永久档案
+
+- A–E 五批在 feat/memory-validity-batch-e 形成线性累计栈，专项报告记录全量 305/305 ×4、0 fail / 0 skip；测试由 Memory 智能体执行，GPT 未在本轮运行 Node。
+- main → Batch E 为 ahead 300 / behind 0、117 个文件；P4 基线已领先 main 270 个提交、112 个文件。直接合并 Batch E 会一次引入此前 270 个提交及 A–E 的 30 个提交，涉及 recall、archive、rules、M3、Home 等范围。**暂不合并 main，也不执行 rebase/cherry-pick**；须先确定整体接收还是窄范围拆分。
+- M1 文档仍明确：57 条存量长期偏好未回填，需负责人逐条授权；不做批量升级或自动写入。
+- M3 Event-chain selector 与隔离测试已存在，但设计文档明确未接入主召回排序或自动注入；当前仅可输出独立诊断候选。
+- M3 评测模板仍是 15 条未标注查询；在人工标注并固定代码 HEAD、只读数据库快照 SHA、embedding 模型及参数前，不得报告正式 Recall@K、MRR 或 nDCG。
+- updateMemory 文本修订的向量、实体关系、quote/provenance 派生索引一致性仍是设计审查项；文档明确列出旧向量和旧图关系可能残留。不得据此直接修改真实记忆。
+- Home 永久档案实现、测试和 exporter 已存在于 Batch E 累计分支；完整最新 Android 文件系统/真机验收证据仍缺失。不得把隔离测试或源码审查写成真机验收。
+
+### 74.4 Emotion Intelligence
+
+- dsh-persona-core main：a84c7badd1e6c971a66b6c39dd4f7ab795df4b90。
+- EI-1 代码验收目标 3a1376184491d94b02d4c3ad4990a957e85acb48；EI 报告记录定向 21/21、全量 324/324、0 fail / 0 skip。设备复验仍 NOT RUN。
+- fix/ei1-source-ref-experiencer-contract HEAD 8ccb8a922a789d8d15157b9d99f9de0c20c8807b，包含 EI-2 设计修订，设计 blob 670e5a34...；本轮核实该提交只修改设计文档，不改变 EI-1 代码。
+- ei/pre-ei2a-review-01 HEAD 4992a313... 含 EI-REPORT-0004/0005，但其设计文件 blob 为旧版 d79bd124...，与 REPORT-0005 声明的设计 blob 670e5a34... 不一致。需统一报告与设计分支，不得让报告引用未包含在同分支的设计版本。
+- EI-2 仍是设计阶段；EI-2A NOT RUN。owner 稳定 ID 仍需负责人最终确认；third_party 会话内临时 ID、confidence 来源区分、legacy dedupe key、effective_end_at 取非空 ended_at/expires_at 最小值等已写入修订设计。不得擅自启动 EI-2A，也不得让 EI 智能体修改 Memory 仓库。
+
+### 74.5 Android 与 Autonomy
+
+- Android 专项文档仍为 ANDROID-REPORT-0004 / v4，报告自身写明 A/B/C/D/F/G/H 对齐、E 的 60 秒观察窗仍 PARTIAL；Autonomy v4-r2 报告已明确采纳 60 秒并宣布 A–H DESIGN ALIGNED。两份专项报告存在同步滞后，应由 Android 智能体更新报告，不由 GPT 代改其专项报告。
+- Android 报告列出的真实设备验证仍 NOT RUN，包括 kill/reboot、目录 watch 长稳、fsync 延迟、ENOSPC、hardlink 降级、Android inbox/outbox/ack 全链路、双 worker 并发、FGS/OEM/force-stop 等。
+- ba-song/dsh-autonomy main 当前 HEAD 6c4a4753b4737060211955b1f022cab2f1d39521，仅有 main 分支。README 与 package.json 明确该插件仍处于离线 dry_run + mock 阶段，tick 自动执行器是 mock/演练；Autonomy v4 恢复协议仍是设计对齐，不等于实现或真机运行。
+- DSH-APP/DSHA 源码仓库本轮不可访问；私有 dsha-selfbuilt-plugins 备份仓库 main 为 11a80c1c...，只有 main 分支，不能替代 Android 宿主源码的最新 HEAD 核验。
+- 真实设备后台恢复、staging、scheduler/executor 启动均未执行；均须按项目授权门禁另行处理。
+
+### 74.6 当前风险清单
+
+1. 最小集成分支测试集混入 M1/P0 v5 能力断言，当前全量测试仍 BLOCKED。
+2. Memory 最小集成与唤醒分支存在 index/schema 双重冲突，且 schema v4/v3 不一致。
+3. A–E 累计分支领先 main 300 commits，直接合并范围过大。
+4. EI 设计报告与设计文件分支不同步。
+5. Android 报告未同步 Autonomy 对 60 秒观察窗的最终确认。
+6. Android/Autonomy 的 v4 真机与运行期验证尚未完成；Autonomy 代码仍 dry_run/mock。
+7. M3 正式召回评估缺人工标签；updateMemory 派生索引一致性尚未形成实施与验证证据。
+8. Home 永久档案缺最新真实 Android 文件系统验收。
+
+### 74.7 GPT 后续执行顺序
+
+1. Memory 最小集成：先逐项核对 4 个失败测试的来源和目标分支范围；在不改变汐实际行为、不升级生产 schema 的前提下收敛测试范围和只读诊断缺口；再交 Memory 智能体对精确新 HEAD 复验全量与 N9。
+2. Memory 唤醒写入：完成与最小集成分支的文件级合并设计、schema 版本兼容方案和负向测试矩阵；在负责人批准前不把自动写入接入运行期。
+3. A–E：保留隔离 PASS；单独制定窄范围集成/主线拆分方案，不直接合并 300 commits。
+4. M1/M3/Home：持续维护未完成清单，优先补齐 M3 标注与 updateMemory 派生一致性证据、Home 真机验收准备；存量 57 条 preference 继续等待逐条授权。
+5. EI：统一 8ccb 设计与 4992 报告分支；准备 EI-1 设备复验材料；EI-2A 等待负责人授权。
+6. Android/Autonomy：请 Android 智能体同步 E=60s 的最终状态；整理后台恢复真机验证计划，待授权后执行。
+7. 每项后续交付必须记录仓库、分支、commit、修改内容、测试证据、未解决问题、DSH 复验及负责人授权状态。
+
+### 74.8 本轮执行声明
+
+- 本轮完成 GitHub 分支、提交、文档和代码静态核查；未修改产品源码、测试或数据库。
+- 本轮未运行 Node 测试；未访问生产 DB；未合并分支；未部署、重启、启动 staging、scheduler 或 executor。
+- 本 HANDOFF-0074 是审计记录，不构成任何生产、运行期或行为变更授权。
