@@ -1,10 +1,10 @@
-# MEMORY-REPORT-0025 · Memory 记忆智能体报告
+# MEMORY-REPORT-0026 · Memory 记忆智能体报告
 
 > 会话：Memory 记忆智能体（Memory 领域专业智能体）
 > 任务标识：v17 `MEM-VALIDITY-BATCH-E-REVERIFY-03` → v18 `MEM-WAKE-CAPTURE-DECISION-01` → **v19 `MEMORY-MINIMAL-INTEGRATION-VERIFY-01`**
 > 覆盖任务：Batch A PASS → Batch B PASS → Batch C PASS → Batch D PASS → **Batch E（weekly）第三次复验**
 > 仓库：`ba-song/dsh-memory-core`｜本文件覆盖式更新、版本号递增
-> 最近更新：2026-11-22 11:1x (Asia/Shanghai) · v25
+> 最近更新：2026-11-22 11:5x (Asia/Shanghai) · v26
 
 ## 版本历史
 
@@ -23,7 +23,8 @@
 | MEMORY-REPORT-0022 | 09:5x | M1 主线只读复核：HEAD `7548e49`；有效性入口不一致；wake 未集成；selfId 哨兵绕过；测试 258/258 |
 | MEMORY-REPORT-0023 | 10:2x | 契约 v1.0 评审：BLOCKED（2.2/3.2/3.3/3.4/4.1 不满足） |
 | MEMORY-REPORT-0024 | 10:4x | 契约设计审查：READY_FOR_REVIEW（valid_from_kind/superseded_at/三态 helper；wake 延后） |
-| MEMORY-REPORT-0025 | 11:1x | **契约交叉问题确认：接受 experiencer_type/id、取消 subject_kind；给出 v6 schema 与迁移补漏；READY_FOR_REVIEW** |
+| MEMORY-REPORT-0025 | 11:1x | 交叉问题确认：接受 experiencer、取消 subject_kind；READY_FOR_REVIEW |
+| MEMORY-REPORT-0026 | 11:5x | **最终设计确认：有证据才回填；v6 迁移矩阵；群实体 ID 已确认；提出 implicit 第四态问题；READY_FOR_REVIEW** |
 
 ---
 
@@ -532,3 +533,45 @@ selfId 降级返回值与格式保证；subject_kind 第三方身份来源；con
 
 ### 16.3 影响面
 Memory 17 文件 + 6 组测试；Persona 4 文件（selfId、v3 置信度列、timeline、事务）。详见提示词 25。
+
+
+---
+
+## 17. 最终设计确认（2026-11-22）
+
+基线：`feat/m1-preference-memory` @ `7548e49ed0b8d8673818464325d8e72ec7704b27`（schema v5，ahead 245）。状态：READY_FOR_REVIEW。
+
+### 17.1 七项确认
+1. **正式取消 subject_kind**，采用 `experiencer_type`/`experiencer_id`（self/owner/third_party/unknown；id 命名空间 self:<uuid>/person:owner/person:<id>/''）。
+2. **迁移严格“有证据才回填”**：仅 `meta.serviceVersion`（addEpisode）或 `meta.origin='autonomy-wake'` 可判 self；`scope_type`/`owner_scope` 是 scope 不是主体证据 → 其余全部 unknown；撤回上一版 owner 启发式。
+3. **群实体 ID 已存在**：`person:contact:qq:group:<gid>`（archive.js:285，gid 来自 groupId/chatId/群_(\d+)）；稳定但无 gid 时为空；群成员个体无稳定 ID（→ unknown）；不支持通配符格式。
+4. **valid_from_kind**：数值>0 → exact；cutover 前 NULL → legacy（无下限）；非数值/≤0/Inf → unknown（UNCERTAIN）；新写入非法值 → 抛错；**新增待决：新写入无 valid_from 应为 `implicit`（从 created_at 起有效），否则普通新记忆会全部 UNCERTAIN**。
+5. **superseded_at 边界**：仅 superseded_by 非空才回填；优先 memory_revisions.changed_at；其次 valid_to 且 ≤cutover；未来 valid_to / 无 valid_to / status 变更但无 superseded_by → 0（UNCERTAIN）。
+6. **raw_meta.speaker_id**：fresh DDL 加列；旧表在 RawArchive 构造器显式 ALTER（失败报错）；旧行 ''（unknown，不猜）；selfid 回填仅精确 'self:unknown'；不计入 schema_version 需注明。
+7. **所有实际注入入口统一 helper**：recall（current/asOf）、preference、remembered、session-index（episode/todo）、handoff、rules、graph 候选/最终、episodeRecent、daily/weekly 候选、p4 邻居预过滤；quotes/anchors/digest 走 raw，不在此列。
+
+### 17.2 v6 迁移矩阵
+| 数据情形 | 结果 | 备注 |
+|---|---|---|
+| valid_from 数值 > 0 | exact | 含数值文本（SQLite 亲和） |
+| cutover 前 valid_from IS NULL | legacy | 含不可恢复坏时间（无法区分），不降级 |
+| valid_from 非数值/≤0/Inf | unknown | UNCERTAIN，排除当前注入 |
+| 新写入无 valid_from | **implicit（建议）** | 从 created_at 起有效；否则新记忆全 UNCERTAIN |
+| 新写入非法 valid_from | 拒绝 | `E_BAD_VALIDITY_TIME`，不落库 |
+| superseded_by 非空 + revisions 证据 | superseded_at=changed_at | 最可信 |
+| superseded_by 非空 + valid_to ≤ cutover | superseded_at=valid_to | 写入点均为 now |
+| superseded_by 非空 + 无/未来 valid_to | 0 | asOf → UNCERTAIN |
+| status superseded/corrected 但 superseded_by 空 | 0 | 无替代目标，不可判 |
+| raw_meta 旧行 | speaker_id='' | unknown，不猜 |
+| raw_meta 新行 | 真实 self:<uuid> 或 ''+pendingIdentity | 显式失败可报 |
+| experiencer 有 service/wake 证据 | self / self:<id> | 仅此两类证据 |
+| 其余 experiencer | unknown | 无启发式 |
+
+### 17.3 未决事项
+1. `implicit` 第四态是否采纳（否则新记忆 UNCERTAIN）。
+2. experiencer 语义最终定义：记忆主体 vs 情绪体验者（影响 owner/third_party 能否回填）。
+3. 群成员个体 ID：是否需 `person:contact:qq:group:<gid>:member:<qq>`。
+4. Persona `selfId()` 严格语义与 `bindingOf` 同源。
+5. confidence_kind/source 与 timeline/事务修复归属。
+6. rules 是否接受 valid_to 作为 supersede 时间代理。
+7. `subject`（TEXT）是否 v7 deprecated。
