@@ -1,10 +1,10 @@
-# MEMORY-REPORT-0024 · Memory 记忆智能体报告
+# MEMORY-REPORT-0025 · Memory 记忆智能体报告
 
 > 会话：Memory 记忆智能体（Memory 领域专业智能体）
 > 任务标识：v17 `MEM-VALIDITY-BATCH-E-REVERIFY-03` → v18 `MEM-WAKE-CAPTURE-DECISION-01` → **v19 `MEMORY-MINIMAL-INTEGRATION-VERIFY-01`**
 > 覆盖任务：Batch A PASS → Batch B PASS → Batch C PASS → Batch D PASS → **Batch E（weekly）第三次复验**
 > 仓库：`ba-song/dsh-memory-core`｜本文件覆盖式更新、版本号递增
-> 最近更新：2026-11-22 10:4x (Asia/Shanghai) · v24
+> 最近更新：2026-11-22 11:1x (Asia/Shanghai) · v25
 
 ## 版本历史
 
@@ -22,7 +22,8 @@
 | MEMORY-REPORT-0021 | 20:0x | 最小集成修复后复验：BLOCKED（v5/M1 断言超出范围） |
 | MEMORY-REPORT-0022 | 09:5x | M1 主线只读复核：HEAD `7548e49`；有效性入口不一致；wake 未集成；selfId 哨兵绕过；测试 258/258 |
 | MEMORY-REPORT-0023 | 10:2x | 契约 v1.0 评审：BLOCKED（2.2/3.2/3.3/3.4/4.1 不满足） |
-| MEMORY-REPORT-0024 | 10:4x | **契约设计审查 `MEMORY-CONTRACT-REVIEW-01`：READY_FOR_REVIEW** —— 给出 valid_from_kind / superseded_at / 三态 helper 的最小设计；wake 建议延后 |
+| MEMORY-REPORT-0024 | 10:4x | 契约设计审查：READY_FOR_REVIEW（valid_from_kind/superseded_at/三态 helper；wake 延后） |
+| MEMORY-REPORT-0025 | 11:1x | **契约交叉问题确认：接受 experiencer_type/id、取消 subject_kind；给出 v6 schema 与迁移补漏；READY_FOR_REVIEW** |
 
 ---
 
@@ -505,3 +506,29 @@ Memory 15 个文件 + 6 组测试；Persona 4 个文件（selfId 语义、confid
 
 ### 15.5 需 Persona 确认
 selfId 降级返回值与格式保证；subject_kind 第三方身份来源；confidence_kind/source 枚举与迁移标记；timeline/原子写修复归属。
+
+
+---
+
+## 16. 契约交叉问题确认（`MEMORY-CONTRACT-REVIEW-01` 续，2026-11-22）
+
+- 基线：`feat/m1-preference-memory` @ `7548e49ed0b8d8673818464325d8e72ec7704b27`（schema v5，ahead 245）。
+- 状态：**READY_FOR_REVIEW**（只读设计确认，未改任何文件）。
+
+### 16.1 六问结论
+1. **接受 experinecer_type/id**（拼写按 GPT：`experiencer_type`/`experiencer_id`）：作为“这段经历属于谁”，与 `speaker_id`（谁说的）严格分离；`subject`（TEXT）保留为显示描述，不承载身份；`owner_scope`/`scope_type` 保持 scope 语义。
+2. **取消 subject_kind**：experiencer_type 已覆盖 self/owner/third_party/unknown，保留 subject_kind 会形成双真相源。
+3. **Persona 需提供**：严格 `selfId()`（有效 `self:<uuid>`，空/哨兵/非法格式显式报错）；确认 `bindingOf(sessionId).persona_id` 与 `selfId()` 同源；接受 Memory 的 `person:owner`/`person:<id>` 命名空间（EI 的 experiencer/target 直接使用，不再自造 ID）；可选 `isOwnerSession(header)`。third_party 映射由 Memory `people.js`/`contacts.js` 负责（Memory service 已暴露 `contactOf`）。
+4. **迁移补漏**：valid_from_kind（坏时间行不可辨、cutover 标记、updateMemory 白名单、legacy asOf 近似边界）；superseded_at（优先取 memory_revisions.changed_at，其次 valid_to≤cutover，未来 valid_to → 0/UNCERTAIN，旧 weekly fallback 必须同版本移除）；fresh raw_meta speaker_id（ALTER 放 RawArchive 构造器而非 schema.js；旧行保持空、不猜；回填失败显式报错；raw_meta 变更不进 schema_version 需注明）。
+5. **统一三态**：episodeRecent（current VALID only）、rules（同一 helper + 表适配，supersede 时间用 valid_to 代理并文档化）、session-index（episode current、todo active/''、decisions 不变）；全部入口共用 helper 与 SQL 预设，矩阵测试断言跨入口一致。
+6. **v6 最小方案**：memories +experiencer_type/+experiencer_id/+valid_from_kind/+superseded_at；索引 idx_mem_experiencer、idx_mem_superseded；raw_meta +speaker_id（fresh/ALTER）；rules 不新增列；SCHEMA_VERSION=6；迁移单事务、version 最后写。
+
+### 16.2 未决问题（需 Persona/负责人）
+- Persona `selfId()` 降级语义与 `bindingOf` 是否等价 self。
+- experiencer 与 EI target 的字段命名/枚举是否需在 EI 契约同步。
+- confidence_kind/source 枚举与迁移标记归属。
+- timeline 列名修复与三表事务化归属（建议 Persona 专项，不混 EI-2A）。
+- `subject`（TEXT）是否在 v7 标记 deprecated。
+
+### 16.3 影响面
+Memory 17 文件 + 6 组测试；Persona 4 文件（selfId、v3 置信度列、timeline、事务）。详见提示词 25。
