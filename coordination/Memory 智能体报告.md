@@ -1,10 +1,10 @@
-# MEMORY-REPORT-0027 · Memory 记忆智能体报告
+# MEMORY-REPORT-0028 · Memory 记忆智能体报告
 
 > 会话：Memory 记忆智能体（Memory 领域专业智能体）
 > 任务标识：v17 `MEM-VALIDITY-BATCH-E-REVERIFY-03` → v18 `MEM-WAKE-CAPTURE-DECISION-01` → **v19 `MEMORY-MINIMAL-INTEGRATION-VERIFY-01`**
 > 覆盖任务：Batch A PASS → Batch B PASS → Batch C PASS → Batch D PASS → **Batch E（weekly）第三次复验**
 > 仓库：`ba-song/dsh-memory-core`｜本文件覆盖式更新、版本号递增
-> 最近更新：2026-11-22 12:1x (Asia/Shanghai) · v27
+> 最近更新：2026-11-22 12:3x (Asia/Shanghai) · v28
 
 ## 版本历史
 
@@ -25,7 +25,8 @@
 | MEMORY-REPORT-0024 | 10:4x | 契约设计审查：READY_FOR_REVIEW（valid_from_kind/superseded_at/三态 helper；wake 延后） |
 | MEMORY-REPORT-0025 | 11:1x | 交叉问题确认：接受 experiencer、取消 subject_kind；READY_FOR_REVIEW |
 | MEMORY-REPORT-0026 | 11:5x | 最终设计确认：v6 迁移矩阵；implicit 第四态；READY_FOR_REVIEW |
-| MEMORY-REPORT-0027 | 12:1x | **契约 v1.1 最终审查：接受作为共同基线（附 5 项修订）；14 项结论表；READY_FOR_REVIEW** |
+| MEMORY-REPORT-0027 | 12:1x | 契约 v1.1 最终审查：ACCEPT_WITH_CHANGES |
+| MEMORY-REPORT-0028 | 12:3x | **契约 v1.1.1 只读审查：BLOCKED（无权威文本）**；C1–C8 逐项、入口矩阵、泄漏证据、迁移回滚实测 |
 
 ---
 
@@ -634,3 +635,18 @@ Memory 17 文件 + 6 组测试；Persona 4 文件（selfId、v3 置信度列、t
 
 ### 18.5 明确回答
 **Memory 接受 v1.1 作为与 Persona 共同遵守的接口基线，条件是采纳 §18.1 的 5 项修订**（4/5/9/12/14）；这些均为契约文本与迁移细节，不构成架构级阻塞。
+
+
+---
+
+## 19. `DSH-MEMORY-CONTRACT-V1.1.1-READONLY-REVIEW`（2026-11-22）
+
+- 基线：`ba-song/dsh-memory-core`，`feat/m1-preference-memory` @ **`7548e49ed0b8d8673818464325d8e72ec7704b27`**（tree `3020e9b7…`，ahead 245）；工作区仅 `?? node_modules`。
+- **v1.1.1 权威文本：未找到**（仓库全文件、coordination、工作区 md、Persona 本地 docs 均无；仅 agent 提示词/报告片段）→ 按任务三.6：**BLOCKED**，不得自拟契约。
+- C1–C8：C1/C6 NOT_IMPLEMENTED；C2/C4/C5/C7 FAILED；C3/C8 PARTIAL。
+- 实测泄漏（临时库）：preference/remembered/session-index/handoff/stable/rules 存在 future 或 superseded_by-only 泄漏；handoff 无时间过滤；episodeRecent 仅 status；P4 邻居 bestMatch 无有效性过滤；merge 接受 future 候选；asOf 历史 ids=[]；`validFrom:'abc'` 静默 NULL 且可被注入。
+- 身份：persona 降级 `selfId()='self:unknown'` → addEpisode 写入该值；`meta` 在 PATCHABLE_COLUMNS（不可作证据）；fresh raw_meta 无 speaker_id；timeline 列名错且静默失败。
+- 迁移：v5 单事务+回滚实测 PASS（快照列校验失败 → version 保持 4、无残留）。
+- 测试：`npm test` @ HEAD **258/258、0 fail、0 skip、exit 0**（140 文件，Node v24.19.0）。
+- 结论：**BLOCKED**（无权威文本）；语义方向 ACCEPT_WITH_CHANGES；当前实现不可合规；不具备进入实施评审条件。
+- 本地交付：`Memory 智能体/28-PROMPT.md`（10,225 B，sha256 `0f762991…`）、`Memory 智能体/28-REPORT.md`（11,682 B，sha256 `86b22546…`）。注：任务要求存为 `12-PROMPT.md`，该文件已存在（第 12 轮），按项目规则不覆盖历史，改存 28 并在报告中说明。
