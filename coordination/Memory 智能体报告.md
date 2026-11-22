@@ -1,10 +1,10 @@
-# MEMORY-REPORT-0021 · Memory 记忆智能体报告
+# MEMORY-REPORT-0022 · Memory 记忆智能体报告
 
 > 会话：Memory 记忆智能体（Memory 领域专业智能体）
 > 任务标识：v17 `MEM-VALIDITY-BATCH-E-REVERIFY-03` → v18 `MEM-WAKE-CAPTURE-DECISION-01` → **v19 `MEMORY-MINIMAL-INTEGRATION-VERIFY-01`**
 > 覆盖任务：Batch A PASS → Batch B PASS → Batch C PASS → Batch D PASS → **Batch E（weekly）第三次复验**
 > 仓库：`ba-song/dsh-memory-core`｜本文件覆盖式更新、版本号递增
-> 最近更新：2026-11-21 20:0x (Asia/Shanghai) · v21
+> 最近更新：2026-11-22 09:5x (Asia/Shanghai) · v22
 
 ## 版本历史
 
@@ -19,7 +19,8 @@
 | MEMORY-REPORT-0018 | 18:2x | 设计决议：自主唤醒回合自动写入（方案 A，待实现） |
 | MEMORY-REPORT-0019 | 18:5x | 最小集成分支首验：BLOCKED（缺 `lib/time/anchor.js`） |
 | MEMORY-REPORT-0020 | 19:3x | 双任务：A BLOCKED（4 项）、B PASS（143/143） |
-| MEMORY-REPORT-0021 | 20:0x | **最小集成修复后复验（HEAD `8d0f3ad`）：5 项修复均在位，但新增测试断言 v5/M1 诊断（本分支无）→ 4 项失败，BLOCKED** |
+| MEMORY-REPORT-0021 | 20:0x | 最小集成修复后复验：BLOCKED（v5/M1 断言超出范围） |
+| MEMORY-REPORT-0022 | 09:5x | **M1 主线只读复核 `MEM-CURRENT-HEAD-READONLY-01`：HEAD `7548e49`（ahead 245）、schema v5；有效性语义 4/5 入口不一致（future preference/remembered 泄漏）；wake-capture 未集成；Persona selfId 哨兵可绕过 addEpisode 门禁；测试 258/258 PASS** |
 
 ---
 
@@ -373,3 +374,38 @@ HEAD:lib/store/validity.js    = 7aabea0efff2b9d5fe40acea19fcc4609f5e87e6
 - N9：owner 与主人私聊均挂 `dy-preference`；非 owner 会话 mount 被跳过（无任何注入）→ owner 门禁有效；hits 过滤在带 scope 的 recall 之后执行，不替代 scope 检查。
 - 缺失测试 25 个：A（必须补）preference-second-round、pending-audit；B（相关可缓）asof-graph-uncertain、conflict-resolve-closure、event-chain、graph-scope-isolation、hits-noise、hits-query、archive-session-id-isolation、archive-tombstone-context；C（其他专题）eval-*、m3-2b-*、m3-ref-derived-sync、permanent-home-archive、raw-*、rules-*。
 - 结论：**BLOCKED**。需 GPT 决定：v5 schema 是否纳入范围（否则改测试断言 v4）；`auto_list` 诊断是否补实现。
+
+
+---
+
+## 13. `MEM-CURRENT-HEAD-READONLY-01`（M1 主线复核，2026-11-22）
+
+### 13.1 基线
+- `feat/m1-preference-memory` HEAD **`7548e49ed0b8d8673818464325d8e72ec7704b27`**，tree `3020e9b7e2ac19ea20486bbce76e2d83ed7b2b7f`；相对 main `752cd08` ahead **245** / behind 0。
+- `feat/memory-validity-minimal-integration` HEAD `a63f994e…`（schema v4）；`feat/memory-wake-capture` HEAD `0fdae98…`（未并入 M1）。
+- 仓库无 AGENTS.md；schema v5 新增 `episode_rewrite_snapshots` + `idx_ers_memory` + `rules` DDL；迁移在单事务内，先校验列/索引再写 version（`db.js:migrateSchema`）。
+
+### 13.2 有效性规则逐入口（合成数据实测）
+- **recall current**：`status='active'` + `valid_from IS NULL OR <=` + `valid_to >` → normal/unknown 进；future/expired/superseded 出（实测 [1,4]）。
+- **recall asOf**：严格 `valid_from IS NOT NULL`（`TEMPORAL_VALID_SQL`）；NULL 起点行只进 uncertain（实测 ids=[]，uncertain=[1,3,4]）。
+- **preference 注入**：`status='active'` + `valid_to>`，**无 valid_from 检查 → 未来生效的长期偏好被注入**（实测泄漏 `喜欢茶 future`）。
+- **remembered**：`status='active'` + `valid_to>`，**无 valid_from 检查 → 未来 relation 泄漏**（实测）。
+- **graph**：lenient 含 NULL 起点、strict 不含；future/expired/superseded 均排除（实测 strict=[]、lenient=[1]）。
+- **全库无 `superseded_by` 谓词**：依赖 status 迁移，若历史数据存在 superseded_by 非空但 status='active' 的行会泄漏。
+
+### 13.3 wake-capture 与 M1 兼容性
+- M1 **完全未包含**：无 `lib/ingest/wake.js`、`archive.js:307` 直接丢弃非 user 来源、无 `sourceKind` 落 extra、schema 无 wake 唯一索引、index.js 无 wakeTurns。
+- 重叠文件：`lib/index.js`、`lib/ingest/archive.js`、`lib/store/schema.js`；新增 `lib/ingest/wake.js` + 两个测试。
+- 迁移风险：M1 schema v5，wake 的 partial unique index 需追加到 DDL 并考虑版本号；archive 需加来源白名单 + `sourceKind`；index 需在既有 `session/event` 钩子内加 turn 追踪。最小安全接入：4 处改动 + 2 个测试，不合并分支、cherry-pick。
+
+### 13.4 Persona identity 边界（mock 实测）
+- persona DB 不可用 → `selfId()` 返回 **`'self:unknown'`**（哨兵，truthy）。
+- Memory `personaSelfId()` 视其为有效 → `addEpisode` **不抛 E_PERSONA_UNAVAILABLE**，写入 `speaker_id='self:unknown'`（实测）。
+- persona 服务整体缺失 → 正确抛 `E_PERSONA_UNAVAILABLE`（实测）。
+- fresh M1 库 `raw_meta` **无 speaker_id 列**（archive DDL/ALTER 均未加）→ `lib/selfid.js` 回填静默失效；老库有列时降级写入 `speaker_id='self:unknown'` 但 **不带 `extra.pendingIdentity`**。
+
+### 13.5 测试
+M1 HEAD 全新 worktree：`npm test` → **258 tests / 258 pass / 0 fail / 0 skip，exit 0**（Node v24.19.0 / npm 11.17.0，140 个测试文件）；`git diff --check` exit 0；仅 `?? node_modules`。
+
+### 13.6 结论
+`MEM-CURRENT-HEAD-READONLY-01`：**READY_FOR_REVIEW**。缺陷：有效性入口不一致（future preference/remembered 泄漏，无 superseded_by 谓词）、wake-capture 未集成、Persona selfId 哨兵可绕过 addEpisode 门禁、fresh 库 raw_meta 缺 speaker_id。生产/设备/部署均 NOT RUN。
