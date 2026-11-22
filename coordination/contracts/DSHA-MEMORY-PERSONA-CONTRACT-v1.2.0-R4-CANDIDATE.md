@@ -562,7 +562,9 @@ Memory 不得伪造 Bridge 未提供的平台原始事实，也不得从 Persona
 - **时间完全未知的记录**：`valid_from_kind='unknown'` 表示无法建立可信时间边界。记录必须保留，但只能进入专门的不确定历史回忆/参考通道，并显式返回不确定性标记；不得进入普通 current-fact 注入，也不得单独支撑重要决策。
 - **legacy**：`valid_from_kind='legacy'` 表示旧记录待按获批规则进行历史近似处理。它既不自动等于 INVALID，也不自动等于当前 VALID；不得仅因 legacy 缺少新字段就删除或整体排除。**在 Owner 对相应数据类别的近似规则明确批准前，legacy 记录一律不得进入任何 current-fact 检索结果、普通注入、current 摘要或 current 合并流程；是否附带标记不改变此禁止。**在此期间只能通过显式 history/历史参考通道读取，并明确标为 legacy/待判定。具体哪些数据类别可按何种时间依据近似，须另行形成迁移设计并经 Owner 批准。
 - **implicit**：仅适用于新记录，且只有在 `created_at` 经校验可信、记录类型允许时才可采用；不得将 implicit 规则追溯套用于旧记录。
-- **current 与 history 隔离**：普通 current-fact 注入必须统一执行有效性与验证状态过滤；`unknown` 不得进入 current。历史通道结果不得被任何普通自动注入入口静默转入 current。历史通道的 API/物理实现仍为 OPEN。
+- **current 与 history 隔离**：普通 current-fact 检索结果、普通注入、current 摘要、handoff 摘要及 current merge 必须统一执行有效性、验证状态、来源、主体、Conversation 范围与权限过滤；`unknown` 不得进入任何 current 输出。历史通道结果不得被任何普通自动入口静默转入 current。
+- 本条适用于所有 current-summary API，包括 Bridge `dyMemory.publicBrief`（群聊近期上下文摘要）与 `dyMemory.handoffBrief`（轮换/交接摘要），以及任何后续等价出口。不得只在最终 prompt 层过滤；摘要缓存、handoff payload、下游 merge 也必须在入口处过滤。
+- History 结果只能由 Memory 显式 history/历史参考接口返回，必须保留 typed channel 与不确定性标记。current injector/summary/merge 收到 history payload 时必须明确拒绝，不得静默丢弃标记或转换为 current。建议错误码 `E_HISTORY_CHANNEL_MISUSE`（名称 PROPOSAL，拒绝语义为合同要求）；历史通道 API/物理实现仍为 OPEN。
 - **证据状态独立处理**：`unverified`、`supported`、`confirmed`、`disputed`、`retracted` 与时间类型是不同维度。历史近似或时间未知不能自动提升验证状态；`retracted` 不得普通注入，`disputed` 不得静默选边。
 - **禁止伪造**：来源、时间、身份或证据缺失时继续保持 unknown；不得为填充新字段而推测或编造。
 
@@ -658,6 +660,8 @@ Memory 不得伪造 Bridge 未提供的平台原始事实，也不得从 Persona
 - 旧 `legacy_unmapped` 会话/消息不得进入新规范 `conversation_id` 的当前上下文；旧/新同群或同私聊必须隔离。
 - Memory `legacy` / `unknown` 历史记录不得进入普通 current-fact 注入；只有显式历史参考查询可返回，并保留时间/验证不确定标记。
 - Bridge 的 `buildSessionContext`、group fallback、digest 与 handover 不得消费其他 conversation 或 Memory 历史参考通道内容。
+- 对 `dyMemory.publicBrief` 与 `dyMemory.handoffBrief` 分别放入 legacy、unknown、history-channel、跨 Conversation 哨兵及无授权 Owner todo/decision fixture；current-summary 输出命中数必须为 0。
+- 验证摘要缓存、handoff payload 与下游 merge 在最终注入前已拒绝 legacy/unknown/history；不得只断言最终 prompt 没有这些内容。
 - 缺失/非法平台 `event_time` 必须保持 null/unknown；不得等于 `received_at` 或由当前时间补齐。
 - 缺失 sender ID 时 `external_speaker_id=null`；不得以群名、昵称或群实体替代。
 - 旧 numeric confidence 原值必须保持不变，不得映射为新 `confidence_level`。
@@ -832,10 +836,6 @@ Memory 不得伪造 Bridge 未提供的平台原始事实，也不得从 Persona
 在 Owner 审阅前，本文件保持 CANDIDATE。提交正式审阅前至少确认：
 
 1. 五项 Owner 决策逐字/逐义一致，无被弱化或重解释。
-13. `publicBrief` / `handoffBrief` 等 current-summary API 不得成为 legacy/unknown 或跨 Conversation 内容的旁路。
-14. `created_at`、`received_at`、`event_time` 语义严格区分；不得以写入/接收时间伪造事件时间。
-15. 未获批准的 numeric confidence 写入、PATCH 与 merge 加分均被禁止；nullable Schema 变更仍需单独授权。
-16. Persona 历史情绪的 unknown-time 标记、current state 隔离与 Owner consent 生命周期均有明确负向验收。
 2. 三层关系只有各自唯一写入方，不存在共享写入。
 3. Conversation ID 格式、account_id 必填和 fail-closed 行为一致。
 4. Runtime Session ID 权威生成方为 Host/DSH。
@@ -847,6 +847,10 @@ Memory 不得伪造 Bridge 未提供的平台原始事实，也不得从 Persona
 10. P0 顺序严格遵循 D5。
 11. 未决物理 schema/实现方案明确标记 PROPOSAL/OPEN。
 12. 无任何实施、迁移、部署或生产授权暗示。
+13. `publicBrief` / `handoffBrief` 等 current-summary API 不得成为 legacy/unknown 或跨 Conversation 内容的旁路。
+14. `created_at`、`received_at`、`event_time` 语义严格区分；不得以写入/接收时间伪造事件时间。
+15. 未获批准的 numeric confidence 写入、PATCH 与 merge 加分均被禁止；nullable Schema 变更仍需单独授权。
+16. Persona 历史情绪的 unknown-time 标记、current state 隔离与 Owner consent 生命周期均有明确负向验收。
 
 Owner 可对本候选稿提出修改。只有 Owner 明确确认后，才能将其升级为正式合同版本或冻结；即便合同获批，代码实施仍需单独授权。
 
