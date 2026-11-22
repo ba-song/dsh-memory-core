@@ -24,7 +24,7 @@ const ext=handoffBrief(db,{cwd:'/root/qq-agent/QQ会话/私聊_123',isOwner:fals
 assert.ok(!ext.text.includes('项目')&&!ext.text.includes('SQLite'))
 assert.ok(!ext.text.includes('最后没回'),'已回不算')
 // 空、无 header、截断
-assert.equal(handoffBrief(db,{cwd:WS+'/项目A',isOwner:true,recent:[]}).text.includes(rp.name),true)
+assert.equal(handoffBrief(db,{cwd:WS+'/项目A',isOwner:true,recent:[]}).text,'','空 recent 不得回退注入 Owner 全局项目/决策/待办')
 const noHeader=handoffBrief(db,{cwd:'/unknown',recent:[]}); assert.equal(noHeader.text,'')
 const long=handoffBrief(db,{cwd:WS+'/项目A',isOwner:true,recent:Array.from({length:50},(_,i)=>({role:'user',text:'很长的一句话'.repeat(20)+i})),maxChars:200})
 assert.ok(long.text.length<=200,'截断')
