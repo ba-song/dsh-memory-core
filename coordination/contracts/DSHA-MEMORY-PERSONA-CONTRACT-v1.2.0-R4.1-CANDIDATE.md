@@ -1145,3 +1145,18 @@ Bridge 的 publicBrief/handoffBrief 结果、handover cache、rotation seed、gr
 8. 审阅 B.3 出口清单及逐项分类流程。
 
 Owner 对本候选稿的确认只批准合同原则，不自动批准任何代码、测试、Schema、数据库、迁移、部署、Owner 绑定或真实渠道操作。R4.1 在 Owner 明确确认前保持 **CANDIDATE / NOT FROZEN**。
+
+## R4.1-H. Owner 决策记录
+
+### OD-R4.1-01 — REQUIRED 逻辑约束作为下一阶段协调基线
+
+- 决策状态：**APPROVED**
+- 决策日期：2026-11-22
+- Owner 决策：同意将 R4.1 中明确标记为 REQUIRED 的逻辑约束，作为下一阶段架构协调与技术仲裁基线。
+- 保留条件：
+  - 所有 PROPOSAL 与 OPEN 项继续保持待定，不因本次同意自动升级为批准决定；
+  - 本次同意不冻结 R4.1，不代表合同整体 PASS；
+  - 本次同意不授权源码、测试行为、Schema、数据库、迁移、回填、部署、生产配置、Owner 身份绑定或真实渠道操作；
+  - 任何可能改变汐实际状态或行为的实施，仍须另行取得 Owner 明确授权。
+- 执行解释：架构协调者可在既有 Owner 固定决策及本次批准的 REQUIRED 逻辑约束范围内，自主完成只读审查、跨模块冲突仲裁和文档整理；遇到必须由 Owner 决定的 OPEN/PROPOSAL，不得自行推定。
+
