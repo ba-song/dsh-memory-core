@@ -374,14 +374,6 @@ Bridge 不得自行生成 canonical `speaker_id`、`experiencer_id` 或 Owner �
 - 可保留群级消息事实，但不得把它归给群主、Owner、汐或任一具体成员。
 - 转发者、原作者和当前发言者必须分开；平台未提供的字段保持 unknown。
 
-### 5.6 Bridge 与 Memory 的写入边界（补充约束）
-
-- Channel Bridge 可以维护自身的渠道事件、投递状态、会话内临时上下文或受控原文引用；这些不等于它可以直接写入 Memory 所拥有的记忆记录。
-- 任何需要进入 Memory 记忆库的消息、群聊 turn、transcript、digest 或 handover 内容，都必须通过 Memory 提供的受控 ingestion/interface 进入；Bridge 不得绕过接口直接写 Memory 数据表或代替 Memory 决定 speaker、experiencer、证据和有效性字段。
-- Bridge 可以生成仅供自身会话运行使用的临时摘要；若摘要要成为长期记忆或被跨会话检索/注入，必须经过 Memory 的来源、主体、有效性和权限校验。
-- 群聊 transcript/turn 必须保留 group_id 与可得的 external_speaker_id；缺失成员 ID 时保持 unknown，不得以昵称或群名补齐。
-- 上述规则不改变 D1 的三层唯一写入责任，也不授权改动现有代码。
-
 ### 5.5 Memory 的唯一写入责任
 
 关系 3 的唯一写入方为 Memory：
@@ -393,6 +385,14 @@ Bridge 不得自行生成 canonical `speaker_id`、`experiencer_id` 或 Owner �
 - 记忆有效性、冲突、撤回和审计。
 
 Memory 不得伪造 Bridge 未提供的平台原始事实，也不得从 Persona 的 Session Self binding 推断每条消息的 speaker 或 experiencer。
+
+### 5.6 Bridge 与 Memory 的写入边界（补充约束）
+
+- Channel Bridge 可以维护自身的渠道事件、投递状态、会话内临时上下文或受控原文引用；这些不等于它可以直接写入 Memory 所拥有的记忆记录。
+- 任何需要进入 Memory 记忆库的消息、群聊 turn、transcript、digest 或 handover 内容，都必须通过 Memory 提供的受控 ingestion/interface 进入；Bridge 不得绕过接口直接写 Memory 数据表或代替 Memory 决定 speaker、experiencer、证据和有效性字段。
+- Bridge 可以生成仅供自身会话运行使用的临时摘要；若摘要要成为长期记忆或被跨会话检索/注入，必须经过 Memory 的来源、主体、有效性和权限校验。
+- 群聊 transcript/turn 必须保留 group_id 与可得的 external_speaker_id；缺失成员 ID 时保持 unknown，不得以昵称或群名补齐。
+- 上述规则不改变 D1 的三层唯一写入责任，也不授权改动现有代码。
 
 ---
 
