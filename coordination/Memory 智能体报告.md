@@ -1,10 +1,10 @@
-# MEMORY-REPORT-0026 · Memory 记忆智能体报告
+# MEMORY-REPORT-0027 · Memory 记忆智能体报告
 
 > 会话：Memory 记忆智能体（Memory 领域专业智能体）
 > 任务标识：v17 `MEM-VALIDITY-BATCH-E-REVERIFY-03` → v18 `MEM-WAKE-CAPTURE-DECISION-01` → **v19 `MEMORY-MINIMAL-INTEGRATION-VERIFY-01`**
 > 覆盖任务：Batch A PASS → Batch B PASS → Batch C PASS → Batch D PASS → **Batch E（weekly）第三次复验**
 > 仓库：`ba-song/dsh-memory-core`｜本文件覆盖式更新、版本号递增
-> 最近更新：2026-11-22 11:5x (Asia/Shanghai) · v26
+> 最近更新：2026-11-22 12:1x (Asia/Shanghai) · v27
 
 ## 版本历史
 
@@ -24,7 +24,8 @@
 | MEMORY-REPORT-0023 | 10:2x | 契约 v1.0 评审：BLOCKED（2.2/3.2/3.3/3.4/4.1 不满足） |
 | MEMORY-REPORT-0024 | 10:4x | 契约设计审查：READY_FOR_REVIEW（valid_from_kind/superseded_at/三态 helper；wake 延后） |
 | MEMORY-REPORT-0025 | 11:1x | 交叉问题确认：接受 experiencer、取消 subject_kind；READY_FOR_REVIEW |
-| MEMORY-REPORT-0026 | 11:5x | **最终设计确认：有证据才回填；v6 迁移矩阵；群实体 ID 已确认；提出 implicit 第四态问题；READY_FOR_REVIEW** |
+| MEMORY-REPORT-0026 | 11:5x | 最终设计确认：v6 迁移矩阵；implicit 第四态；READY_FOR_REVIEW |
+| MEMORY-REPORT-0027 | 12:1x | **契约 v1.1 最终审查：接受作为共同基线（附 5 项修订）；14 项结论表；READY_FOR_REVIEW** |
 
 ---
 
@@ -575,3 +576,61 @@ Memory 17 文件 + 6 组测试；Persona 4 文件（selfId、v3 置信度列、t
 5. confidence_kind/source 与 timeline/事务修复归属。
 6. rules 是否接受 valid_to 作为 supersede 时间代理。
 7. `subject`（TEXT）是否 v7 deprecated。
+
+
+---
+
+## 18. 契约 v1.1 最终审查（2026-11-22，只读）
+
+- 依据：MEMORY-REPORT-0026 §17、Persona 契约 v1.1 条目、Memory M1 代码。
+- 基线：`feat/m1-preference-memory` @ `7548e49ed0b8d8673818464325d8e72ec7704b27`（schema v5，ahead 245）。
+- 结论：**接受 v1.1 作为共同基线，附 5 项修订**；状态 READY_FOR_REVIEW（设计审查，不是代码 PASS）。
+
+### 18.1 14 项结论
+1 ACCEPT（取消 subject_kind，采用 experiencer_type/id）。
+2 ACCEPT（speaker_id 与 experiencer_* 严格分离；写入路径映射表见下）。
+3 ACCEPT_WITH_CHANGES（subject 仅展示；禁止用于身份过滤；v7 标 deprecated）。
+4 ACCEPT_WITH_CHANGES（meta.serviceVersion/origin 可被 updateMemory metaPatch 改写 → 非防篡改；建议专用 `experiencer_evidence` 列，不加入 PATCHABLE_COLUMNS）。
+5 ACCEPT_WITH_CHANGES（`person:contact:qq:group:<gid>` 为群实体；建议新增 `group` 类型或明确前缀规则；成员个体无稳定 ID → unknown）。
+6 ACCEPT（exact/implicit/legacy/unknown 四态）。
+7 ACCEPT（无 valid_from → 合法 created_at 为 implicit 起点；created_at 非法 → unknown；asOf 以 created_at 为下限）。
+8 ACCEPT（validFrom/validTo/updateMemory 均拒绝非法值；调用方记录 drop，不打断回合）。
+9 ACCEPT_WITH_CHANGES（历史 NULL 与被清洗的非法时间**无法完全区分**；legacy 必须定义为“以 created_at 为下限的近似”而非无下限，并带 approximated 标记与 cutover 审计计数，否则该条不可实现）。
+10 ACCEPT_WITH_CHANGES（回填优先级：revisions.changed_at > valid_to≤cutover > 0；0 在所有入口→UNCERTAIN；status 不得代替时间证据）。
+11 ACCEPT_WITH_CHANGES（rules 的 valid_to 代理必须显式标注为过渡；superseded_by 非空但 valid_to 空 → UNCERTAIN）。
+12 ACCEPT_WITH_CHANGES（统一 helper；入口清单见 §18.2；rules 需表适配；event-chain 在 M1 中 N/A）。
+13 ACCEPT（注入只接受 VALID；UNCERTAIN 仅显式 uncertain 通道/管理视图，不得当可靠记忆）。
+14 ACCEPT_WITH_CHANGES（raw_meta ALTER 为条件迁移；建议 meta 记 `raw_meta.schema=1`；失败显式 log.error 且身份写作 fail-closed）。
+
+### 18.2 入口与泄漏点
+| 入口 | 现状 | 风险 |
+|---|---|---|
+| p4 邻居 `lib/ingest/p4.js:93` | bestMatch 未按有效性过滤 | 合并进 superseded/expired 行 |
+| merge `lib/pref/merge.js:105/116` | 候选仅查 valid_to；旧行无 valid_from | 未来偏好参与合并 |
+| weekly `lib/consolidate/weekly.js:72` | status+创建窗 | future 进入聚类 |
+| daily `lib/consolidate/daily.js:126` | status+创建窗 | future 进入去重候选 |
+| handoff todo `lib/handoff/brief.js:28` | 无 valid_from/valid_to | future/expired todo 注入 |
+| session-index `lib/inject/session-index.js:40/67` | 无 valid_from | future episode/todo 注入 |
+| episodeRecent `lib/service.js:271` | 仅 status | expired/future 返回 |
+| rules `lib/inject/rules.js:101` | 仅 status | superseded_by 非空泄漏 |
+| stable group `lib/inject/stable.js:204` | 仅 status | group 记忆泄漏过期/未来 |
+| graph strict `lib/store/graph.js:51` | strict 排除 NULL 起点 | asOf 历史丢失（需 legacy/implicit） |
+| graph unknownHop `lib/store/graph.js:73` | unknown 跳可进结果 | 可被当事实注入（应仅 uncertain） |
+| recall current `lib/recall/recall.js:71` | NULL 视为有效 | v6 后 legacy 收敛为 created_at 下限 |
+
+### 18.3 v6 迁移与回滚
+- `migrateSchema` 单事务：ALTER memories×4 → 索引 → 回填（exact/implicit/legacy/unknown、superseded_at、experiencer 证据）→ 校验 → version 最后写；失败 ROLLBACK（沿用现有模式）。
+- raw_meta：db.js 迁移中**仅当表已存在**时 ALTER；不存在则由 RawArchive 构造器按新 DDL 创建并幂等 ALTER；meta 写 `raw_meta.schema=1` 作为可观测标记。
+- 回滚要求：任一校验失败 → version 保持 5、无新列残留；需覆盖 fresh/v5→v6/v4→v6/partial/坏行/中途失败 6 类测试。
+
+### 18.4 未决问题
+1. experiencer 证据列（专用、不可 patch）— GPT/负责人。
+2. group 是否独立类型 — 契约方。
+3. legacy 的“created_at 下限近似”文本 — 契约方。
+4. raw_meta schema 标记与失败语义 — GPT。
+5. rules 过渡期限 — GPT。
+6. Persona selfId/bindingOf/confidence/timeline — Persona 负责人。
+7. subject v7 deprecated — 负责人。
+
+### 18.5 明确回答
+**Memory 接受 v1.1 作为与 Persona 共同遵守的接口基线，条件是采纳 §18.1 的 5 项修订**（4/5/9/12/14）；这些均为契约文本与迁移细节，不构成架构级阻塞。
