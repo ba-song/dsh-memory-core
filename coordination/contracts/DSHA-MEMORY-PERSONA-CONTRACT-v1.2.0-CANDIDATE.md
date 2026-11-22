@@ -462,6 +462,13 @@ Memory 不得伪造 Bridge 未提供的平台原始事实，也不得从 Persona
 
 三者不得互相自动推导，不得合并成一个数值或单一枚举。
 
+**新记录默认值（Owner 已批准）：**
+- 新写入的 Memory 记录，若没有足以支持明确把握度的独立证据与获批判断规则，必须设置 `confidence_level='unknown'`。
+- 新记录的 numeric `confidence` 默认必须为 `NULL`；不得以 `1.0`、`0` 或其他数值伪装未知把握度。若未来确需写入 numeric confidence，必须先有明确、可审计的语义、校准规则及单独批准。
+- 旧记录已有 numeric confidence 必须原值保留，不回填、不重算、不映射为 `confidence_level`；旧值的存在不代表已校准概率或新的等级判断。
+- `confidence_level='unknown'` 与 numeric `confidence=NULL` 表示信息不足，不等于低置信度，也不得被调用方转换为默认高置信度。
+- 上述规则是数据语义合同，不授权修改现有 Schema/代码/数据库或执行迁移。
+
 ### 7.2 证据解释边界
 
 - `direct_statement` 可证明当事人表达过某内容，但不自动证明其陈述中的所有客观事实。
@@ -533,7 +540,7 @@ Memory 不得伪造 Bridge 未提供的平台原始事实，也不得从 Persona
 - **旧记忆整体保留**：不得因缺少新字段、时间不明或尚未完成迁移而批量删除、整体排除或统一降级旧记忆。原始文本及已有 numeric confidence 原值必须保留，不得把旧 numeric confidence 直接映射成新的 `confidence_level`。
 - **历史近似记录**：旧记录具有一定历史参考价值、但时间精度不足时，可进入带有“历史近似/时间不确定”明确标记的 Memory 历史回忆与参考通道。该标记不等于 `confirmed`，也不代表记录仍是当前事实；不得仅凭此类记录作出重要决策。
 - **时间完全未知的记录**：`valid_from_kind='unknown'` 表示无法建立可信时间边界。记录必须保留，但只能进入专门的不确定历史回忆/参考通道，并显式返回不确定性标记；不得进入普通 current-fact 注入，也不得单独支撑重要决策。
-- **legacy**：`valid_from_kind='legacy'` 表示旧记录待按获批规则进行历史近似处理。它既不自动等于 INVALID，也不自动等于当前 VALID；不得仅因 legacy 缺少新字段就删除或整体排除。未完成逐类近似规则审查前，不得将其无标记地作为当前事实注入；可在历史回忆/参考通道中明确标为 legacy/待判定。具体哪些数据类别可按何种时间依据近似，须另行形成迁移设计。
+- **legacy**：`valid_from_kind='legacy'` 表示旧记录待按获批规则进行历史近似处理。它既不自动等于 INVALID，也不自动等于当前 VALID；不得仅因 legacy 缺少新字段就删除或整体排除。**在 Owner 对相应数据类别的近似规则明确批准前，legacy 记录一律不得进入任何 current-fact 检索结果、普通注入、current 摘要或 current 合并流程；是否附带标记不改变此禁止。**在此期间只能通过显式 history/历史参考通道读取，并明确标为 legacy/待判定。具体哪些数据类别可按何种时间依据近似，须另行形成迁移设计并经 Owner 批准。
 - **implicit**：仅适用于新记录，且只有在 `created_at` 经校验可信、记录类型允许时才可采用；不得将 implicit 规则追溯套用于旧记录。
 - **current 与 history 隔离**：普通 current-fact 注入必须统一执行有效性与验证状态过滤；`unknown` 不得进入 current。历史通道结果不得被任何普通自动注入入口静默转入 current。历史通道的 API/物理实现仍为 OPEN。
 - **证据状态独立处理**：`unverified`、`supported`、`confirmed`、`disputed`、`retracted` 与时间类型是不同维度。历史近似或时间未知不能自动提升验证状态；`retracted` 不得普通注入，`disputed` 不得静默选边。
@@ -673,10 +680,11 @@ Memory 不得伪造 Bridge 未提供的平台原始事实，也不得从 Persona
 最低验收：
 
 - 使用统一 VALID/INVALID/UNCERTAIN 语义。
-- 所有实际注入、检索、摘要、合并和决策入口一致。
-- 覆盖 preference、remembered、session-index、handoff、episodeRecent、rules、stable、graph、merge、P4 neighbors、daily/weekly 等适用入口。
-- 对 as-of 查询和被替代记录有明确测试。
-- 缺失时间不能默认解释为永远有效。
+- 所有实际注入、检索、摘要、合并和决策入口一致；必须逐入口断言 `legacy` 与 `unknown` 不进入 current。
+- 覆盖 preference、remembered、session-index、handoff、episodeRecent、rules、stable、graph、merge、P4 neighbors、daily/weekly 等适用入口；不得仅以单一 recall 测试代替入口矩阵。
+- history 通道只能由显式历史参考调用访问；history 结果必须保留通道类型和不确定性标记，普通 current 注入不得静默接收或转换 history 结果。
+- 对 as-of 查询、被替代记录、current 摘要、daily/weekly 摘要及 merge 路径有明确正向/负向测试。
+- 缺失时间不能默认解释为永远有效；不得以 `received_at` 或写入时间绕过有效时间缺失。
 
 ### P0-5：重复证据与 confidence
 
@@ -687,6 +695,8 @@ Memory 不得伪造 Bridge 未提供的平台原始事实，也不得从 Persona
 - 同一 source 的副本、重复读取、引用、摘要不增加 evidence count 或 confidence。
 - 只有新增、可追溯、相对独立证据才允许改变验证状态/把握度。
 - 原 numeric confidence 保留；新旧模型不可无依据混算。
+- 新记录默认 `confidence_level='unknown'` 且 numeric `confidence=NULL`；不得由 Schema/写入层静默默认成 `1.0`、`0` 或其他数值。
+- 测试覆盖新记录默认值、显式未知值、旧 numeric 原值保留、NULL 与旧数值并存，以及重复来源不提升 confidence 的情形。
 - 冲突证据保留并可审计。
 
 ### P0-6：Persona 时间线与事务完整性
