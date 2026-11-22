@@ -12,7 +12,7 @@
 
 ## 0. 一句话结论
 
-Channel Bridge 当前已经有事实上的稳定会话 key（`group:<gid>` / `private:<qq>`）和 `channel_sessions` 映射，能够跨运行时 session 复用同一私聊/群聊房间；但它没有把这套身份作为标准 `conversation_id` 输出给 Memory/Persona，投递体丢失了 `external_message_id`、`speaker_id`、`conversation_id`、`session_id`、`identity_evidence`，并且存在新会话上下文、群上下文兜底、群全文归档三条跨会话/跨群混合路径。当前实现不能支撑契约 v1.1.1 的会话层与证据层要求。
+Channel Bridge 当前已经有事实上的稳定会话 key（`group:<gid>` / `private:<qq>`）和 `channel_sessions` 映射，能够跨运行时 session 复用同一私聊/群聊房间；但它没有把这套身份作为标准 `conversation_id` 输出给 Memory/Persona，投递体丢失了 `external_message_id`、`speaker_id`、`conversation_id`、`session_id`、`identity_evidence`，并且存在新会话上下文、群上下文兜底、群全文归档、交接卡四条跨会话/跨群混合路径。当前实现不能支撑契约 v1.1.1 的会话层与证据层要求。
 
 ---
 
@@ -160,13 +160,27 @@ Channel Bridge 当前已经有事实上的稳定会话 key（`group:<gid>` / `pr
 
 | 路径 | 代码事实 | 探针/影响 |
 |---|---|---|
-| 新会话上下文 | `buildSessionContext` 调 `store.recentInboundAsc({channel,limit})`，SQL 只按 `channel` + `direction='in'`，没有 contact/kind/conversation 过滤；`router` 的 `contextBuilder` 不接收当前 `parsed`。见 `lib/context.js:8-48`、`lib/store.js:330-339`、`lib/index.js:263`。 | 临时内存库写入私聊 A、私聊 B、群 C 各一条，输出三条全部注入新会话。P0。 |
-| 群上下文兜底 | `getGroupContext` fallback 用 `recentInboundAsc({channel:'qq'})`，仅 `filter(kind==='group')`，没有 `groupId`；见 `lib/index.js:304-310`、`lib/group-followup.js:146-159`。 | 群 A + 群 B 两条，fallback 同时输出。P1/P0 视触发频率。 |
-| 群全文归档 | `groupDigest.save` → `dyMemory.saveGroupTranscript`；`saveGroupTranscript` 用共享 `GROUP_CWD=/sdcard/DSHA/渠道/qq-群`，`source` 无 `groupId`/`speakerId`；`personOfUser` 返回空 `person_id`；`dy_memory_group_archive` 按 `cwd=GROUP_CWD` + `raw_text LIKE %gid%` 查询，正文不含群号。见 `lib/group-digest.js:61-88`、Memory `lib/group/digest.js:2`、`lib/service.js:550-575`、`lib/ingest/archive.js:243-267`、Memory `lib/index.js:686-696`。 | `personOfUser` 探针：无 groupId → `''`；有 groupId → 群实体 ID。按群查询通常找不到；不传 groupId 会跨群返回。P0。 |
+| 新会话上下文 | `buildSessionContext` 调 `store.recentInboundAsc({channel,limit})`，SQL 只按 `channel` + `direction='in'`，没有 contact/kind/conversation 过滤；`router` 的 `contextBuilder` 不接收当前 `parsed`。见 `lib/context.js:8-36`、`lib/store.js:330-339`、`lib/index.js:263`。 | 临时内存库写入私聊 A、私聊 B、群 C 各一条，输出三条全部注入新会话。P0。 |
+| 群上下文兜底 | `getGroupContext` fallback 用 `recentInboundAsc({channel:'qq'})`，仅 `filter(kind==='group')`，没有 `groupId`；见 `lib/index.js:287-290`、`lib/group-followup.js:146-159`。 | 群 A + 群 B 两条，fallback 同时输出。P1/P0 视触发频率。 |
+| 群全文归档 | `groupDigest.save` → `dyMemory.saveGroupTranscript`；`saveGroupTranscript` 用共享 `GROUP_CWD=/sdcard/DSHA/渠道/qq-群`，`source` 无 `groupId`/`speakerId`；`personOfUser` 在未配 `ownerQQ` 时返回空，已配 `ownerQQ` 时因 `/渠道/qq` 兜底返回 `person:owner`；`dy_memory_group_archive` 按 `cwd=GROUP_CWD` + `raw_text LIKE %gid%` 查询，正文不含群号。见 `lib/group-digest.js:61-88`、Memory `lib/group/digest.js:2`、`lib/service.js:550-575`、`lib/ingest/archive.js:271-295`、Memory `lib/index.js:776-792`。 | 探针：无 groupId/无 ownerQQ → `''`；有 groupId → 群实体 ID；有 ownerQQ → `person:owner`。按群查询通常找不到；不传 groupId 会跨群返回。P0。 |
 | owner unified | `shouldRouteToHome` 对 `ownerIds` 全部返回 true；所有 owner QQ 私聊进同一个 home。见 `lib/unified.js:12-20`。 | 当前生产只配置一个 owner，未实际发生；多 owner 会共享 home。P2/P1 设计风险。 |
 | Memory 跨渠道 digest | Memory 报告指出 `buildDigest` 合入 home + 全部 QQ 私聊 + 群 + email，owner 会话注入；本报告不替 Memory 结论，但把它列为 P0-B 的跨模块路径。 | 见 Memory R2 §6/§11；需 Memory 修复。 |
 
-#### 3.3.2 当前 `channel_events`/`channel_sessions` 能提供的隔离基础
+#### 3.3.2 本轮补充发现（Channel Bridge 侧新增证据）
+
+| # | 事实 | 位置 | 影响/严重度 |
+|---|---|---|---|
+| N-1 | `keyFor` 的 ID 处理是**剥字符**而非拒绝：`private:'12a34'` → `private:1234`，与真正的 `1234` 碰撞 | `lib/sessions.js:122`；探针输出 | P1：不同外部 ID 可合并进同一会话 |
+| N-2 | `clearHandoff` 调用传 `p.kind`（`group`/`private`），表里存的是 `group:<gid>`/`private:<qq>` → 对新式行永不清理 | `lib/router.js:141`；`lib/store.js:406-410`；探针：`clearHandoff(kind=group)` 后 `handoff_text` 仍为「交接卡正文」 | P1：交接卡重复注入；DB 残留 |
+| N-3 | `status` 用 `getSession('qq','private'/'group')` 取会话，新式行永远 `null` | `lib/status.js:96-97`；探针：`getSession('qq','private')=null`、`getSession('qq','group')=null` | P2：诊断状态失真 |
+| N-4 | 交接卡数据源 `listInboundSince({channel})` 按渠道全量取入站，无 contact/kind/conversation 过滤；`formatHandover` 把所有 user 行标成「主人」 | `lib/handover.js:186-196,143-152`；`lib/store.js:293-305` | **P0**：owner home 首次交接会把第三方私聊/群成员消息混入并标成主人 |
+| N-5 | notice 被转成一条 message：`senderId=n.userId`、`senderName=n.userId`（QQ 号当名字）、`messageId=''`、正文 `[系统]…`；`operatorId` 未传，撤回类 actor/operator 不区分；`parsed.notice=true` 不在投递 source | `lib/index.js:398-447`；`lib/notice.js:78-135` | P1：系统事件 speaker/actor 失真，下游无法区分通知与普通消息 |
+| N-6 | `channel_events` 无 `account_id` 列；`session_id` 只在投递成功后按 `message_id` 回填，排队/失败时长期为空 | `lib/store.js:25-38,230-242`；`lib/router.js:178-180` | P1：多账号无法隔离；未投递消息没有 session 映射 |
+| N-7 | Memory 群全文归档用昵称正则 `/汐|自己/` 判定 self；昵称含「汐/自己」的群友会被归档成 self | Memory `lib/service.js:566` | P1：群成员原话被误标 self（跨模块，供 Memory 修复） |
+| N-8 | Memory `personOfUser` 在 `ownerQQ` 已配时，对共享 `GROUP_CWD` 命中 `/渠道/qq` 兜底，返回 `person:owner`；未配时返回空 | Memory `lib/ingest/archive.js:271-295`；探针：未配 `''`、已配 `person:owner` | **P0**：群原话可能被归给主人；需 Memory 修复 |
+
+
+#### 3.3.3 当前 `channel_events`/`channel_sessions` 能提供的隔离基础
 
 - `channel_events` 有 `channel/kind/contact/sender_id/direction/text/message_id/session_id`，但查询接口 `recentInboundAsc` 只按 channel；
 - `channel_sessions` 有 `(channel, kind) -> session_id/prev_session_id`，但 `contextBuilder`、`groupContext` fallback、group archive 都没有使用这个 key；
@@ -174,7 +188,7 @@ Channel Bridge 当前已经有事实上的稳定会话 key（`group:<gid>` / `pr
 - `groupDigest` 的 `groupId` 进入函数，但写入 Memory 时没有作为 `source.groupId` 传递；
 - `channel_events.session_id` 只在投递成功后按 message_id 回填；它没有进入投递体，也没有被用于上下文过滤。
 
-#### 3.3.3 A. 原始会话隔离方案（PROPOSAL）
+#### 3.3.4 A. 原始会话隔离方案（PROPOSAL）
 
 1. 每条原始消息写入 `channel_events` 时强制带 `conversation_id`、`chat_type`、`group_id`、`speaker_id`、`message_id`、`runtime_session_id`；
 2. `contextBuilder` 改为 `buildSessionContext({conversationId, kind, limit})`，SQL 必须 `WHERE channel=? AND conversation_id=? AND kind=?`；无 `conversation_id` 返回空，不按 channel 兜底；
@@ -183,7 +197,7 @@ Channel Bridge 当前已经有事实上的稳定会话 key（`group:<gid>` / `pr
 5. owner/home 如果继续共享 runtime session，必须把 home 的上下文按 `conversation_id` 分区；没有分区就不允许把其他私聊原文注入 home；
 6. 旧式 `group`/`private` 行标记 legacy，不参与新上下文；不自动迁移/合并。
 
-#### 3.3.4 B. 跨会话长期记忆检索方案（PROPOSAL）
+#### 3.3.5 B. 跨会话长期记忆检索方案（PROPOSAL）
 
 - 由 Memory 负责：按 `subject/experiencer/validity/authorization` 检索长期记忆；
 - 检索结果必须带 `conversation_id`、`source_message_id`、`evidence`、`visibility`；
@@ -191,7 +205,7 @@ Channel Bridge 当前已经有事实上的稳定会话 key（`group:<gid>` / `pr
 - Channel Bridge 只提供 `conversation_id`/来源，不直接查 Memory 长期记忆；
 - 跨会话检索不等于跨会话原文注入；默认不把 A 私聊原文交给 B 私聊。
 
-#### 3.3.5 C. 跨会话摘要共享方案（PROPOSAL）
+#### 3.3.6 C. 跨会话摘要共享方案（PROPOSAL）
 
 - 允许：同一主体/同一群实体/owner 明确授权的摘要，带来源、时间、scope、审计；
 - 禁止：原始对话全文跨私聊/跨群无条件共享；
@@ -199,7 +213,7 @@ Channel Bridge 当前已经有事实上的稳定会话 key（`group:<gid>` / `pr
 - 每条摘要带 `source_conversation_ids[]`、`subject_id`、`scope`、`redaction`、`created_by`、`purpose`、`expires_at`；
 - owner 会话只接收 owner 授权的摘要，不自动接收所有渠道原文。
 
-#### 3.3.6 D. 允许共享的主体、权限、来源和审计条件（PROPOSAL）
+#### 3.3.7 D. 允许共享的主体、权限、来源和审计条件（PROPOSAL）
 
 | 条件 | 要求 |
 |---|---|
@@ -364,8 +378,9 @@ source: {
 4. `buildChannelPrompt`：`[QQ·群·群名(群号)] 昵称：正文`，只显示昵称（`lib/prompt.js:75-84`）。
 5. `group-buckets`：`{speaker: senderName, text, at}`，无 member ID（`lib/group-buckets.js:31-35`）。
 6. `group-turn-memory` → `saveGroupTurn`：`incoming[{speaker: 昵称, text}]`；Memory `buildGroupTurn` 拼 `昵称：text`，无 `speaker_id`（`lib/group-turn-memory.js:92-126`、Memory `lib/group/turn.js:49-76`）。
-7. `groupDigest` → `saveGroupTranscript`：`source.speakerName`，无 `groupId`/`speakerId`；`person_id` 探针为空（Memory `lib/service.js:550-575`、`lib/ingest/archive.js:243-267`）。
+7. `groupDigest` → `saveGroupTranscript`：`source.speakerName`，无 `groupId`/`speakerId`；`person_id` 探针：未配 ownerQQ 为空，已配 ownerQQ 为 `person:owner`（Memory `lib/service.js:550-575`、`lib/ingest/archive.js:271-295`）。
 8. 缺 `user_id` 时：`senderId=''`、`senderName=''`，index fallback 为群名（探针 `speaker-fallback='测试群'`）。
+9. Memory 归档角色用昵称正则 `/汐|自己/` 判定 self：昵称含「汐/自己」的群友会被归档成 self（Memory `lib/service.js:566`）。
 
 **风险**
 
@@ -391,16 +406,19 @@ source: {
 4. 群 A/B 同成员 ID → 仍按群 conversation 隔离；不得跨群合并经历。
 5. 群实体 ID 只出现在 `group_id`/scope，不出现在 `speaker_id`。
 6. 记录/归档回读：`person:contact:qq:group:<gid>` 只表示群实体；成员 ID 可追溯。
+7. 昵称含「汐/自己」的群友 → 归档 role 仍为 user，不得变 self。
+8. `ownerQQ` 已配 + 群归档 → `person_id` 为群实体/成员，不得为 `person:owner`。
 
 ### 8.2 P0-B：digest / 上下文跨会话原文注入
 
 **已确认路径**
 
-1. **新会话上下文**：`buildSessionContext` 只按 channel（`lib/context.js:8-48`、`lib/store.js:330-339`、`lib/index.js:263`）。探针：私聊 A/B + 群 C 三条全部进入新会话。
-2. **群上下文兜底**：`getGroupContext` fallback 只按 kind=group（`lib/index.js:304-310`、`lib/group-followup.js:146-159`）。探针：群 A + 群 B 两条全部输出。
-3. **群全文归档**：共享 `GROUP_CWD`、无 `groupId`/`speakerId`；`person_id` 空；按群查询依赖 `raw_text LIKE %gid%`（Memory `lib/service.js:550-575`、`lib/group/digest.js:2`、`lib/index.js:686-696`）。
-4. **owner unified**：所有 owner QQ 私聊进 home（`lib/unified.js:12-20`）；多 owner 会共享。
-5. **Memory 跨渠道 digest**：Memory 报告指出 `buildDigest` 合入 home+QQ 私聊+群+email（Memory R2 §6/§11）；这是 Memory 侧路径，需 Memory 修复，但属于 P0-B 的跨模块风险。
+1. **新会话上下文**：`buildSessionContext` 只按 channel（`lib/context.js:8-36`、`lib/store.js:330-339`、`lib/index.js:263`）。探针：私聊 A/B + 群 C 三条全部进入新会话。
+2. **群上下文兜底**：`getGroupContext` fallback 只按 kind=group（`lib/index.js:287-290`、`lib/group-followup.js:146-159`）。探针：群 A + 群 B 两条全部输出。
+3. **群全文归档**：共享 `GROUP_CWD`、无 `groupId`/`speakerId`；`person_id` 未配 ownerQQ 为空、已配 ownerQQ 为 `person:owner`；按群查询依赖 `raw_text LIKE %gid%`（Memory `lib/service.js:550-575`、`lib/group/digest.js:2`、`Memory lib/index.js:776-792`）。
+4. **交接卡**：`listInboundSince({channel})` 按渠道全量取入站，无 contact/kind/conversation 过滤；`formatHandover` 把所有 user 行标成「主人」（`lib/handover.js:186-196,143-152`、`lib/store.js:293-305`）。owner home 首次交接会把第三方私聊/群成员消息混入并标成主人。
+5. **owner unified**：所有 owner QQ 私聊进 home（`lib/unified.js:12-20`）；多 owner 会共享。
+6. **Memory 跨渠道 digest**：Memory 报告指出 `buildDigest` 合入 home+QQ 私聊+群+email（Memory R2 §6/§11）；这是 Memory 侧路径，需 Memory 修复，但属于 P0-B 的跨模块风险。
 
 **禁止条件（PROPOSAL）**
 
@@ -408,6 +426,7 @@ source: {
 - 禁止按 `channel` 全量取最近消息作为任意新会话的“上次聊到”；
 - 禁止按 `kind=group` 取所有群的最新消息作为群上下文；
 - 禁止共享 `GROUP_CWD` 作为所有群的归档 cwd；
+- 禁止按 channel 全量生成交接卡；交接卡必须按 conversation 生成，user 行标签由 speaker_type 决定，未确认写「未知发言人」；
 - 禁止把 A 私聊/群原文注入 B 私聊/群，除非有明确 owner 授权、摘要化、审计、TTL；
 - owner/home 也不得无条件接收所有渠道原文。
 
@@ -426,6 +445,7 @@ source: {
 | 新群 A 会话 | 只含群 A 的上下文；不含群 B/私聊 |
 | 群 A @ 触发、群 B 同时有消息 | 群 A 只拿 A；fallback 不跨群 |
 | owner home | 只含 owner 授权摘要；不含其他私聊原文 |
+| 交接卡 | 只含 owner 私聊；第三方/群消息为 0；无「主人」误标 |
 | 缺 conversation_id | 不注入，返回 `E_CONVERSATION_MAPPING_MISSING` |
 | 缺 group_id | 群上下文为空/unknown，不跨群 |
 | 旧式 session 行 | 标记 legacy，不参与新上下文 |
@@ -506,23 +526,27 @@ source: {
 
 | 结论 | 证据 |
 |---|---|
-| conversation key / unknown 回退 | `lib/sessions.js:119-124` |
+| conversation key / unknown 回退 / 非数字剥字符碰撞 | `lib/sessions.js:119-124`（`replace(/\D/g,'')` 在 122） |
 | session 表 / session_id 生成 | `lib/store.js:10-23,412-466`；`lib/sessions.js:259,287,481` |
 | 会话复用/resume | `lib/sessions.js:367-508` |
 | forceRotate 模糊选择 | `lib/sessions.js:324-352`；`lib/tools.js:696-721` |
 | 入站解析 / 群缺 sender | `lib/parse.js:160-220` |
 | 投递 source 字段 | `lib/message.js:10-38` |
-| 新会话上下文 | `lib/context.js:8-48`；`lib/store.js:330-339`；`lib/index.js:263` |
-| 群上下文 fallback | `lib/index.js:304-310`；`lib/group-followup.js:121-159` |
+| 新会话上下文 | `lib/context.js:8-36`；`lib/store.js:330-339`；`lib/index.js:263` |
+| 群上下文 fallback | `lib/index.js:287-290`；`lib/group-followup.js:121-159` |
 | prompt 群发言人 | `lib/prompt.js:75-84` |
 | group bucket | `lib/group-buckets.js:31-35` |
 | group turn memory | `lib/group-turn-memory.js:92-126` |
 | group transcript | `lib/group-digest.js:61-88`；Memory `lib/service.js:550-575` |
-| 群归档查询 | Memory `lib/index.js:686-696` |
-| 群实体 person_id | Memory `lib/ingest/archive.js:243-267` |
+| 群归档查询 | Memory `lib/index.js:776-792` |
+| 群实体 person_id | Memory `lib/ingest/archive.js:271-295` |
 | unified owner | `lib/unified.js:12-20` |
 | forward/quote speaker | `lib/forward.js:60-100,180-195`；`lib/quote.js:20-35,100-130` |
 | notice actor/operator | `lib/notice.js:78-140`；`lib/index.js:391-448` |
+| clearHandoff kind 不匹配 | `lib/router.js:141`；`lib/store.js:406-410` |
+| status 旧 kind 失效 | `lib/status.js:96-97` |
+| handover 全量/标主人 | `lib/handover.js:143-152,186-196`；`lib/store.js:293-305` |
+| group transcript 昵称判 self | Memory `lib/service.js:566` |
 | 生产 profile | `/root/.dsh/profiles/web/cordis.patch.yml`（只读） |
 | 生产 DB 聚合 | `/root/.dsh/dsh-channel-bridge/bridge.db`（只读 `node:sqlite`） |
 
