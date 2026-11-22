@@ -1,10 +1,10 @@
-# MEMORY-REPORT-0022 · Memory 记忆智能体报告
+# MEMORY-REPORT-0023 · Memory 记忆智能体报告
 
 > 会话：Memory 记忆智能体（Memory 领域专业智能体）
 > 任务标识：v17 `MEM-VALIDITY-BATCH-E-REVERIFY-03` → v18 `MEM-WAKE-CAPTURE-DECISION-01` → **v19 `MEMORY-MINIMAL-INTEGRATION-VERIFY-01`**
 > 覆盖任务：Batch A PASS → Batch B PASS → Batch C PASS → Batch D PASS → **Batch E（weekly）第三次复验**
 > 仓库：`ba-song/dsh-memory-core`｜本文件覆盖式更新、版本号递增
-> 最近更新：2026-11-22 09:5x (Asia/Shanghai) · v22
+> 最近更新：2026-11-22 10:2x (Asia/Shanghai) · v23
 
 ## 版本历史
 
@@ -20,7 +20,8 @@
 | MEMORY-REPORT-0019 | 18:5x | 最小集成分支首验：BLOCKED（缺 `lib/time/anchor.js`） |
 | MEMORY-REPORT-0020 | 19:3x | 双任务：A BLOCKED（4 项）、B PASS（143/143） |
 | MEMORY-REPORT-0021 | 20:0x | 最小集成修复后复验：BLOCKED（v5/M1 断言超出范围） |
-| MEMORY-REPORT-0022 | 09:5x | **M1 主线只读复核 `MEM-CURRENT-HEAD-READONLY-01`：HEAD `7548e49`（ahead 245）、schema v5；有效性语义 4/5 入口不一致（future preference/remembered 泄漏）；wake-capture 未集成；Persona selfId 哨兵可绕过 addEpisode 门禁；测试 258/258 PASS** |
+| MEMORY-REPORT-0022 | 09:5x | M1 主线只读复核：HEAD `7548e49`；有效性入口不一致；wake 未集成；selfId 哨兵绕过；测试 258/258 |
+| MEMORY-REPORT-0023 | 10:2x | **Memory↔Persona 契约评审 `MEMORY-PERSONA-INTEGRATION-CONTRACT-01` v1.0：BLOCKED（未达 PASS）** —— 2.2/3.2/3.3/3.4/4.1 不满足；给出 schema 与语义修正提案 |
 
 ---
 
@@ -409,3 +410,58 @@ M1 HEAD 全新 worktree：`npm test` → **258 tests / 258 pass / 0 fail / 0 ski
 
 ### 13.6 结论
 `MEM-CURRENT-HEAD-READONLY-01`：**READY_FOR_REVIEW**。缺陷：有效性入口不一致（future preference/remembered 泄漏，无 superseded_by 谓词）、wake-capture 未集成、Persona selfId 哨兵可绕过 addEpisode 门禁、fresh 库 raw_meta 缺 speaker_id。生产/设备/部署均 NOT RUN。
+
+
+---
+
+## 14. `MEMORY-PERSONA-INTEGRATION-CONTRACT-01` v1.0 专项评审（2026-11-22）
+
+### 14.1 基线
+- Memory：`feat/m1-preference-memory` @ **`7548e49ed0b8d8673818464325d8e72ec7704b27`**（schema v5）。
+- Persona：本地插件 `/root/.dsh/plugin-src/dsh-persona-core`（非 git 安装，schema v2，`SCHEMA_VERSION=2`）。
+- 全部测试在 `/tmp` 临时库；未触碰生产 memory.db / persona.db。
+
+### 14.2 逐条结论（Memory 侧）
+- **2.1 主体分类**：部分符合。Memory 仅有 `speaker_id`（`self:*`/person id/空），无 third_party/unknown 分类字段 → 需新增 `subject_kind`。
+- **2.2 self 身份**：**不符合**。persona 降级返回 `'self:unknown'` 被 Memory 当有效 → 写入 `speaker_id='self:unknown'`（实测）；非法 ID `'abc'` 被规范成 `'self:abc'` 写入（实测）；仅 persona 服务整体缺失时抛 `E_PERSONA_UNAVAILABLE`（实测）。
+- **2.3 待确认数据**：本版本不要求队列，但必须先禁止 unknown 进 self episode（当前违反）。
+- **2.4 speaker_id 存储**：**不符合**。fresh M1 库 `raw_meta` 无 `speaker_id`（DDL 与 ALTER 均未加），`lib/selfid.js` 回填 `try/catch` 静默返回 0 → 契约禁止的静默兼容。
+- **3.1 三态**：无 VALID/INVALID/UNCERTAIN 抽象，各入口各自实现。
+- **3.2 时间规则**：**不符合**。preference 与 remembered 无 `valid_from` 检查 → 未来生效记录被注入（实测 `PREF leaked future: true`、`REM leaked future: true`）；`valid_from:'abc'` 被 insertMemory 静默转成 NULL，当前召回将其视为有效（实测 `B_current` 含 badtime）。
+- **3.3 NULL 语义**：**冲突**。current 召回把 NULL 当"无下限"（有效），asOf 严格路径把 NULL 行排除并归入 uncertain；schema 无法区分 legacy 与 unknown。
+- **3.4 superseded**：**不符合**。所有查询仅用 `status`，不判 `superseded_by`（实测允许集中含 `superseded_by=999, status='active'` 的行）；历史 asOf 在替代发生前查询返回空（实测 `B9 ids: []`，期望含被替代行）→ 历史真相丢失；无 `superseded_at`，无法按替代生效时间判定。
+- **3.5 入口清单**：recall current/asOf、preference、remembered、graph 候选、graph 最终、其他注入路径——矩阵见下。
+- **4.1/4.2 置信度分类**：**不符合**。persona 无 `confidence_kind`/`confidence_source` 列；新 event/appraisal 默认 `confidence=0.5`（实测），无法区分 unknown/校准/历史。
+- **4.3 emotion_event.confidence**：当前作为 `certainty` 输入（emotion.js:382），非人格硬门控；需在文档中明确"原始分数"定位。
+- **4.4**：intensity/confidence/certainty 三字段分离，符合。
+- **5 一致性**：persona `event`/`appraisal`/`episode` 无事务包裹；`applyCoreAppraisal` 的 timeline INSERT 使用 `session_key` 列而表是 `self_id` → **静默失败**（实测 0 行、无异常）；Memory `addEpisode` 先去重后写入，dedupeKey 幂等（实测 duplicate=true，1 行）。
+- **6 测试矩阵**：见 14.3。
+- **7 范围**：未触碰 EI-2A/生产迁移/部署/wake 合并。
+
+### 14.3 测试矩阵实测
+- 身份：A1 有效 self → `self:aaaa` ✅；A2 服务缺失 → `E_PERSONA_UNAVAILABLE` ✅；A3 `self:unknown` → 写入 ❌；A4 非法 `'abc'` → 写入 `self:abc` ❌。
+- 时间：current 含 `normal/valid_from NULL/valid_to NULL/坏时间`，排除 future/expired/status=superseded；asOf 仅 1 行 + uncertain 5 行；superseded_by-only 行进入允许集；asOf 替代前为空 ❌。
+- graph：lenient 只含 normal；strict 排除 NULL 起点。
+- 置信度：event/appraisal 默认 0.5；无 kind/source 列；timeline 静默失败。
+- 一致性：dedupe 幂等 ✅；persona 写入非原子（代码级）；timeline 字段不匹配（实测）。
+
+### 14.4 通过标准评估（7 条）
+1. 两专项负责人无冲突：**未达成**（需 Persona 侧签署，且当前存在字段冲突）；
+2. 所有入口一致：**未达成**；
+3. unknown 不写 self episode：**未达成**；
+4. 新情绪不被默认标 legacy：**部分**（未标 legacy，但也未标 unknown，仍不满足 4.1）；
+5. 历史替代可解释：**未达成**；
+6. 准确 HEAD + 临时库测试：**达成**（本轮）；
+7. 迁移/设备/生产独立授权：**达成**（均未执行）。
+
+### 14.5 建议修正（Memory 侧提案，需 GPT/负责人裁决）
+1. `memories` 增 `subject_kind`（self/owner/third_party/unknown），addEpisode 强制 self。
+2. 增 `valid_from_kind`（exact/legacy/unknown）或 `meta.validity_origin`：新写入无 valid_from → unknown（UNCERTAIN）；迁移把旧行标 legacy（按无下限兼容）。
+3. 增 `superseded_at`：current 用 `superseded_by` 为空；asOf 用 `superseded_at > asOf` 判历史有效；无法确定 → UNCERTAIN。
+4. persona schema v3：`confidence_kind`/`confidence_source`，新数据默认 unknown；迁移显式标 legacy_unclassified/legacy_migration；`emotion_event.confidence` 文档化为原始分数。
+5. persona `selfId()` 降级返回值与 Memory 门禁对齐（返回 `null`/抛错；Memory 拒绝 `self:unknown` 与非 `self:<uuid>` 格式）。
+6. fresh 库 `raw_meta` 增 `speaker_id`（或明确 v6 迁移），回填失败必须显式报错。
+7. persona 写入用单事务包裹 event/appraisal/episode，并修复 timeline 的 `session_key` → `self_id`。
+
+### 14.6 结论
+契约评审：**BLOCKED（未达 PASS）**。契约方向可接受，但实现层 2.2/3.2/3.3/3.4/4.1 不满足，需先按 14.5 修正再复审。
