@@ -36,5 +36,5 @@ assert.ok(st.autoExtract.diag.lastAttemptAt>0,'lastAttemptAt')
 // getter 会抛的 ctx：不崩、能注册、不 warn
 const s4=[]; const ag4={session:{header:{cwd:'/sdcard/DSHA/生活/数据/home',id:'d4'}},ctx:{get promptContexts(){throw new Error('cannot get property "promptContexts" without inject')},systemPrompt:{context:(c)=>{s4.push(c);return()=>{}}}}}
 const w0=warns.length; handlers['agent/created']({agent:ag4})
-assert.equal(s4.filter(c=>c.name==='dy-digest').length,1,'抛异常 getter 也能注册'); assert.equal(warns.length,w0,'不 warn')
+assert.equal(s4.filter(c=>c.name==='dy-digest').length,0,'抛异常 getter 也不得注入跨会话摘要'); assert.equal(warns.length,w0,'不 warn')
 console.log(JSON.stringify(out))
