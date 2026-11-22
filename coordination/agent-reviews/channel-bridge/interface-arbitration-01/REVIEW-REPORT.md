@@ -301,7 +301,7 @@ source: {
 | 4 | `speaker_id` 生成（canonical） | Memory | Memory | Channel Bridge, Persona | Owner | Memory |
 | 5 | `speaker_id` 验证 | Memory | Memory | Persona, Channel Bridge | Owner | 无（验证） |
 | 6 | self ID 验证 | Persona | Persona | Memory | Channel Bridge | Persona（identity evidence） |
-| 7 | owner ID 验证 | Persona | Owner（D1 决策） | Memory, Channel Bridge | GPT | Persona（D1 后；当前未授权） |
+| 7 | owner ID 验证 | Persona（验证） | Owner（D1 决策） | Memory, Channel Bridge | GPT | Memory（`person:owner` canonical 映射）；Persona 只产出 identity evidence；D1 前不写 |
 | 8 | third_party ID 管理 | Memory | Memory | Channel Bridge, Persona | Owner | Memory |
 | 9 | experiencer 判断 | Memory | Memory | Persona, Channel Bridge | Owner | Memory |
 | 10 | `experiencer_evidence` 产生 | Memory | Memory | Persona, Channel Bridge | Owner | Memory（引用 Persona identity evidence） |
@@ -316,6 +316,7 @@ source: {
 
 冲突说明：
 
+- **owner ID 归属未达成三方一致**：Memory R2 建议 owner people 映射由 Memory 管理；本报告建议 owner **身份验证**由 Persona 负责、`person:owner` 的 canonical 映射由 Memory 保存。两者不必然冲突，但必须明确「谁唯一写 `person:owner`」；当前建议 writer=Memory，Persona 只产出身份证据，Bridge 只提供 `owner.qqIds` 命中事实。该分歧列为所有者裁决项，不在本报告强行统一。
 - 当前 Persona `inject.writeBinding` 在 Persona 侧写 binding；Channel Bridge 只提供 conversation/session；本表把 binding 唯一写入权给 Persona，避免两方各写一套主体事实。Bridge 不得写 Persona DB。
 - 当前 Bridge 自己 `randomUUID()` 生成 session_id；本表建议改由 Host/DSH 生成，Bridge 只记录映射。若 Host 不能提供，需在契约中显式保留 Bridge 生成并登记为受信任来源。
 - `owner ID 验证` 的 A 是 Owner，因为 D1 未决；Persona 只能在 D1 确认后执行校验，不能自造 `person:owner`。
