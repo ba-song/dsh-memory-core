@@ -12,8 +12,9 @@ addDecision(db,{project:pj.id,title:'用 SQLite',choice:'文件库',reason:'轻�
 await insertMemory(db,{kind:'todo',text:'补测试',scopeType:'owner',layer:'manual'})
 try { db.prepare('update memories set project_id=? where id=(select max(id) from memories)').run(pj.id) } catch {}
 const owner=handoffBrief(db,{cwd:WS+'/项目A',isOwner:true,recent:[{role:'user',text:'这个问题怎么修'}]})
-assert.ok(owner.text.startsWith('【交接简报】')&&owner.text.includes(rp.name)&&owner.text.includes('SQLite')&&owner.text.includes('补测试'),'owner 有项目/决策/待办')
-assert.ok(owner.text.includes('最后没回'),'最后没回')
+assert.ok(owner.text.startsWith('【交接简报】'),'owner 仍有当前会话交接简报')
+assert.ok(!owner.text.includes(rp.name)&&!owner.text.includes('SQLite')&&!owner.text.includes('补测试'),'handoff 不带入其他 Conversation 的项目/决策/待办')
+assert.ok(owner.text.includes('最后没回'),'当前会话最后没回仍保留')
 // 群：不泄漏项目
 const grp=handoffBrief(db,{cwd:'/sdcard/DSHA/渠道/qq-群',isOwner:false,recent:[{role:'user',text:'群里问一句'}]})
 assert.ok(!grp.text.includes(rp.name)&&!grp.text.includes('SQLite')&&!grp.text.includes('补测试'),'群不泄漏')
