@@ -150,10 +150,10 @@ Owner ID 使用独立命名空间：
 
 `experiencer_type` 的语义：
 
-- `self)：汐自身真实发生的经历。
-- `owner)：Owner 本人的经历。
-- `third_party)：其他个人或群体的经历。
-- `unknown)：证据不足，暂时无法确定。
+- `self`：汐自身真实发生的经历。
+- `owner`：Owner 本人的经历。
+- `third_party`：其他个人或群体的经历。
+- `unknown`：证据不足，暂时无法确定。
 
 `speaker_type` 如需保留，建议使用相同的主体分类语义，但它只描述发言者身份，不替代 experiencer。
 
@@ -357,13 +357,13 @@ Bridge 不得自行生成 canonical `speaker_id`、`experiencer_id` 或 Owner �
 
 ### 5.3 发言者字段语义
 
-- `external_speaker_id)：Channel Bridge 从平台事件取得的原始实际发言者 ID。
-- `speaker_id)：Memory 解析/映射后的 canonical person ID。
-- `group_id)：群聊空间 ID，不是群成员 ID。
-- `forwarder_id)：转发链中的转发者，不自动等于原作者或当前消息发言者。
-- `original_author_id)：原始内容作者，平台未提供时保持 unknown。
-- `display_name_snapshot)：昵称/显示名快照，只用于展示和审计，不作为身份主键。
-- `experiencer_type/id)：Memory 根据消息事实和可信身份证据判断的经历主体，不由 Bridge 直接决定。
+- `external_speaker_id`：Channel Bridge 从平台事件取得的原始实际发言者 ID。
+- `speaker_id`：Memory 解析/映射后的 canonical person ID。
+- `group_id`：群聊空间 ID，不是群成员 ID。
+- `forwarder_id`：转发链中的转发者，不自动等于原作者或当前消息发言者。
+- `original_author_id`：原始内容作者，平台未提供时保持 unknown。
+- `display_name_snapshot`：昵称/显示名快照，只用于展示和审计，不作为身份主键。
+- `experiencer_type/id`：Memory 根据消息事实和可信身份证据判断的经历主体，不由 Bridge 直接决定。
 
 ### 5.4 群聊规则
 
@@ -378,7 +378,7 @@ Bridge 不得自行生成 canonical `speaker_id`、`experiencer_id` 或 Owner �
 
 关系 3 的唯一写入方为 Memory：
 
-- canonical `speaker_id)；
+- canonical `speaker_id`；
 - `speaker_type`（如采用）；
 - `experiencer_type` / `experiencer_id`；
 - 消息级 evidence 关系；
@@ -417,9 +417,9 @@ Memory 不得伪造 Bridge 未提供的平台原始事实，也不得从 Persona
 
 三个维度必须分开：
 
-1. `evidence_source)：信息来自哪里。
-2. `verification_status)：目前有何证据支持、确认、争议或撤回。
-3. `confidence_level)：对当前判断的把握程度。
+1. `evidence_source`：信息来自哪里。
+2. `verification_status`：目前有何证据支持、确认、争议或撤回。
+3. `confidence_level`：对当前判断的把握程度。
 
 候选枚举（语义建议，物理命名需实现审查）：
 
@@ -495,10 +495,10 @@ Memory 不得伪造 Bridge 未提供的平台原始事实，也不得从 Persona
 
 候选 `valid_from_kind`：
 
-- `exact)：有可靠精确起始时间。
-- `implicit)：新记录未提供 valid_from，但合法 created_at 可作为起效时间。
-- `legacy)：旧记录时间精度不足，按经审计的历史近似规则处理。
-- `unknown)：无法建立可信时间边界。
+- `exact`：有可靠精确起始时间。
+- `implicit`：新记录未提供 valid_from，但合法 created_at 可作为起效时间。
+- `legacy`：旧记录时间精度不足，按经审计的历史近似规则处理。
+- `unknown`：无法建立可信时间边界。
 
 候选 `superseded_at`：
 
@@ -744,7 +744,7 @@ Memory 不得伪造 Bridge 未提供的平台原始事实，也不得从 Persona
 2. 三层关系只有各自唯一写入方，不存在共享写入。
 3. Conversation ID 格式、account_id 必填和 fail-closed 行为一致。
 4. Runtime Session ID 权威生成方为 Host/DSH。
-5. Owner ID 为 `owner:<uuid>)，Persona 管理身份/link，Memory 只引用。
+5. Owner ID 为 `owner:<uuid>`，Persona 管理身份/link，Memory 只引用。
 6. Speaker、Experiencer、Conversation 三者严格分离。
 7. 群实体、实际成员、转发者、原作者分离。
 8. 证据三维与有效性独立。
