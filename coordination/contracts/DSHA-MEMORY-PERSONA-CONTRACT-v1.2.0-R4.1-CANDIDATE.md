@@ -1,7 +1,8 @@
-# DSHA「汐」跨模块身份、会话与记忆数据契约 v1.2.0 R4（Owner 审阅候选稿）
+# DSHA「汐」跨模块身份、会话与记忆数据契约 v1.2.0 R4.1（Owner 审阅候选稿）
 
-- 状态：**R4 CANDIDATE / OWNER REVIEW REQUIRED / NOT FROZEN**
-- 版本：v1.2.0-r4-candidate
+- 状态：**R4.1 CANDIDATE / OWNER REVIEW REQUIRED / NOT FROZEN**
+- 版本：v1.2.0-r4.1-candidate
+- R4 基线：`cf20a50f0bfca8b9182a9e699e223b2359c00319`
 - 维护仓库：`ba-song/dsh-memory-core`
 - 配套模块：Channel Bridge、Persona/EI、Memory
 - Owner：项目负责人（用户）；架构协调：GPT
