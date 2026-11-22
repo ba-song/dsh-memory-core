@@ -3,7 +3,7 @@
 > 会话：Autonomy 自主系统负责人
 > 覆盖任务：`AUTO-ARCH-AUDIT-01`、`AUTONOMY-RECOVERY-SEMANTICS-DESIGN-01/02/03/04`
 > 迭代规则：本文件覆盖式更新、版本号递增，不新增同类文件
-> 最近更新：2026-11-22 01:35 (Asia/Shanghai) · v6（新增 §18 生产变更：关闭屏幕变化触发）
+> 最近更新：2026-11-22 09:15 (Asia/Shanghai) · v7（新增 §19 DSH 重启后验证）
 > 性质：只读设计修订。未改任何源码/DB/profile/配置；未创建实现分支；未启动 scheduler/executor/staging；未部署/重启；未改 `HANDOFF.md`/`REPORT.md`；未修改 Android 报告
 
 ## 版本历史
@@ -17,6 +17,7 @@
 | v4-r2 | 2026-11-21 10:53 | 复核 Android v4（`3dd5d32`）：A–D、F–H 已书面确认；E 采用 Android 的 60s 观察窗，双方一致 → 改判 `DESIGN ALIGNED` |
 | v5 | 2026-11-22 00:50 | 新增 §17 `AUTONOMY-PROFILE-READONLY-01`：设备实际 profile、22 个字段真实值、运行状态、6 条执行路径启用条件、冲突与 UNKNOWN |
 | v6 | 2026-11-22 01:35 | §18 `AUTONOMY-DISABLE-SCREEN-TRIGGER-01`：生产 profile 关闭 `triggers.device.enabled`、插件重载、运行态验证；发现遗留定时器，结论 **BLOCKED**（需 DSH 进程重启） |
+| v7 | 2026-11-22 09:15 | §19 `AUTONOMY-DISABLE-SCREEN-TRIGGER-02`：负责人已完成 DSH web 重启；只读验证无新 poll、Home/dice 正常、notification 未改、其他模块无异常 → **PASS** |
 
 ---
 
@@ -610,3 +611,85 @@ P4  以上全部失败 → 不发布，保留 tmp + 写 .pending 标记 + 事件
 ### 18.7 边界声明
 
 未删除/修改任何代码；未改 DB/记忆/日记；未改 Douyin/douyinInbox/Memory/Persona/EI/Channel Bridge/Tick；未修复通知触发；未执行真实外发；未重启 DSH/DSHA/设备；未改 `HANDOFF.md`/`REPORT.md`。
+
+
+---
+
+## 19. AUTONOMY-DISABLE-SCREEN-TRIGGER-02 · DSH 重启后验证
+
+> 执行：Autonomy 自主系统负责人（只读验证）｜时间：2026-11-22 09:08–09:15 (+08)
+> 授权：负责人已明确授权并**已完成**一次 DSH "web" 进程重启；本轮只做只读验证，未再重启任何进程
+> 结论：**PASS**
+
+### 19.1 重启前后进程身份
+
+| 项 | 重启前 | 重启后（当前） |
+|---|---|---|
+| DSH web PID | 20189（旧） | **30172**（`/root/.dsha-web.pid`） |
+| 包装进程 | — | 30169（proot + bash，exec 到 node） |
+| profile | `web` | `web`（`DSHA_STARTUP_PROFILE=web`，`DSH_HOME=/root/.dsh`） |
+| 启动时间 | 2026-11-21 09:52:55 | **2026-11-22 09:06:37**（`/proc/30172/stat` + `os.uptime()`） |
+| generation | 1 | **2**（`/root/.dsha-web-activity.json`） |
+| 命令行 | `bin.js web --no-open --host 127.0.0.1 --port 38105` | 同 |
+| 身份文件 | — | `/root/.dsha-web.identity = 30172 36521821` |
+
+> 重启由负责人执行；本轮未执行 kill/start/restart。旧 PID 20189 已不存在。
+
+### 19.2 重启时间线（日志）
+
+- `2026-11-21T17:52:05.890Z`（= 01:52:05 +08）旧进程最后一次 `poll`（遗留定时器，属 §18 记录）。
+- `2026-11-22T01:02:08.693Z`（09:02:08）前一代进程 `apply`：`device.enabled=false, notification.enabled=true`。
+- `2026-11-22T01:06:57.666Z`（09:06:57）当前进程 `apply`：`device.enabled=false, notification.enabled=true, triggers.enabled=true, files=[]`。
+- 启动日志：persona/memory/autonomy/channel-bridge/douyin 等插件均加载完成；web URL 正常输出。
+
+### 19.3 观察窗口与日志证据
+
+| 项 | 值 |
+|---|---|
+| 观察窗口 | 09:06:57（apply）→ **09:12:29**，共 **5 分 32 秒**（> 2×60s 轮询周期） |
+| 设备状态 | screen=on、app_foreground=true（时钟/状态栏变化会产生 hash 变化） |
+| `device-trigger.log` mtime | **09:06:57**（窗口内未再写入） |
+| 窗口内 `ev=poll` | **0** |
+| 窗口内 `ev=created/started` | **0** |
+| 窗口内 `ev=apply` | 1 条（09:06:57，device=false） |
+| 对照 | 变更前同一日志在屏幕常亮时每分钟出现 `poll reason=gap`（如 01:49–01:52 连续 4 条/分钟） |
+
+> 结论：当前进程**没有创建**屏幕变化触发器（无 `created/started`），也没有轮询（无 `poll`），不是仅凭配置值判断。
+
+### 19.4 配置核验（运行态）
+
+| 项 | 结果 | 证据 |
+|---|---|---|
+| `triggers.device.enabled` | **false** | `dy_life_status` 09:09；apply 日志 |
+| `triggers.notification` | **true、3091、5s、allowPackages 原值**（未改） | status；`notification-trigger.log` 仍 5s 写 `fetch failed`（既有不可达，按要求不修） |
+| `triggers.enabled` / `files` | true / []（未改） | status |
+| Home 定时唤醒 | **启用且工作**：09:07:58 `AWAKENED`（重启后 catch-up），`home.lastWake` 同步更新 | DB `meta` + `autonomy.log` |
+| dice | **启用且工作**：09:07:12 `hit=true`，chance=0.85，bonus=0.3 | DB `meta.home.dice.lastRoll` |
+| Douyin inbox | enabled/started/subscribed（未改） | status.douyinInbox |
+| Memory / Persona | 服务可用（services.persona/memory=true） | status |
+| Channel Bridge | mode=send、health=OK、lastEvent 09:09 | `dy_bridge_status` |
+| Autonomy Tick | `tick.enabled=false`、`realSafe=false`、6 executor 全 mock（未改） | status |
+| 配置文件 | sha256 `e5a02904…`；与备份 diff **只有 `device.enabled` 一行** | `sha256sum` / `diff` |
+
+### 19.5 启动日志与其他模块异常
+
+- DSH 启动日志：**0 条**插件加载失败/uncaught/exception。
+- 观察到 2 类非阻塞告警（与本次变更无关）：
+  1. `onnxruntime` GPU discovery failed（环境告警，历史存在）；
+  2. 4 条 `[deepseek-account] request failed`（account summary/current/bonuses，`no-response`/aborted，外部网络请求，非插件启动失败）。
+- Channel Bridge `reconcile.lastError=E_SEND_FAILED` 为重启前既有状态（outSent 3125→3156 持续累计，无新增失败风暴）。
+- DB `schemaVersion=3 / user_version=4` 漂移为既有问题，本轮未触碰。
+
+### 19.6 结论
+
+**PASS。**
+
+- 屏幕变化触发：配置 false，且运行日志证明**未创建、未轮询**（5m32s 窗口，屏幕常亮，0 poll）；
+- Home 定时唤醒与 dice 在重启后均实际工作（09:07:58 唤醒、09:07:12 掷骰命中）；
+- Android 通知触发配置原值保留（仍不可达，按要求不修）；
+- Douyin inbox、Memory、Persona、Channel Bridge、Autonomy Tick 配置无意外变化；
+- DSH 服务恢复，无启动错误。
+
+### 19.7 边界声明
+
+本轮只读验证：未重启任何进程；未改配置/代码/DB/记忆/日记/权限；未执行外发；未改 `HANDOFF.md`/`REPORT.md`。重启动作由负责人完成，本文只记录并验证其结果。
