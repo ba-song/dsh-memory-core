@@ -346,14 +346,16 @@ Bridge 不得自行生成 canonical `speaker_id`、`experiencer_id` 或 Owner �
 - `forwarder_id`（如有）
 - `original_author_id`（如平台/引用/转发结构可提供）
 - `message_id`
-- `event_time` / `timestamp`
+- `event_time`：平台事件发生时间；缺失或非法时必须为 null，不得用接收时间或当前时间填充。
+- `time_precision`：平台时间精度/可信程度；缺失或无法判断时为 `unknown`。
+- `received_at`：Bridge 实际接收事件的时间，与 `event_time` 分开保存；不得被 Memory 当作 `valid_from` 的替代值。
 - `raw_content` 或受控原文引用
-- `source` / `source_id`
-- `speaker_evidence`（平台原始字段、来源、缺失字段等）
+- `source` / `source_id`：Bridge 来源/事件标识；不得与 Memory 内部 evidence source ID 混为一谈。
+- `platform_speaker_fact`（原始平台发言者字段、来源及缺失字段；不代表 Memory 验证结论）
 - `missing_fields`
 - `envelope_version`
 
-传输协议、字段类型、签名、幂等键、原文存储位置和隐私访问控制仍需实现设计确认。
+缺失的时间/身份字段必须显式保留为 null/unknown，不得以 `Date.now()`、群名、昵称或其他展示字段补齐。传输协议、字段类型、签名、幂等键、原文存储位置和隐私访问控制仍需实现设计确认。
 
 ### 5.3 发言者字段语义
 
@@ -390,7 +392,13 @@ Memory 不得伪造 Bridge 未提供的平台原始事实，也不得从 Persona
 
 - Channel Bridge 可以维护自身的渠道事件、投递状态、会话内临时上下文或受控原文引用；这些不等于它可以直接写入 Memory 所拥有的记忆记录。
 - 任何需要进入 Memory 记忆库的消息、群聊 turn、transcript、digest 或 handover 内容，都必须通过 Memory 提供的受控 ingestion/interface 进入；Bridge 不得绕过接口直接写 Memory 数据表或代替 Memory 决定 speaker、experiencer、证据和有效性字段。
-- Bridge 可以生成仅供自身会话运行使用的临时摘要；若摘要要成为长期记忆或被跨会话检索/注入，必须经过 Memory 的来源、主体、有效性和权限校验。
+- Bridge 的临时上下文、临时摘要和 handover 注入只能使用当前规范 `conversation_id` 范围内获准的数据；不得按 channel、群类型、昵称或共享目录回退到其他 conversation。缺少/无法确认 conversation_id 时必须 fail closed。
+- Bridge 临时摘要必须标明来源 conversation 范围，并受会话范围与生命周期约束；具体 TTL、存储位置和审计字段仍为技术设计 OPEN。临时摘要/handover 不等于 Memory 历史回忆/参考通道。
+- Memory 的历史回忆/参考通道由 Memory 负责提供和执行有效性、来源、主体及权限判断。Bridge 不得自行建立该通道、不得自行读取/拼接 legacy 或 unknown 历史记录，也不得把历史通道结果自动注入当前会话；任何跨会话读取必须经明确授权的受控接口。
+- turn/transcript 进入 Memory 时，至少须保留 `conversation_id`、适用时的 `group_id`、可得的 `external_speaker_id`（缺失则 null）、Bridge `source_id`、`event_time`/`time_precision`、`received_at` 与 `missing_fields`。缺失字段不得伪造。
+- digest 进入 Memory 时，必须可追溯其来源 conversation 范围、群范围（如适用）、生成时间、摘要是否包含原文及其授权/审计依据；不得把跨会话混合摘要当作单会话原文。
+- handover 若仅用于当前会话运行，必须限定在当前 `conversation_id`；若拟进入 Memory 或跨会话使用，须经 Memory 受控接口，并记录来源范围、用途、创建者、授权依据及生命周期。不得默认包含其他会话原文。
+- Bridge 不得决定 Memory 的 `valid_from_kind`、`verification_status` 或 `confidence_level`。平台事件时间缺失不得用 `received_at` 或当前时间伪造。
 - 群聊 transcript/turn 必须保留 group_id 与可得的 external_speaker_id；缺失成员 ID 时保持 unknown，不得以昵称或群名补齐。
 - 上述规则不改变 D1 的三层唯一写入责任，也不授权改动现有代码。
 
@@ -516,17 +524,22 @@ Memory 不得伪造 Bridge 未提供的平台原始事实，也不得从 Persona
 
 所有实际检索、注入、合并、摘要和决策入口必须遵守统一有效性语义。不得只修复单一 recall 路径而遗漏 preference、remembered、session-index、handoff、rules、stable、graph、merge、P4 邻居、daily/weekly 等入口。
 
-### 7.5.1 未知时间、历史近似与普通注入边界（Owner 已批准原则）
+### 7.5.1 未知时间、历史近似与普通注入边界（Owner 已批准原则；仅适用于 Memory）
+
+**适用范围：**本节仅适用于 Memory `memories` 及其有效性判断、检索、注入、摘要和合并入口；不适用于 Persona 的 `emotion_event`、`emotion_appraisal`、`emotion_episodes` 或 `emotion_timeline`。Persona 运行期情绪历史的时间质量、历史参考与当前情绪状态分离，由 P0-6/Persona 专项设计另行规定。
 
 本节所列旧记忆保护原则已由 Owner 明确同意；它们是合同约束，不代表当前代码已经实现，也不构成迁移授权。
 
 - **旧记忆整体保留**：不得因缺少新字段、时间不明或尚未完成迁移而批量删除、整体排除或统一降级旧记忆。原始文本及已有 numeric confidence 原值必须保留，不得把旧 numeric confidence 直接映射成新的 `confidence_level`。
-- **历史近似记录**：旧记录具有一定历史参考价值、但时间精度不足时，可进入带有“历史近似/时间不确定”明确标记的历史回忆与参考通道。该标记不等于 `confirmed`，也不代表记录仍是当前事实；不得仅凭此类记录作出重要决策。
+- **历史近似记录**：旧记录具有一定历史参考价值、但时间精度不足时，可进入带有“历史近似/时间不确定”明确标记的 Memory 历史回忆与参考通道。该标记不等于 `confirmed`，也不代表记录仍是当前事实；不得仅凭此类记录作出重要决策。
 - **时间完全未知的记录**：`valid_from_kind='unknown'` 表示无法建立可信时间边界。记录必须保留，但只能进入专门的不确定历史回忆/参考通道，并显式返回不确定性标记；不得进入普通 current-fact 注入，也不得单独支撑重要决策。
-- **legacy**：`valid_from_kind='legacy'` 表示旧记录待按获批规则进行历史近似处理。它既不自动等于 INVALID，也不自动等于当前 VALID；可用于历史回忆/参考，但不得冒充已确认事实。具体哪些数据类别可按何种时间依据近似，须另行形成迁移设计。
+- **legacy**：`valid_from_kind='legacy'` 表示旧记录待按获批规则进行历史近似处理。它既不自动等于 INVALID，也不自动等于当前 VALID；不得仅因 legacy 缺少新字段就删除或整体排除。未完成逐类近似规则审查前，不得将其无标记地作为当前事实注入；可在历史回忆/参考通道中明确标为 legacy/待判定。具体哪些数据类别可按何种时间依据近似，须另行形成迁移设计。
 - **implicit**：仅适用于新记录，且只有在 `created_at` 经校验可信、记录类型允许时才可采用；不得将 implicit 规则追溯套用于旧记录。
+- **current 与 history 隔离**：普通 current-fact 注入必须统一执行有效性与验证状态过滤；`unknown` 不得进入 current。历史通道结果不得被任何普通自动注入入口静默转入 current。历史通道的 API/物理实现仍为 OPEN。
 - **证据状态独立处理**：`unverified`、`supported`、`confirmed`、`disputed`、`retracted` 与时间类型是不同维度。历史近似或时间未知不能自动提升验证状态；`retracted` 不得普通注入，`disputed` 不得静默选边。
 - **禁止伪造**：来源、时间、身份或证据缺失时继续保持 unknown；不得为填充新字段而推测或编造。
+
+**Persona 情绪历史边界（独立约束）：**不得把本节的 `valid_from_kind` 直接套用到 Persona 情绪时间线。Persona 的历史情绪是派生记录，不得伪装为 `direct_statement`；旧 numeric confidence/certainty 不得映射为 Memory `confidence_level`。时间未知或不可信的情绪记录不得更新/冒充当前 `emotion_state`，须通过明确标记的历史参考方式读取；具体字段、接口和迁移由 Persona 专项设计提出并另行审查。
 
 上述原则不决定具体 cutover 时间/版本，也不授权扫描后的元数据写入、批量回填、迁移、部署或生产变更。旧数据类别映射、时间近似算法、历史通道的物理实现及验收测试仍须单独设计、只读验证并取得相应授权。当前实现与本节要求不一致的部分应登记为待修复差距，不得将合同要求描述成已经实现。
 
@@ -613,7 +626,15 @@ Memory 不得伪造 Bridge 未提供的平台原始事实，也不得从 Persona
 - 跨会话长期记忆检索必须经过主体、权限、用途、来源和审计判断。
 - 摘要共享不等于原文共享；未经授权不得注入其他会话原文。
 
-负向测试必须放入其他会话独有哨兵文本并断言命中数为 0。
+负向测试必须放入其他会话独有哨兵文本并断言命中数为 0。另须覆盖以下旧/历史数据路径（测试编号可在实现测试计划中细化）：
+
+- 旧 `legacy_unmapped` 会话/消息不得进入新规范 `conversation_id` 的当前上下文；旧/新同群或同私聊必须隔离。
+- Memory `legacy` / `unknown` 历史记录不得进入普通 current-fact 注入；只有显式历史参考查询可返回，并保留时间/验证不确定标记。
+- Bridge 的 `buildSessionContext`、group fallback、digest 与 handover 不得消费其他 conversation 或 Memory 历史参考通道内容。
+- 缺失/非法平台 `event_time` 必须保持 null/unknown；不得等于 `received_at` 或由当前时间补齐。
+- 缺失 sender ID 时 `external_speaker_id=null`；不得以群名、昵称或群实体替代。
+- 旧 numeric confidence 原值必须保持不变，不得映射为新 `confidence_level`。
+- 上述测试使用合成数据和临时数据库；不得以生产数据或真实渠道作为默认测试条件。
 
 ### P0-2：群聊发言者归属
 
@@ -639,8 +660,11 @@ Memory 不得伪造 Bridge 未提供的平台原始事实，也不得从 Persona
 - DB 不可用、Self 缺失、多个 active Self、非法 seed 均 fail closed。
 - 首次启动不得自动创建未确认 Self。
 - 旧 sentinel 不可作为合法 Self。
-- binding 必须验证 canonical self 与 evidence。
-- Memory 拒绝 null、sentinel、非法 Self 及未经验证的 self episode。
+- binding 必须验证 canonical self、对应 conversation/runtime-session 关系、可信身份 evidence、状态及有效期；撤销、过期、冲突或证据失效时 fail closed。
+- Persona 的身份解析接口（如 `identityOf`）在 Owner/Self 缺失、unknown、header 与 binding 冲突、binding 过期/撤销时必须返回明确 unknown/error，不得猜测身份。
+- Owner identity 必须独立于平台账号事实；未取得 Owner 明确同意的跨平台账号关联不得确认为 Owner link；无回复或含糊回复不构成同意。
+- Memory 拒绝 null、sentinel、非法 Self 及未经验证的 self episode；拒绝原因应有稳定错误类别（具体错误码命名由接口设计确认），且断言拒绝路径不落库。
+- fresh DB、legacy DB、多次启动及并发初始化均须验证：不得因缺少 Self 而自动创建未经确认的 canonical Self。
 
 ### P0-4：有效性过滤
 
@@ -673,11 +697,12 @@ Memory 不得伪造 Bridge 未提供的平台原始事实，也不得从 Persona
 
 - Timeline INSERT 列名与实际 Schema 一致。
 - 不允许空 catch 静默吞掉关键持久化失败。
-- event/appraisal/episode 需要原子性时在同一事务提交或全部回滚。
-- 状态更新与 timeline 不得出现无法审计的部分成功。
-- 成功测试验证预期行数和 self_id。
-- 故障注入测试验证失败后 0/0/0 或合同明确的完整原子状态。
-- 身份切换历史有明确审计规则。
+- `recordRuleEpisode` 的 event、appraisal、episode 写入必须在同一明确事务边界内；成功时验证预期 1/1/1，任一阶段失败时验证 0/0/0。
+- `applyCoreAppraisal` 涉及的 emotion_state 与 timeline 更新必须原子提交或整体回滚；对 timeline 列错误、表/约束缺失和写入失败执行故障注入。
+- 不允许空 catch 静默吞掉关键持久化失败；调用方必须能观察到失败结果，并有可审计的错误类别/日志信息。具体错误码和日志字段由接口设计确认。
+- 成功测试验证预期行数、self_id 与归属关系；失败测试验证不存在部分成功。
+- 身份切换历史有明确审计规则，不能把旧 timeline 静默改归到新 Self。
+- 历史/时间未知的 Persona 情绪记录必须与当前 `emotion_state` 分离；不得仅凭旧 timeline 的数值时间或旧 numeric confidence/certainty 将其当作当前情绪状态。历史情绪字段/查询接口的物理方案仍为 OPEN。
 - 不把基础事务修复混入 EI-2A。
 
 ### 9.1 统一验收报告
