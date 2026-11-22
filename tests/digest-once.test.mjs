@@ -16,11 +16,11 @@ const out={ok:true,test:'digest-once'}
 // 同一 agent（同一 ctx）多轮：只注册一次
 const s1=[]; const ag1=mkAgent(makeCtx(s1))
 handlers['agent/created']({agent:ag1}); handlers['agent/created']({agent:ag1})
-assert.equal(s1.filter(c=>c.name==='dy-digest').length,1,'同一 agent 摘要只注册一次')
+assert.equal(s1.filter(c=>c.name==='dy-digest').length,0,'未获授权的跨会话摘要不注入')
 assert.equal(s1.filter(c=>c.name==='dy-memory-stable').length,1,'常驻块一次')
 // 不同 agent：各一次
 const s2=[]; handlers['agent/created']({agent:mkAgent(makeCtx(s2),'d2')})
-assert.equal(s2.filter(c=>c.name==='dy-digest').length,1,'新 agent 摘要注册一次')
+assert.equal(s2.filter(c=>c.name==='dy-digest').length,0,'新 agent 也不注入未授权摘要')
 // 宿主报 already registered → 不再 warn、不再重试
 const s3=[]; const ag3={session:{header:{cwd:'/sdcard/DSHA/生活/数据/home',id:'d3'}},ctx:{systemPrompt:{context:()=>{throw new Error('prompt context "dy-digest" is already registered in this scope')}}}}
 const before=warns.length; handlers['agent/created']({agent:ag3}); handlers['agent/created']({agent:ag3})
