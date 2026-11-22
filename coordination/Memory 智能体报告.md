@@ -1,10 +1,10 @@
-# MEMORY-REPORT-0023 · Memory 记忆智能体报告
+# MEMORY-REPORT-0024 · Memory 记忆智能体报告
 
 > 会话：Memory 记忆智能体（Memory 领域专业智能体）
 > 任务标识：v17 `MEM-VALIDITY-BATCH-E-REVERIFY-03` → v18 `MEM-WAKE-CAPTURE-DECISION-01` → **v19 `MEMORY-MINIMAL-INTEGRATION-VERIFY-01`**
 > 覆盖任务：Batch A PASS → Batch B PASS → Batch C PASS → Batch D PASS → **Batch E（weekly）第三次复验**
 > 仓库：`ba-song/dsh-memory-core`｜本文件覆盖式更新、版本号递增
-> 最近更新：2026-11-22 10:2x (Asia/Shanghai) · v23
+> 最近更新：2026-11-22 10:4x (Asia/Shanghai) · v24
 
 ## 版本历史
 
@@ -21,7 +21,8 @@
 | MEMORY-REPORT-0020 | 19:3x | 双任务：A BLOCKED（4 项）、B PASS（143/143） |
 | MEMORY-REPORT-0021 | 20:0x | 最小集成修复后复验：BLOCKED（v5/M1 断言超出范围） |
 | MEMORY-REPORT-0022 | 09:5x | M1 主线只读复核：HEAD `7548e49`；有效性入口不一致；wake 未集成；selfId 哨兵绕过；测试 258/258 |
-| MEMORY-REPORT-0023 | 10:2x | **Memory↔Persona 契约评审 `MEMORY-PERSONA-INTEGRATION-CONTRACT-01` v1.0：BLOCKED（未达 PASS）** —— 2.2/3.2/3.3/3.4/4.1 不满足；给出 schema 与语义修正提案 |
+| MEMORY-REPORT-0023 | 10:2x | 契约 v1.0 评审：BLOCKED（2.2/3.2/3.3/3.4/4.1 不满足） |
+| MEMORY-REPORT-0024 | 10:4x | **契约设计审查 `MEMORY-CONTRACT-REVIEW-01`：READY_FOR_REVIEW** —— 给出 valid_from_kind / superseded_at / 三态 helper 的最小设计；wake 建议延后 |
 
 ---
 
@@ -465,3 +466,42 @@ M1 HEAD 全新 worktree：`npm test` → **258 tests / 258 pass / 0 fail / 0 ski
 
 ### 14.6 结论
 契约评审：**BLOCKED（未达 PASS）**。契约方向可接受，但实现层 2.2/3.2/3.3/3.4/4.1 不满足，需先按 14.5 修正再复审。
+
+
+---
+
+## 15. `MEMORY-CONTRACT-REVIEW-01` 设计审查（2026-11-22）
+
+- 基线：`feat/m1-preference-memory` @ `7548e49ed0b8d8673818464325d8e72ec7704b27`（schema v5，ahead 245）。
+- 结论：**READY_FOR_REVIEW**（设计审查，不是代码 PASS）。
+
+### 15.1 契约兼容性矩阵
+| 条款 | 与当前 M1 | 可否实现 |
+|---|---|---|
+| 2.1 主体分类 | 无 subject_kind；仅 speaker_id | 需新增列 + 问 Persona 第三方身份来源 |
+| 2.2 self 身份 | addEpisode 接受 `self:unknown` 与非法格式 | 可实现（Memory 侧严格校验 + Persona 降级语义确认） |
+| 2.3 pending | 未实现（契约允许） | 需 2.2 先禁止 unknown 写 self |
+| 2.4 speaker_id | fresh raw_meta 无列；回填静默 | 可实现（补列 + 显式错误） |
+| 3.1 三态 | 无抽象 | 可实现（单一 helper） |
+| 3.2 时间 | preference/remembered 缺 valid_from；坏时间静默转 NULL | 可实现（helper + 写入校验） |
+| 3.3 NULL | 入口互相矛盾，schema 不可区分 | **需新增 valid_from_kind** |
+| 3.4 superseded | 只判 status；无 superseded_at；历史 asOf 丢行 | **需新增 superseded_at**；无时间戳的历史路径只能 UNCERTAIN |
+| 4.1/4.2 置信度 | persona 无 kind/source 列，新数据默认 0.5 | 需 Persona v3 |
+| 5 一致性 | persona 非原子；timeline 列名错 | Persona 侧修复 |
+
+### 15.2 最小设计（Memory）
+1. schema v6：`valid_from_kind`（exact/legacy/unknown）、`superseded_at`、`subject_kind`、`idx_mem_superseded` partial index；迁移在既有事务内回填：exact = valid_from 非空；legacy = 迁移时 valid_from 为空；superseded_at = COALESCE(valid_to,0)（无 valid_to 的旧 superseded 行保持 0 → UNCERTAIN）。
+2. `lib/store/validity.js`：`validityState(row, at, {mode, supersede})` → VALID/INVALID/UNCERTAIN；SQL 预设由同一 spec 生成。
+3. 入口：recall current/asOf、preference、remembered、graph、session-index、handoff、daily、weekly 全部改用 helper；UNCERTAIN 仅 recall asOf 进 uncertain 通道，其余入口排除并计数。
+4. supersede 写入点统一写 `superseded_at=now`（weekly 两条路径、pref/merge、conflict/resolve、rules）。
+5. insertMemory 校验 validFrom/validTo：非有限正整数 → 抛 `E_BAD_VALIDITY_TIME`，不再静默 NULL。
+6. 身份：Memory 侧拒绝 `self:unknown`/空/非 `self:` 前缀，抛 `E_PERSONA_IDENTITY_UNKNOWN`；fresh raw_meta 补 speaker_id；selfid 回填失败显式报错。
+
+### 15.3 wake-capture 结论
+**建议等契约落地后再接入**：wake episode 需要 subject_kind=self、valid_from_kind=exact、superseded_at=0，且注入走统一 helper；否则会引入第三套语义。
+
+### 15.4 影响面
+Memory 15 个文件 + 6 组测试；Persona 4 个文件（selfId 语义、confidence 列、timeline、事务）。详见 §14.5 与提示词 24。
+
+### 15.5 需 Persona 确认
+selfId 降级返回值与格式保证；subject_kind 第三方身份来源；confidence_kind/source 枚举与迁移标记；timeline/原子写修复归属。
