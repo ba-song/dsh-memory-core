@@ -641,12 +641,57 @@ Memory 17 文件 + 6 组测试；Persona 4 文件（selfId、v3 置信度列、t
 
 ## 19. `DSH-MEMORY-CONTRACT-V1.1.1-READONLY-REVIEW`（2026-11-22）
 
-- 基线：`ba-song/dsh-memory-core`，`feat/m1-preference-memory` @ **`7548e49ed0b8d8673818464325d8e72ec7704b27`**（tree `3020e9b7…`，ahead 245）；工作区仅 `?? node_modules`。
-- **v1.1.1 权威文本：未找到**（仓库全文件、coordination、工作区 md、Persona 本地 docs 均无；仅 agent 提示词/报告片段）→ 按任务三.6：**BLOCKED**，不得自拟契约。
-- C1–C8：C1/C6 NOT_IMPLEMENTED；C2/C4/C5/C7 FAILED；C3/C8 PARTIAL。
-- 实测泄漏（临时库）：preference/remembered/session-index/handoff/stable/rules 存在 future 或 superseded_by-only 泄漏；handoff 无时间过滤；episodeRecent 仅 status；P4 邻居 bestMatch 无有效性过滤；merge 接受 future 候选；asOf 历史 ids=[]；`validFrom:'abc'` 静默 NULL 且可被注入。
-- 身份：persona 降级 `selfId()='self:unknown'` → addEpisode 写入该值；`meta` 在 PATCHABLE_COLUMNS（不可作证据）；fresh raw_meta 无 speaker_id；timeline 列名错且静默失败。
-- 迁移：v5 单事务+回滚实测 PASS（快照列校验失败 → version 保持 4、无残留）。
-- 测试：`npm test` @ HEAD **258/258、0 fail、0 skip、exit 0**（140 文件，Node v24.19.0）。
-- 结论：**BLOCKED**（无权威文本）；语义方向 ACCEPT_WITH_CHANGES；当前实现不可合规；不具备进入实施评审条件。
-- 本地交付：`Memory 智能体/28-PROMPT.md`（10,225 B，sha256 `0f762991…`）、`Memory 智能体/28-REPORT.md`（11,682 B，sha256 `86b22546…`）。注：任务要求存为 `12-PROMPT.md`，该文件已存在（第 12 轮），按项目规则不覆盖历史，改存 28 并在报告中说明。
+### 19.1 基线与文本可得性
+- 仓库 `ba-song/dsh-memory-core`；分支 `feat/m1-preference-memory` @ **`7548e49ed0b8d8673818464325d8e72ec7704b27`**（tree `3020e9b7…`，ahead 245）；工作区仅 `?? node_modules`。
+- 仓库无 AGENTS.md；已读 HANDOFF-0074~0076、REPORT、Memory 报告 0022~0027、EI 报告、四智能体接管报告、EI 提示词 10。
+- **v1.1.1 权威正文未找到**：仓库全文件、coordination、工作区 md、Persona 本地 docs 均无；仅见 agent 提示词/报告片段引用。按任务三.6 → **BLOCKED**，不以推测代替契约。
+
+### 19.2 C1–C8 结论
+| 条款 | 结论 | 依据 |
+|---|---|---|
+| C1 speaker/experiencer 分离 | NOT_IMPLEMENTED | 无 experiencer 字段；subject 为自由文本 |
+| C2 self 可信来源 | FAILED | `selfId()` 降级返回 `self:unknown` 被写入；非法 `abc`→`self:abc`；meta 可 patch |
+| C3 owner/third_party | PARTIAL | `person:owner`、`person:contact:qq:group:<gid>` 存在；无 experiencer；群成员无稳定 ID |
+| C4 统一有效性 | FAILED | 无 `validityState()`；8+ 套内联过滤 |
+| C5 superseded | FAILED | 只判 status；superseded_by-only 行多入口泄漏；asOf 丢历史 |
+| C6 valid_from_kind | NOT_IMPLEMENTED | 无列；`validFrom:'abc'`→NULL 且可注入 |
+| C7 confidence | FAILED | persona 无 kind/source；新数据默认 0.5 |
+| C8 迁移/审计 | PARTIAL | v5 单事务+回滚 PASS；无 v6 字段/证据回填；fresh raw_meta 无 speaker_id |
+
+### 19.3 入口与泄漏矩阵（合成数据实测）
+| 入口 | future | expired | sup(status) | sup-only | NULL 起点 | 坏时间 |
+|---|---|---|---|---|---|---|
+| recall current | 排除 | 排除 | 排除 | 包含 | 包含 | 包含 |
+| recall asOf | 排除→uncertain | 排除→uncertain | 排除 | 包含 | 排除→uncertain | 排除→uncertain |
+| preference | 注入 | 排除 | 排除 | 注入 | 注入 | 注入 |
+| remembered | 注入 | 排除 | 排除 | 注入 | 注入 | 注入 |
+| session-index | 注入 | 排除 | 排除 | 注入 | 注入 | 注入 |
+| handoff | 注入 | 注入 | 排除 | 注入 | 注入 | 注入 |
+| episodeRecent | 返回 | 返回 | 排除 | 返回 | 返回 | 返回 |
+| rules | 排除 | 排除 | 排除 | 注入 | 注入 | 注入 |
+| stable group | 注入 | 注入 | 排除 | 注入 | 注入 | 注入 |
+| graph lenient | 排除 | 排除 | 排除 | 包含 | 包含 | 包含 |
+| graph strict | 排除 | 排除 | 排除 | 排除 | 排除 | 排除 |
+| merge | 候选被合并 | 旧行排除 | 旧行排除 | 旧行包含 | 包含 | 包含 |
+| P4 邻居 | 可选中 | 可选中 | 可选中 | 可选中 | 可选中 | 可选中 |
+
+关键源码位置：`preference.js:40/48`、`remembered.js:18`、`session-index.js:40/67`、`handoff/brief.js:28`、`service.js:271`、`rules.js:113`、`stable.js:204`、`graph.js:51-73`、`p4.js:93`、`merge.js:105/116`、`recall.js:71/189`、`archive.js:174-185`。
+
+### 19.4 身份与证据
+- P1 persona DB 不可用 → `selfId()`=`self:unknown`；P2 addEpisode 写入该值（不抛错）；P3 服务缺失 → `E_PERSONA_UNAVAILABLE`；P4 fresh raw_meta 无 speaker_id；P5 降级归档 `self:unknown` 且无 pendingIdentity。
+- `meta` 在 `PATCHABLE_COLUMNS`，可被 `updateMemory(metaPatch)` 改写 → 不可作防篡改证据。
+
+### 19.5 历史时间与 confidence
+- `insertMemory` 对 `validFrom` 做 `Number()`，`'abc'`→NaN→NULL（实测），focused 探针中可被 current 注入。
+- persona 无 `confidence_kind/source`；`recordEvent`/`recordAppraisal` 默认 0.5；`emotion_timeline` 用 `session_key` 而表是 `self_id` → 静默失败（0 行无异常）。
+
+### 19.6 迁移风险
+- v5 `migrateSchema` 单事务、version 最后写；实测快照表列校验失败 → `E_SCHEMA_MIGRATION_INCOMPLETE`，version 保持 4、无新列/索引残留 → 回滚成立。
+- v6 风险：4 列+回填+索引；raw_meta ALTER 与 schema 事务边界不同；legacy 若为无下限会放大坏时间；superseded_at 缺证据只能 0/UNCERTAIN。
+
+### 19.7 测试
+`npm test` @ `7548e49`：**258/258 pass、0 fail、0 skip、exit 0**（140 文件，Node v24.19.0）。探针：`/tmp/memaudit/v111probe.mjs`、`rulesProbe.mjs`、`identityM1.mjs`、`mig-m1-fail3.mjs`（临时库）。未测试：生产 DB、真实注入、v6 迁移、Persona 侧。
+
+### 19.8 结论与建议
+- 契约结论：**BLOCKED**（无权威正文）；语义方向 ACCEPT_WITH_CHANGES（同 REPORT-0027）；当前实现不可合规；不具备进入实施评审条件。
+- 必须修改：①发布 v1.1.1 正文；②C2 专用 `experiencer_evidence`（不可 patch）；③C3 group 类型或前缀规则；④C5 superseded_at 回填与 0→UNCERTAIN；⑤C6 legacy=created_at 下限近似 + approximated/cutover；⑥C7 confidence_kind/source；⑦C8 raw_meta schema 标记与 6 类迁移测试。
