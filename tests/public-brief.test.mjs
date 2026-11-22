@@ -19,8 +19,7 @@ await assert.rejects(()=>svc.publishPublic({text:'非主人'},{header:group}), /
 const r3=await svc.publishPublic({text:'马上过期',ttlDays:0.00001},{header:home}); assert.equal(r3.ok,true)
 db.prepare('UPDATE memories SET created_at_epoch=? WHERE id=?').run(Date.now()-10*86400*1000, r3.id)
 const brief=svc.publicBrief({limit:5})
-assert.ok(brief.length>=1&&brief.every((x)=>x.text.includes('汐的近况')),'只出 public 近况')
-assert.ok(!brief.some((x)=>x.text.includes('马上过期')),'过期的不返回')
+assert.deepEqual(brief,[],'没有可验证的目标 Conversation 与授权引用时 fail closed')
 // 不含 owner/contact scope
 db.prepare("INSERT INTO memories(kind,text,scope_type,scope_id,created_at_epoch) VALUES('fact','私密',?,? ,?)").run('owner','owner','1')
 assert.ok(!svc.publicBrief({limit:10}).some((x)=>x.text==='私密'))
