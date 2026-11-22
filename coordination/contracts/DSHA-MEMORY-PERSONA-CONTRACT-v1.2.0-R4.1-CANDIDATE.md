@@ -1132,19 +1132,22 @@ Bridge 的 publicBrief/handoffBrief 结果、handover cache、rotation seed、gr
 - 将 `role_only` 作为稳定身份或写入授权；
 - 以既有测试套件通过证明 R4.1/P0 实现通过。
 
-## R4.1-G. Owner 审阅与状态
+## R4.1-G. 剩余 Owner 待决事项与状态
 
-本文件仍为候选稿。Owner 审阅重点：
-1. 确认 B.1 历史参考过渡路径的原则与终止控制；
-2. 审阅 B.4 implicit 候选白名单（未批准前不启用）；
-3. 审阅 B.5 旧 numeric confidence 展示/读取限制（Schema 仍单独授权）；
-4. 审阅 D.1 public-sharing 明确授权原则与允许内容范围；
-5. 审阅 D.2 handoffBrief 逻辑载荷和用途限制；
-6. 确认 D.3 多跳转发/quote/notice 的逻辑来源分离；
-7. 确认 C.2 identityOf 最小逻辑输出是否足够，role_only 继续保持 OPEN；
-8. 审阅 B.3 出口清单及逐项分类流程。
+OD-R4.1-01 已批准将本候选稿中明确标记为 REQUIRED 的逻辑约束作为下一阶段架构协调基线。以下事项仍未获批准，继续保持 OPEN/PROPOSAL，不得推定：
 
-Owner 对本候选稿的确认只批准合同原则，不自动批准任何代码、测试、Schema、数据库、迁移、部署、Owner 绑定或真实渠道操作。R4.1 在 Owner 明确确认前保持 **CANDIDATE / NOT FROZEN**。
+1. B.4：implicit 初始白名单的最终成员、适用条件及 basis 字段。
+2. B.5：旧 numeric confidence 的读取/展示限制是否采用为正式语义；任何 Schema 变更仍须单独授权。
+3. B.1：历史过渡路径的具体接口、可访问范围、审计方式及终止/切换方案；不设自动 cutover。
+4. D.1/D.2：public-sharing 授权记录、允许内容范围、handoffBrief 物理载荷、TTL、撤销和审计存储。
+5. C.2：identityOf 的物理字段、错误码及额外强度字段；Owner bootstrap、恢复、轮换与 Owner episode 写入政策。
+6. B.3/D.6：各摘要、缓存、fallback、handoff 与 merge 出口的逐项业务分类和物理实现。
+7. D.3/D.4/D.5：多跳来源链 JSON schema、受控 ingestion API、account_id 具体格式及 Host mint API 实际可用性。
+8. 所有 Schema/数据库迁移、回填、cutover、部署、生产配置和真实渠道操作。
+
+本文件仍为 **R4.1 CANDIDATE / NOT FROZEN**。OD-R4.1-01 只批准 REQUIRED 逻辑约束作为协调基线，不代表合同整体 PASS，不代表任何实现已合规，也不构成实施授权。后续只读审查应优先验证各 REQUIRED 约束在准确代码基线上的可执行性与跨模块一致性；发现冲突时先记录证据和建议，不得自行修改实现。
+
+---
 
 ## R4.1-H. Owner 决策记录
 
