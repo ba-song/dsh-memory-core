@@ -27,8 +27,8 @@
 | 代码仓库 | `ba-song/dsh-harness-host-provenance`（**private**，上游只读，无法直推） |
 | 分支 | `fix/host-tool-exec-provenance` |
 | 基线 ref | `refs/tags/dsh-v0.2.1-rc.2` → `687f282e8625c6b8d11ff58211a90524be2e4317`（分支父提交即该 commit） |
-| 分支 HEAD | `7d87d659`（完整 SHA 见 GitHub） |
-| 提交历史 | `5b9ade93` fix(tools) → `c05bd550` fix(agent-loop) → `63b7749e` test → `7d87d659` chore(catalog) |
+| 分支 HEAD | `a6e438fa`（完整 SHA 见 GitHub） |
+| 提交历史 | `5b9ade93` fix(tools) → `c05bd550` fix(agent-loop) → `63b7749e` test → `7d87d659` chore(catalog) → `a6e438fa` test(provenance): strict types |
 | patch | `evidence/host-tool-exec-provenance.patch`（`687f282e..HEAD` 全量 diff） |
 
 > 说明：因为不能向 `deepseek-ai/deepseek-harness` 推送，代码提交到一个 **private** 镜像仓库；基线 tag 一并推送，`git diff 687f282e..HEAD` 即本任务全部改动，父提交与上游完全一致。
@@ -169,7 +169,8 @@ NODE_OPTIONS=--max-old-space-size=3072 ./node_modules/.bin/vitest run \
 
 | 检查 | 命令 | 结果 |
 |---|---|---|
-| 类型 | `tsc -b packages/core/tools packages/core/agent-loop` | exit 0（`logs/tsc.log`） |
+| 类型（目标包） | `tsc -b packages/core/tools packages/core/agent-loop` | exit 0（`logs/tsc.log`） |
+| 类型（全 Host 聚合） | `tsc -b tsconfig.host.json` | exit 0（`logs/full-typecheck.log`；pre-push hook 同一命令，首次失败根因是新增测试用例的 exactOptionalPropertyTypes，已修复） |
 | Catalog 生成 | `tsx scripts/gen-cordis-catalog.ts` | 125 artifacts，3 written（`logs/catalog-gen.log`） |
 | Catalog 校验 | `tsx scripts/gen-cordis-catalog.ts --check` | "125 generated file(s)/region(s) are up to date"，exit 0（`logs/catalog-verify.log`） |
 
@@ -274,7 +275,7 @@ NODE_OPTIONS=--max-old-space-size=4096 ./node_modules/.bin/tsx scripts/gen-cordi
 
 ## 12. 附件
 
-- `evidence/host-tool-exec-provenance.patch`：`687f282e..7d87d659` 全量 diff
+- `evidence/host-tool-exec-provenance.patch`：`687f282e..a6e438fa` 全量 diff
 - `evidence/REACHABILITY.md`：插件可达性/伪造通道实测（499 行，含命令、退出码、原始输出）
 - `evidence/COMPOSITION.md`：组合根、加载顺序、合法执行入口、cordis 隔离调查（517 行）
 - `evidence/BUILD-NOTES.md`：构建/测试环境、安装包 vs tag 差异、41 个基线失败根因（283 行）
@@ -282,3 +283,4 @@ NODE_OPTIONS=--max-old-space-size=4096 ./node_modules/.bin/tsx scripts/gen-cordi
 - `logs/tsc.log`：exit 0
 - `logs/catalog-gen.log` / `logs/catalog-verify.log`：生成与校验
 - `logs/diffstat.txt`：改动统计
+- `logs/full-typecheck.log`：全 Host 聚合 typecheck（exit 0）

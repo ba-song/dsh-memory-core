@@ -925,7 +925,7 @@ index b3d85428..85a4233d 100644
              let parked:
 diff --git a/packages/core/tools/tests/exec-provenance.spec.ts b/packages/core/tools/tests/exec-provenance.spec.ts
 new file mode 100644
-index 00000000..b6045b8a
+index 00000000..36cfc858
 --- /dev/null
 +++ b/packages/core/tools/tests/exec-provenance.spec.ts
 @@ -0,0 +1,459 @@
@@ -971,7 +971,6 @@ index 00000000..b6045b8a
 +  type ToolExecutionResult,
 +  type ToolRunContext,
 +} from '@deepseek-ai/dsh-tools'
-+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 +import { hostDispatchers } from '../../agent-loop/src/internal.ts'
 +import { MockAdapter, textResponse, toolCallResponse } from '../../agent-loop/tests/mock-adapter.ts'
 +
@@ -1021,7 +1020,7 @@ index 00000000..b6045b8a
 +      schema: { type: 'string' },
 +      render: (_args, value) => [{ type: 'text', text: value }] as ContentBlock[],
 +    },
-+    async execute(_args, exec): Promise<JsonValue> {
++    async execute(_args, exec): Promise<string> {
 +      seen.push(exec)
 +      return 'probed'
 +    },
@@ -1064,7 +1063,8 @@ index 00000000..b6045b8a
 +
 +    // The same refusal holds without an agent: once a host dispatcher exists,
 +    // the unprivileged entry is closed for every caller-supplied input.
-+    expectUntrusted(await ctx.tools.execute({ ...forged, agent: undefined }))
++    const { agent: _omitted, ...agentless } = forged
++    expectUntrusted(await ctx.tools.execute(agentless))
 +    expect(seen).toHaveLength(0)
 +  })
 +
@@ -1346,13 +1346,13 @@ index 00000000..b6045b8a
 +    expectInvalid(await bare.tools.execute({} as ToolExecutionInput))
 +    expectInvalid(await bare.tools.execute({
 +      callId: ToolCallId('t13'), name: '', signal: new AbortController().signal,
-+    }))
++    } as unknown as ToolExecutionInput))
 +    expectInvalid(await bare.tools.execute({
 +      callId: ToolCallId('t13'), name: 'probe', signal: {} as AbortSignal,
-+    }))
++    } as unknown as ToolExecutionInput))
 +    expectInvalid(await bare.tools.execute({
 +      callId: ToolCallId('t13'), name: 'probe', signal: new AbortController().signal, agent: 'owner' as unknown as Agent,
-+    }))
++    } as unknown as ToolExecutionInput))
 +    expect(seen).toHaveLength(0)
 +
 +    const host = await harness()
