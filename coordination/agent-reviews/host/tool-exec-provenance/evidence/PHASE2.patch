@@ -1,0 +1,2270 @@
+diff --git a/docs/subsystems/tools.md b/docs/subsystems/tools.md
+index 1ccbe129..a75f4ecf 100644
+--- a/docs/subsystems/tools.md
++++ b/docs/subsystems/tools.md
+@@ -555,11 +555,26 @@ guard(guard: ToolGuard): () => void
+  * shadows global; a restricted-away global reads as absent). Presenters pass
+  * the calling agent so the rendered card matches the definition that
+  * actually executed.
++ *
++ * The result is a frozen {@link ToolDescriptor}: metadata, schemas, and
++ * presentation hooks only — never the live `execute` handler. Repeated
++ * lookups of the same registration return the same view object.
+  * @param name - the tool name as registered.
+  * @param scope - the viewing scope (the agent); omitted = the global view.
+- * @returns the definition the scope resolves, or undefined when none is visible.
++ * @returns the non-executable view the scope resolves, or undefined when none is visible.
++ */
++get(name: string, scope?: ScopeKey): ToolDescriptor | undefined
++
++/**
++ * Whether this exact registered definition is the one a scope currently
++ * sees. Scoped registration shadows global, and restrictions can hide a
++ * global name; this is the identity-preserving replacement for comparing
++ * `get(name, scope)` against the object a plugin passed to `register()`.
++ * @param definition - the definition object that was registered.
++ * @param scope - the viewing scope (the agent); omitted = the global view.
++ * @returns true when that exact registration is visible to the scope.
+  */
+-get(name: string, scope?: ScopeKey): ToolDefinition | undefined
++isVisible(definition: Pick<ToolDefinition, 'name'>, scope?: ScopeKey): boolean
+ 
+ /**
+  * Project visible definitions onto the allowlisted model-facing schema fields,
+@@ -589,35 +604,46 @@ executionMode(exec: ToolExecutionInput): ToolExecutionMode
+  * successful started outcome with `ABORTED`; already-started work is still
+  * drained and may retain a tool-owned structured error.
+  *
+- * This is the UNPRIVILEGED entry. Once the host claims the dispatch
+- * authority ({@link claimDispatchAuthority}), it refuses every call with
++ * This is the UNPRIVILEGED entry. Once a host agent loop marks the process
++ * active ({@link markHostActive}), it refuses every call with
+  * `E_TOOL_EXEC_UNTRUSTED`: a caller-supplied `exec` is not provenance, so a
+  * plugin cannot execute a tool by constructing one or by copying a live
+- * `ToolRunContext` out of its own handler. A bare registry with no host
+- * dispatcher keeps the historical behavior because no trusted identity
+- * exists for a caller to borrow there.
++ * `ToolRunContext` out of its own handler. Host turns dispatch through
++ * {@link beginToolBatch} instead. A bare registry with no host loop keeps
++ * the historical behavior because no trusted identity exists to borrow.
+  * @param exec - the caller-supplied call input.
+  * @returns the materialized final result, or the stable refusal result.
+  */
+ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
+ 
+ /**
+- * Claim the one host dispatch authority for this registry.
++ * Close the legacy {@link execute} entry for this process.
++ *
++ * The agent loop calls this at construction, before it can drive a turn. It
++ * returns nothing: activation is not a capability, and a plugin that calls
++ * it early can only disable the legacy entry (a denial of service), never
++ * grant itself a way to run tools.
++ */
++markHostActive(): void
++
++/**
++ * Mint the one-shot dispatch capability for a host agent's tool batch.
+  *
+- * The composition that owns agent dispatch (the agent loop) calls this
+- * during its own construction, before it can create or drive any agent. A
+- * second claim is a programming error and fails loudly rather than handing
+- * out a second capability, so a plugin cannot acquire one after the host has
+- * started. The returned object is the only way to dispatch an agent-bound
+- * call; it is deliberately absent from the service surface, the package
+- * exports, and every execution/event object.
+- * @returns the host dispatch authority.
+- * @throws {ToolExecutionUntrustedError} when the authority was already claimed.
++ * The caller must present a batch proof minted by the exact live agent (its
++ * verifier consumes the proof) and an agent identity the registry has
++ * registered. Only the agent loop's own turn code has both, so a plugin
++ * cannot obtain a batch for a real host agent — and the public `execute`
++ * entry is already closed by the time a turn runs.
++ * @param agent - the live host agent the batch dispatches for.
++ * @param proof - the per-batch proof minted by that agent's private minter.
++ * @param toolCalls - the model-requested calls this batch may dispatch.
++ * @returns the one-shot batch capability.
++ * @throws {ToolExecutionUntrustedError} when any part of the proof is missing or foreign.
+  */
+-claimDispatchAuthority(): ToolDispatchAuthority
++beginToolBatch( agent: Agent, proof: unknown, toolCalls: readonly ToolCallBlock[], ): ToolBatchDispatch
+ ```
+ 
+-Types: [ScopeKey](scope.md)
++Types: [Agent](core.md) · [ScopeKey](scope.md) · [ToolCallBlock](llm-streaming.md)
+ 
+ Source: [`packages/core/tools/src/index.ts`](../../packages/core/tools/src/index.ts)
+ 
+diff --git a/docs/subsystems/tools.zh.md b/docs/subsystems/tools.zh.md
+index f418fe21..8f2e2560 100644
+--- a/docs/subsystems/tools.zh.md
++++ b/docs/subsystems/tools.zh.md
+@@ -555,11 +555,26 @@ guard(guard: ToolGuard): () => void
+  * shadows global; a restricted-away global reads as absent). Presenters pass
+  * the calling agent so the rendered card matches the definition that
+  * actually executed.
++ *
++ * The result is a frozen {@link ToolDescriptor}: metadata, schemas, and
++ * presentation hooks only — never the live `execute` handler. Repeated
++ * lookups of the same registration return the same view object.
+  * @param name - the tool name as registered.
+  * @param scope - the viewing scope (the agent); omitted = the global view.
+- * @returns the definition the scope resolves, or undefined when none is visible.
++ * @returns the non-executable view the scope resolves, or undefined when none is visible.
++ */
++get(name: string, scope?: ScopeKey): ToolDescriptor | undefined
++
++/**
++ * Whether this exact registered definition is the one a scope currently
++ * sees. Scoped registration shadows global, and restrictions can hide a
++ * global name; this is the identity-preserving replacement for comparing
++ * `get(name, scope)` against the object a plugin passed to `register()`.
++ * @param definition - the definition object that was registered.
++ * @param scope - the viewing scope (the agent); omitted = the global view.
++ * @returns true when that exact registration is visible to the scope.
+  */
+-get(name: string, scope?: ScopeKey): ToolDefinition | undefined
++isVisible(definition: Pick<ToolDefinition, 'name'>, scope?: ScopeKey): boolean
+ 
+ /**
+  * Project visible definitions onto the allowlisted model-facing schema fields,
+@@ -589,35 +604,46 @@ executionMode(exec: ToolExecutionInput): ToolExecutionMode
+  * successful started outcome with `ABORTED`; already-started work is still
+  * drained and may retain a tool-owned structured error.
+  *
+- * This is the UNPRIVILEGED entry. Once the host claims the dispatch
+- * authority ({@link claimDispatchAuthority}), it refuses every call with
++ * This is the UNPRIVILEGED entry. Once a host agent loop marks the process
++ * active ({@link markHostActive}), it refuses every call with
+  * `E_TOOL_EXEC_UNTRUSTED`: a caller-supplied `exec` is not provenance, so a
+  * plugin cannot execute a tool by constructing one or by copying a live
+- * `ToolRunContext` out of its own handler. A bare registry with no host
+- * dispatcher keeps the historical behavior because no trusted identity
+- * exists for a caller to borrow there.
++ * `ToolRunContext` out of its own handler. Host turns dispatch through
++ * {@link beginToolBatch} instead. A bare registry with no host loop keeps
++ * the historical behavior because no trusted identity exists to borrow.
+  * @param exec - the caller-supplied call input.
+  * @returns the materialized final result, or the stable refusal result.
+  */
+ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
+ 
+ /**
+- * Claim the one host dispatch authority for this registry.
++ * Close the legacy {@link execute} entry for this process.
++ *
++ * The agent loop calls this at construction, before it can drive a turn. It
++ * returns nothing: activation is not a capability, and a plugin that calls
++ * it early can only disable the legacy entry (a denial of service), never
++ * grant itself a way to run tools.
++ */
++markHostActive(): void
++
++/**
++ * Mint the one-shot dispatch capability for a host agent's tool batch.
+  *
+- * The composition that owns agent dispatch (the agent loop) calls this
+- * during its own construction, before it can create or drive any agent. A
+- * second claim is a programming error and fails loudly rather than handing
+- * out a second capability, so a plugin cannot acquire one after the host has
+- * started. The returned object is the only way to dispatch an agent-bound
+- * call; it is deliberately absent from the service surface, the package
+- * exports, and every execution/event object.
+- * @returns the host dispatch authority.
+- * @throws {ToolExecutionUntrustedError} when the authority was already claimed.
++ * The caller must present a batch proof minted by the exact live agent (its
++ * verifier consumes the proof) and an agent identity the registry has
++ * registered. Only the agent loop's own turn code has both, so a plugin
++ * cannot obtain a batch for a real host agent — and the public `execute`
++ * entry is already closed by the time a turn runs.
++ * @param agent - the live host agent the batch dispatches for.
++ * @param proof - the per-batch proof minted by that agent's private minter.
++ * @param toolCalls - the model-requested calls this batch may dispatch.
++ * @returns the one-shot batch capability.
++ * @throws {ToolExecutionUntrustedError} when any part of the proof is missing or foreign.
+  */
+-claimDispatchAuthority(): ToolDispatchAuthority
++beginToolBatch( agent: Agent, proof: unknown, toolCalls: readonly ToolCallBlock[], ): ToolBatchDispatch
+ ```
+ 
+-Types: [ScopeKey](scope.zh.md)
++Types: [Agent](core.zh.md) · [ScopeKey](scope.zh.md) · [ToolCallBlock](llm-streaming.zh.md)
+ 
+ Source: [`packages/core/tools/src/index.ts`](../../packages/core/tools/src/index.ts)
+ 
+diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
+index adf2e33d..53af4b7a 100644
+--- a/packages/core/agent-loop/src/agent.ts
++++ b/packages/core/agent-loop/src/agent.ts
+@@ -38,6 +38,8 @@ import { RuntimeContextProjection } from './runtime-context.ts'
+ import { AssistantStreamAttempt } from './assistant-stream.ts'
+ import { SystemPromptProjection } from './runtime-context.ts'
+ import { executeToolCalls } from './tool-calls.ts'
++import type { ToolCallBlock } from '@deepseek-ai/dsh-llm'
++import { consumeToolBatchProof } from './internal.ts'
+ 
+ type Phase =
+   | { kind: 'idle'; lastTurn: number }
+@@ -137,6 +139,23 @@ export class ReactLoopAgent implements Agent {
+     this.systemPrompt = new SystemPromptProjection(session)
+   }
+ 
++  /**
++   * Verify and consume a host tool-batch proof.
++   *
++   * Public because `dsh-tools` is a different package, but it can only answer
++   * questions about proofs minted for this agent: it neither reveals nor
++   * creates one, and a successful check consumes the proof so a captured one
++   * cannot be replayed. Minting lives in the loop package's module-private
++   * `mintToolBatchProof`, with no reachable accessor on the agent or its
++   * prototype.
++   * @param proof - the opaque value the registry received.
++   * @param toolCalls - the exact call array the batch was minted for.
++   * @returns true exactly once for a genuine proof of these calls.
++   */
++  verifyToolBatch(proof: unknown, toolCalls: readonly ToolCallBlock[]): boolean {
++    return consumeToolBatchProof(this, proof, toolCalls)
++  }
++
+   get status(): AgentStatus {
+     return this.phase.kind === 'idle' || this.phase.kind === 'maintenance' ? 'idle' : 'running'
+   }
+diff --git a/packages/core/agent-loop/src/index.ts b/packages/core/agent-loop/src/index.ts
+index 677fad5a..9c66ad28 100644
+--- a/packages/core/agent-loop/src/index.ts
++++ b/packages/core/agent-loop/src/index.ts
+@@ -34,7 +34,6 @@ import type { SessionHandle, SessionPersistence } from '@deepseek-ai/dsh-session
+ import { ReactLoopAgent } from './agent.ts'
+ import { inboxProjectionDefinition } from './inbox.ts'
+ import { DEFAULT_MAX_PARALLEL_TOOL_CALLS } from './constants.ts'
+-import { hostDispatchers } from './internal.ts'
+ import type {} from './runtime-context.ts'
+ 
+ /** Fiber states that cannot own or serve a new lifecycle. */
+@@ -371,19 +370,10 @@ export class AgentLoop extends Service implements AgentFactory {
+       maxParallelToolCalls: config.maxParallelToolCalls,
+     }
+     validateConfiguredAgents(this.config.agents)
+-    // Seed the one host tool-dispatch authority before this loop can create or
+-    // drive any agent. Possession of this object — not a caller-supplied
+-    // `exec`, a session header, or `agents.currentInitiator` — is what makes a
+-    // tool call host-dispatched. The app owns it: a loop reload reuses it, a
+-    // restarted registry gets a fresh claim, and any other claimant fails
+-    // loudly instead of receiving a capability. It is kept out of the service
+-    // surface by a module-private WeakMap, so `ctx.agentLoop.<field>` never
+-    // exposes it.
+-    const rawTools = (ctx.tools as unknown as Record<symbol, unknown>)[Symbol.for('cordis.original')] ?? ctx.tools
+-    const existing = hostDispatchers.get(ctx.root)
+-    if (existing === undefined || existing.registry !== rawTools) {
+-      hostDispatchers.set(ctx.root, { registry: rawTools as object, authority: ctx.tools.claimDispatchAuthority() })
+-    }
++    // Close the legacy direct-execution entry before this loop can drive a
++    // turn. This grants nothing: every later tool call goes through a
++    // proof-gated batch minted by the live agent.
++    ctx.tools.markHostActive()
+     // Register only after every config validation above has passed, so a
+     // rejected constructor leaves no projection unit behind.
+     const ownership = this.ownership = new FactoryOwnership(ctx.fiber)
+diff --git a/packages/core/agent-loop/src/internal.ts b/packages/core/agent-loop/src/internal.ts
+index 4fa46d3a..60dba3fc 100644
+--- a/packages/core/agent-loop/src/internal.ts
++++ b/packages/core/agent-loop/src/internal.ts
+@@ -1,37 +1,142 @@
+ /**
+- * Package-internal carrier for the host tool-dispatch authority.
++ * Package-internal proof plumbing for host tool batches.
+  *
+- * `dsh-tools` mints at most one {@link ToolDispatchAuthority} per registry and
+- * the agent loop claims it during construction. The authority must reach
+- * `tool-calls.ts` without becoming a service member, a class field, or an
+- * export: a field would be readable through the public `ctx.agentLoop`
+- * service instance, and an export would make it importable. A module-private
+- * `WeakMap` keyed by the loop's own context keeps it out of both.
++ * The agent loop does not hold a global tool-execution capability. For each
++ * assistant step it mints a per-batch proof with a method keyed by a
++ * module-private symbol, hands the proof to `dsh-tools.beginToolBatch`, and
++ * receives a one-shot batch capability. A plugin cannot mint the proof (the
++ * symbol is not exported and the publishing package ships only `lib/`), so it
++ * cannot obtain a batch for a real host agent.
+  *
+- * Nothing here is re-exported from `index.ts`, and `package.json` publishes
+- * `lib/**` only, so an installed plugin cannot reach this binding.
++ * Nothing here is re-exported from `index.ts`.
+  * @module @deepseek-ai/dsh-agent-loop/internal
+  */
+ 
+ import type { Context } from '@deepseek-ai/cordis'
+-import type { ToolDispatchAuthority } from '@deepseek-ai/dsh-tools'
++import type { ToolCallBlock } from '@deepseek-ai/dsh-llm'
++import type { ToolBatchDispatch, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
+ 
+ /**
+- * One app-owned host dispatcher: the exact tool registry it targets and the
+- * authority that registry minted. Keyed by the root context so a loop reload
+- * (a new loop fiber or a drained-and-replaced loop) reuses the same authority
+- * instead of trying to claim a second one, while an independently restarted
+- * tool registry is detected by identity and re-claimed.
++ * Per-agent proof sets, held only in this module's closure.
++ *
++ * Deliberately NOT a symbol-keyed method on the agent: a plugin that obtains a
++ * live agent could enumerate its prototype symbols and call the minter. A
++ * module-private WeakMap has no reachable accessor at all; `verifyToolBatch`
++ * on the agent only consumes, and only the loop calls `mintToolBatchProof`.
++ * @internal
++ */
++const toolBatchProofs = new WeakMap<object, WeakSet<object>>()
++
++/**
++ * Mint the one-shot proof for one assistant step's tool calls.
++ *
++ * The only issuer is the loop's own turn code (`tool-calls.ts`), in this
++ * package's module scope. Nothing exports it from the package namespace and
++ * the published tarball ships only `lib/`, so a plugin cannot reach it.
++ * @param agent - the live agent the batch dispatches for.
++ * @param toolCalls - the exact model-requested call array.
++ * @returns an opaque proof bound to that array.
++ * @internal
++ */
++export function mintToolBatchProof(agent: object, toolCalls: readonly ToolCallBlock[]): object {
++  const proof = Object.freeze({ calls: toolCalls })
++  let proofs = toolBatchProofs.get(agent)
++  if (proofs === undefined) {
++    proofs = new WeakSet()
++    toolBatchProofs.set(agent, proofs)
++  }
++  proofs.add(proof)
++  return proof
++}
++
++/**
++ * Verify and consume a batch proof for one agent.
++ * @param agent - the agent the caller claims to dispatch for.
++ * @param proof - the opaque value the registry received.
++ * @param toolCalls - the exact call array the batch was minted for.
++ * @returns true exactly once for a genuine proof of these calls.
++ * @internal
++ */
++export function consumeToolBatchProof(
++  agent: object,
++  proof: unknown,
++  toolCalls: readonly ToolCallBlock[],
++): boolean {
++  if (proof === null || typeof proof !== 'object') return false
++  const proofs = toolBatchProofs.get(agent)
++  if (proofs === undefined || !proofs.has(proof)) return false
++  if ((proof as { calls?: unknown }).calls !== toolCalls) return false
++  proofs.delete(proof)
++  return true
++}
++
++/**
++ * Test-only decorator applied to the batch after minting, so scheduler-failure
++ * tests can wrap the staged methods without any production hook. Undefined in
++ * every real host.
++ * @internal
++ */
++export let decorateToolBatch: ((batch: ToolBatchDispatch) => ToolBatchDispatch) | undefined
++
++/**
++ * Install (or clear) the test-only batch decorator.
++ * @param decorator - wrapper applied to each minted batch, or undefined to clear.
+  * @internal
+  */
+-export interface HostDispatcher {
+-  /** The raw `ToolRuntime` instance the authority belongs to. */
+-  readonly registry: object
+-  readonly authority: ToolDispatchAuthority
++export function setToolBatchDecorator(
++  decorator: ((batch: ToolBatchDispatch) => ToolBatchDispatch) | undefined,
++): void {
++  decorateToolBatch = decorator
+ }
+ 
+ /**
+- * Root context → the app's host dispatcher.
++ * Test-only: mint a real host batch the way a turn does, so a suite can drive
++ * the production dispatch path without a model. The production loop never
++ * calls this; it mints inside `executeToolCalls`.
++ * @param ctx - the loop context that owns the tools service.
++ * @param agent - a live registered host agent.
++ * @param toolCalls - the calls the batch may dispatch.
++ * @returns the one-shot batch capability.
+  * @internal
+  */
+-export const hostDispatchers: WeakMap<Context, HostDispatcher> = new WeakMap()
++export function beginToolBatchForTest(
++  ctx: Context,
++  agent: object,
++  toolCalls: readonly ToolCallBlock[],
++): ToolBatchDispatch {
++  return ctx.tools.beginToolBatch(agent as never, mintToolBatchProof(agent, toolCalls), toolCalls)
++}
++
++/**
++ * Test-only: run one tool call through the production staged pipeline exactly
++ * as a turn would (prepare → dispatch → finalize/finish).
++ * @param ctx - the loop context that owns the tools service.
++ * @param agent - a live registered host agent.
++ * @param name - the registered tool name.
++ * @param args - parsed arguments for the call.
++ * @param signal - the call's cancellation signal.
++ * @param callId - the model call id to bind.
++ * @returns the materialized result.
++ * @internal
++ */
++export async function runToolCallForTest(
++  ctx: Context,
++  agent: object,
++  name: string,
++  args: unknown,
++  signal: AbortSignal,
++  callId: string,
++): Promise<ToolExecutionResult> {
++  const call: ToolCallBlock = { type: 'tool-call', id: callId as never, name, arguments: JSON.stringify(args) }
++  const batch = beginToolBatchForTest(ctx, agent, [call])
++  const prepared = await batch.prepare({ callId: callId as never, name, arguments: args, agent: agent as never, signal })
++  if (prepared.kind !== 'dispatch') {
++    return prepared.kind === 'post-result'
++      ? await batch.finalize(prepared.exec, prepared.result)
++      : batch.finish(prepared.exec, prepared.result)
++  }
++  const dispatched = await batch.dispatch(prepared.exec)
++  return dispatched.kind === 'post-result'
++    ? await batch.finalize(prepared.exec, dispatched.result)
++    : batch.finish(prepared.exec, dispatched.result)
++}
+diff --git a/packages/core/agent-loop/src/tool-calls.ts b/packages/core/agent-loop/src/tool-calls.ts
+index 026da165..aa0e727d 100644
+--- a/packages/core/agent-loop/src/tool-calls.ts
++++ b/packages/core/agent-loop/src/tool-calls.ts
+@@ -14,9 +14,9 @@
+ import type { Context } from '@deepseek-ai/cordis'
+ import { createToolResultMessage, type ToolCallBlock } from '@deepseek-ai/dsh-llm'
+ import type { Session, SessionSeq, UserMessage } from '@deepseek-ai/dsh-session'
+-import { TOOL_ABORTED_BEFORE_DISPATCH, type ToolDispatchAuthority, type ToolExecutionInput, type ToolExecutionMode, type ToolExecutionResult, type ToolRunContext } from '@deepseek-ai/dsh-tools'
++import { TOOL_ABORTED_BEFORE_DISPATCH, type ToolBatchDispatch, type ToolExecutionInput, type ToolExecutionMode, type ToolExecutionResult, type ToolRunContext } from '@deepseek-ai/dsh-tools'
+ import { assertNever } from '@deepseek-ai/dsh-util-values'
+-import { hostDispatchers } from './internal.ts'
++import { decorateToolBatch, mintToolBatchProof } from './internal.ts'
+ 
+ /** One tool call after argument parsing, ready to schedule. */
+ interface PlannedCall {
+@@ -68,6 +68,11 @@ export async function executeToolCalls(
+ ): Promise<{ concluded: boolean }> {
+   const agent = ctx.agents.requireInitiator()
+   const { session } = agent
++  // The agent mints the one-shot proof for exactly these model calls; the
++  // registry verifies it and returns the batch capability to this call only.
++  const proof = mintToolBatchProof(agent, toolCalls)
++  const minted = ctx.tools.beginToolBatch(agent, proof, toolCalls)
++  const batch = decorateToolBatch?.(minted) ?? minted
+ 
+   // Inputs are distinct because tools/execute wrappers may replace `exec.signal`.
+   const planned: PlannedCall[] = toolCalls.map(block => ({
+@@ -90,7 +95,7 @@ export async function executeToolCalls(
+     const mode = ctx.tools.executionMode(first.exec).kind
+     const group = mode === 'parallel' ? planned.slice(next) : [first]
+     const outcome = await runGroup(
+-      ctx, turn, step, group, mode, signal, acceptContext,
++      ctx, turn, step, group, mode, signal, acceptContext, batch,
+     )
+     next += outcome.consumed
+     concluded ||= outcome.concluded
+@@ -102,23 +107,6 @@ export async function executeToolCalls(
+   return { concluded }
+ }
+ 
+-/**
+- * The authority this loop claimed at construction.
+- *
+- * Reached through the package-private map rather than a service member, so no
+- * plugin can read or replace the loop's dispatch capability through
+- * `ctx.agentLoop`. Missing means the call did not come from a live loop.
+- * @param ctx - the loop context carrying tool dispatch.
+- * @returns the host dispatch authority.
+- */
+-function toolDispatchAuthority(ctx: Context): ToolDispatchAuthority {
+-  const authority = hostDispatchers.get(ctx.root)?.authority
+-  if (authority === undefined) {
+-    throw new Error('tool-calls: the agent loop has no host dispatch authority')
+-  }
+-  return authority
+-}
+-
+ /** Parse model arguments, preserving invalid JSON as text and mapping empty input to `{}`. */
+ function parseArguments(raw: string): unknown {
+   try {
+@@ -145,9 +133,9 @@ async function runGroup(
+   mode: ToolExecutionMode['kind'],
+   signal: AbortSignal,
+   acceptContext: (context: UserMessage) => void,
++  batch: ToolBatchDispatch,
+ ): Promise<GroupOutcome> {
+   const { session } = ctx.agents.requireInitiator()
+-  const authority = toolDispatchAuthority(ctx)
+   const maxParallelToolCalls = ctx.agentLoop.config.maxParallelToolCalls.get()
+   const slots: (Slot | undefined)[] = group.map(() => undefined)
+   // Started slots retain their `tool/call` seq so the result can cite it.
+@@ -169,8 +157,8 @@ async function runGroup(
+       if (slot === undefined) break
+       const call = group[committed]
+       const result = slot.needsPost
+-        ? await authority.finalize(slot.exec, slot.result)
+-        : authority.finish(slot.exec, slot.result)
++        ? await batch.finalize(slot.exec, slot.result)
++        : batch.finish(slot.exec, slot.result)
+       // oxlint-disable-next-line typescript/no-non-null-assertion -- bounded index
+       appendToolResult(session, turn, step, call!.block, result, callSeqs[committed]!)
+       for (const context of result.additionalContexts ?? []) acceptContext(context)
+@@ -186,11 +174,11 @@ async function runGroup(
+     const call = group[index]!
+     callSeqs[index] = appendToolCall(session, turn, step, call.block)
+     started++
+-    const prepared = await authority.prepare(call.exec)
++    const prepared = await batch.prepare(call.exec)
+     throwSchedulerFailure()
+     switch (prepared.kind) {
+       case 'dispatch': {
+-        const promise = authority.dispatch(prepared.exec).then(
++        const promise = batch.dispatch(prepared.exec).then(
+           (outcome) => {
+             slots[index] = { exec: prepared.exec, result: outcome.result, needsPost: outcome.kind === 'post-result' }
+             return index
+diff --git a/packages/core/agent-loop/tests/agent-initiator.spec.ts b/packages/core/agent-loop/tests/agent-initiator.spec.ts
+index 775be680..5e0f9903 100644
+--- a/packages/core/agent-loop/tests/agent-initiator.spec.ts
++++ b/packages/core/agent-loop/tests/agent-initiator.spec.ts
+@@ -9,7 +9,6 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+ import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+ import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
+-import { hostDispatchers } from '../src/internal.ts'
+ 
+ const testToolSignal = new AbortController().signal
+ 
+@@ -281,7 +280,7 @@ describe('AgentLoop initiator scope', () => {
+     await ctx.fiber.dispose()
+   })
+ 
+-  it('keeps agentless direct tools ambient-free and builds trusted transport headers internally', async () => {
++  it('refuses agentless direct execution and builds trusted transport headers internally', async () => {
+     const adapter = new MockAdapter([
+       toolCallResponse('capability', 'capability-request', { path: '/v1/capability' }),
+       textResponse('done'),
+@@ -313,15 +312,16 @@ describe('AgentLoop initiator scope', () => {
+       },
+     }))
+ 
+-    const authority = hostDispatchers.get(ctx.root)?.authority
+-    if (authority === undefined) throw new Error('test harness: the agent loop claimed no dispatch authority')
+-    const direct = await authority.execute({
++    // The host closes the legacy direct entry once its loop is active: an
++    // agentless direct call is refused before the body, never dispatched.
++    const direct = await ctx.tools.execute({
+       signal: testToolSignal,
+       callId: ToolCallId('direct'),
+       name: 'agentless-probe',
+       arguments: {},
+     })
+-    expect(direct.isError).toBe(false)
++    expect(direct.isError).toBe(true)
++    expect(direct.error?.info?.code).toBe('E_TOOL_EXEC_UNTRUSTED')
+     expect(directAmbient).toBeUndefined()
+ 
+     const handle = await ctx.agents.create({
+diff --git a/packages/core/agent-loop/tests/resource-lifecycle.spec.ts b/packages/core/agent-loop/tests/resource-lifecycle.spec.ts
+index 0f3f1d4d..32feb20a 100644
+--- a/packages/core/agent-loop/tests/resource-lifecycle.spec.ts
++++ b/packages/core/agent-loop/tests/resource-lifecycle.spec.ts
+@@ -9,13 +9,13 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
+ import { SessionId } from '@deepseek-ai/dsh-session'
+ import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+-import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
++import { createUserMessage } from '@deepseek-ai/dsh-llm'
+ import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+ import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
+ import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
+ import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
+ import { MockAdapter, textResponse } from './mock-adapter.ts'
+-import { hostDispatchers } from '../src/internal.ts'
++import { runToolCallForTest } from '../src/internal.ts'
+ 
+ it.each([0, 1, 2])('retains Agent resources until all work exits with %i failed teardowns', async (failures) => {
+   const ctx = new Context()
+@@ -118,13 +118,10 @@ it.each(['loop', 'root'] as const)('unloads %s while a background child is stopp
+     await release.promise
+     return next()
+   })
+-  const authority = hostDispatchers.get(ctx.root)?.authority
+-  if (authority === undefined) throw new Error('test harness: the agent loop claimed no dispatch authority')
+-  const started = await authority.execute({
+-    agent: parent, signal: new AbortController().signal,
+-    callId: ToolCallId('background-start'), name: 'subagent',
+-    arguments: { description: 'child', prompt: 'wait' },
+-  })
++  const started = await runToolCallForTest(
++    ctx, parent, 'subagent', { description: 'child', prompt: 'wait' },
++    new AbortController().signal, 'background-start',
++  )
+   expect(started.isError).toBe(false)
+   const child = await requestEntered.promise
+   for (const target of ['next-step', 'next-turn'] as const) {
+diff --git a/packages/core/agent-loop/tests/resume.spec.ts b/packages/core/agent-loop/tests/resume.spec.ts
+index 34ddc1c7..c79707e1 100644
+--- a/packages/core/agent-loop/tests/resume.spec.ts
++++ b/packages/core/agent-loop/tests/resume.spec.ts
+@@ -16,9 +16,11 @@ import type { SessionHandle } from '@deepseek-ai/dsh-session-persistence'
+ import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+-import { hostDispatchers } from '../src/internal.ts'
++import { setToolBatchDecorator } from '../src/internal.ts'
+ import { MockAdapter, textResponse } from './mock-adapter.ts'
+ 
++afterEach(() => setToolBatchDecorator(undefined))
++
+ declare module '@deepseek-ai/dsh-llm' {
+   interface MessageSourceMap {
+     'tool-bash': { kind: 'tool-bash' } & ContextFormed
+@@ -992,9 +994,10 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume',
+         name: 'probe', description: 'probe', parameters: {},
+         async execute() { return [{ type: 'text', text: 'unexpected execution' }] },
+       }))
+-      const authority = hostDispatchers.get(first.root)?.authority
+-      if (authority === undefined) throw new Error('test harness: the agent loop claimed no dispatch authority')
+-      authority.prepare = () => { throw new Error('scheduler prepare failed') }
++      setToolBatchDecorator(batch => ({
++        ...batch,
++        prepare: () => { throw new Error('scheduler prepare failed') },
++      }))
+       const sessionId = SessionId('failed-tool-history')
+       const initial = await first.agents.create({ sessionId, agentOptions: { provider: 'mock', model: 'mock' } })
+       const failed = waitForIdle(first, initial.agent)
+diff --git a/packages/core/agent-loop/tests/tool-calls.spec.ts b/packages/core/agent-loop/tests/tool-calls.spec.ts
+index 87bd26f7..ab1a1d0f 100644
+--- a/packages/core/agent-loop/tests/tool-calls.spec.ts
++++ b/packages/core/agent-loop/tests/tool-calls.spec.ts
+@@ -10,12 +10,12 @@ import SessionStore, { SessionEvent, SessionId, TOOL_NOT_STARTED, TOOL_OUTCOME_U
+ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+ import LlmRuntime from '@deepseek-ai/dsh-llm'
+ import type { ContextFormed } from '@deepseek-ai/dsh-llm'
+-import ToolRuntime, { defineContentToolFixture, TOOL_ABORTED_BEFORE_DISPATCH, type PostToolDecision, type PreToolDecision } from '@deepseek-ai/dsh-tools'
++import ToolRuntime, { defineContentToolFixture, TOOL_ABORTED_BEFORE_DISPATCH, type PostToolDecision, type PreToolDecision, type ToolBatchDispatch } from '@deepseek-ai/dsh-tools'
+ import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
+ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+ import { MockAdapter, textResponse } from './mock-adapter.ts'
+-import { hostDispatchers } from '../src/internal.ts'
++import { setToolBatchDecorator } from '../src/internal.ts'
+ import { PtcRuntime } from '@deepseek-ai/dsh-ptc-runtime'
+ import type { PtcRunRequest, PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
+ 
+@@ -26,14 +26,13 @@ declare module '@deepseek-ai/dsh-llm' {
+ }
+ 
+ /**
+- * The host dispatch authority the harnessed loop claimed for this context.
+- * Tests replace its staged stages to inject scheduler failures; the authority
+- * itself is package-private, so a plugin-facing test can no longer reach it.
++ * Wrap each turn's one-shot host batch to inject scheduler failures. The batch
++ * itself is minted by the loop and never stored on the service, so this
++ * package-private decorator is the only seam a test has.
+  */
+-function schedulerOf(ctx: Context) {
+-  const authority = hostDispatchers.get(ctx.root)?.authority
+-  if (authority === undefined) throw new Error('test harness: the agent loop claimed no dispatch authority')
+-  return authority
++function patchToolBatch(patch: (batch: ToolBatchDispatch) => Partial<ToolBatchDispatch>): void {
++  setToolBatchDecorator(batch => ({ ...batch, ...patch(batch) }))
++  onTestFinished(() => setToolBatchDecorator(undefined))
+ }
+ 
+ async function harness(adapter: MockAdapter, maxParallelToolCalls?: number) {
+@@ -662,10 +661,7 @@ describe('tool-call scheduler: failure quiescence', () => {
+         return [{ type: 'text', text: `done-${args.id}` }]
+       },
+     }))
+-    const scheduler = schedulerOf(ctx)
+     const executionMode = ctx.tools.executionMode.bind(ctx.tools)
+-    const prepare = scheduler.prepare.bind(scheduler)
+-    const finalize = scheduler.finalize.bind(scheduler)
+     const failure = new Error(`${phase} failed`)
+     if (phase === 'execution-mode') {
+       ctx.tools.executionMode = (exec) => {
+@@ -673,15 +669,19 @@ describe('tool-call scheduler: failure quiescence', () => {
+         return executionMode(exec)
+       }
+     } else if (phase === 'prepare') {
+-      scheduler.prepare = (exec) => {
+-        if (exec.callId === ToolCallId('c2')) throw failure
+-        return prepare(exec)
+-      }
++      patchToolBatch(batch => ({
++        prepare: (exec) => {
++          if (exec.callId === ToolCallId('c2')) throw failure
++          return batch.prepare(exec)
++        },
++      }))
+     } else {
+-      scheduler.finalize = (exec, result) => {
+-        if (exec.callId === ToolCallId('c2')) throw failure
+-        return finalize(exec, result)
+-      }
++      patchToolBatch(batch => ({
++        finalize: (exec, result) => {
++          if (exec.callId === ToolCallId('c2')) throw failure
++          return batch.finalize(exec, result)
++        },
++      }))
+     }
+     const agent = await ctx.agentLoop.create(SessionId(`failure-${phase}`), { provider: 'mock', model: 'mock' })
+     const listenerCount = () => ctx.events.dispatch('emit', ['session/event', agent.session, events(agent).at(-1)]).length
+@@ -715,8 +715,7 @@ describe('tool-call scheduler: failure quiescence', () => {
+     expect(listenerCount()).toBe(idleListenerCount)
+ 
+     ctx.tools.executionMode = executionMode
+-    scheduler.prepare = prepare
+-    scheduler.finalize = finalize
++    setToolBatchDecorator(undefined)
+     const nextTurn = waitForIdle(ctx, agent)
+     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'continue' }], source: { kind: 'user' } }))
+     await nextTurn
+@@ -740,7 +739,7 @@ describe('tool-call scheduler: failure quiescence', () => {
+     onTestFinished(() => ctx.fiber.dispose())
+     const failure = new Error('prepare failed')
+     const recoveryFailure = new Error('recovery result rejected')
+-    schedulerOf(ctx).prepare = () => { throw failure }
++    patchToolBatch(() => ({ prepare: () => { throw failure } }))
+     ctx.on('internal/dispatch', (_mode, name, args) => {
+       if (name === 'session/event' && (args[1] as SessionEvent).type === 'tool/result') throw recoveryFailure
+     })
+@@ -775,16 +774,16 @@ describe('tool-call scheduler: failure quiescence', () => {
+       name: 'p', description: 'probe', parameters: {},
+       async execute() { return [{ type: 'text', text: 'completed' }] },
+     }))
+-    const scheduler = schedulerOf(ctx)
+-    const dispatch = scheduler.dispatch.bind(scheduler)
+-    scheduler.dispatch = async (exec) => {
+-      if (exec.agent?.id === SessionId('first-agent')) {
+-        enteredDispatch.resolve(undefined)
+-        await releaseDispatch.promise
+-        throw new Error('first agent dispatch failed')
+-      }
+-      return dispatch(exec)
+-    }
++    patchToolBatch(batch => ({
++      dispatch: async (exec) => {
++        if (exec.agent?.id === SessionId('first-agent')) {
++          enteredDispatch.resolve(undefined)
++          await releaseDispatch.promise
++          throw new Error('first agent dispatch failed')
++        }
++        return batch.dispatch(exec)
++      },
++    }))
+     const first = await ctx.agentLoop.create(SessionId('first-agent'), { provider: 'mock', model: 'mock' })
+     const { agent: second } = await first.ctx.agents.create({
+       sessionId: SessionId('second-agent'),
+@@ -830,31 +829,30 @@ describe('tool-call scheduler: failure quiescence', () => {
+     ctx.tools.register(gated.tool)
+     // The registry contains expected failures as results; replace its internal
+     // view only to inject the invariant violation this boundary must contain.
+-    const scheduler = schedulerOf(ctx)
+-    const prepare = scheduler.prepare.bind(scheduler)
+-    const dispatch = scheduler.dispatch.bind(scheduler)
+     const prepareGate = Promise.withResolvers<undefined>()
+     let thirdPrepareEntered = false
+-    scheduler.prepare = async (exec) => {
+-      const prepared = await prepare(exec)
+-      if (exec.callId === ToolCallId('c3')) {
+-        thirdPrepareEntered = true
+-        await prepareGate.promise
+-      }
+-      return prepared
+-    }
+     const schedulerError = new Error('scheduler exploded')
+     const drainedError = new Error('sibling failed while draining')
+     let rejectFirst: ((error: Error) => void) | undefined
++    patchToolBatch(batch => ({
++      prepare: async (exec) => {
++        const prepared = await batch.prepare(exec)
++        if (exec.callId === ToolCallId('c3')) {
++          thirdPrepareEntered = true
++          await prepareGate.promise
++        }
++        return prepared
++      },
++      dispatch: exec => exec.callId === ToolCallId('c1')
++        ? new Promise((_resolve, reject) => { rejectFirst = reject })
++        : batch.dispatch(exec).then(() => { throw drainedError }),
++    }))
+     onTestFinished(async () => {
+       prepareGate.resolve(undefined)
+       rejectFirst?.(schedulerError)
+       for (const id of gated.pending()) gated.release(id)
+       await ctx.fiber.dispose()
+     })
+-    scheduler.dispatch = exec => exec.callId === ToolCallId('c1')
+-      ? new Promise((_resolve, reject) => { rejectFirst = reject })
+-      : dispatch(exec).then(() => { throw drainedError })
+     const agent = await ctx.agentLoop.create(SessionId('scheduler-failure'), { provider: 'mock', model: 'mock' })
+     let idle = false
+     const idlePromise = waitForIdle(ctx, agent).then(() => { idle = true })
+diff --git a/packages/core/tools/src/index.ts b/packages/core/tools/src/index.ts
+index c1c6f8a5..063b14f0 100644
+--- a/packages/core/tools/src/index.ts
++++ b/packages/core/tools/src/index.ts
+@@ -9,7 +9,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
+ import z from '@deepseek-ai/schemastery'
+ import { AnonymousEntries, NamedEntries, ScopedLayers, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
+ import type { ScopeKey, ScopeLayer, Scoped } from '@deepseek-ai/dsh-scope'
+-import type { ToolCallId, ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
++import type { ToolCallBlock, ToolCallId, ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
+ import { HarnessError } from '@deepseek-ai/dsh-llm'
+ import type { Agent } from '@deepseek-ai/dsh-agent'
+ import type { UserMessage } from '@deepseek-ai/dsh-session'
+@@ -299,6 +299,26 @@ export interface ToolDefinition extends ToolSchema {
+   presentResult?(args: unknown, result: ToolResult): ToolResultView | undefined
+ }
+ 
++/**
++ * Public, non-executable view of one registered tool.
++ *
++ * `ToolRuntime.get` returns this shape: every metadata and presentation field
++ * of the registration except {@link ToolDefinition.execute}. The live handler
++ * stays inside the registry, so `get(name).execute` is `undefined` at runtime
++ * and a plugin cannot call a tool body by reading the registry — it must go
++ * through the host dispatch pipeline (which is closed to callers that do not
++ * hold a verified host batch).
++ *
++ * The view is memoized per registration (one stable object per definition, so
++ * `get(name) === get(name)` and cross-scope identity comparisons keep working)
++ * and frozen; nested `parameters`/`output` objects are copied one level so a
++ * consumer cannot mutate the registry's own declaration through the view.
++ */
++export type ToolDescriptor = Omit<ToolDefinition, 'execute'>
++
++/** View → the live definition it was projected from (module-private; never exported). */
++const rawOfDescriptor = new WeakMap<ToolDescriptor, ToolDefinition>()
++
+ /** The completed outcome handed to {@link ToolDefinition.presentResult}. */
+ export interface ToolResult {
+   /** The final model-facing content (or the rendered error text on failure). */
+@@ -459,7 +479,7 @@ export type ScheduledToolDispatch =
+ 
+ /**
+  * Scheduler view that keeps pre/post policy ordered while overlapping dispatch.
+- * It is reached only through the internal {@link ToolDispatchAuthority}; the
++ * It is reached only through the internal {@link ToolBatchDispatch}; the
+  * public service instance no longer exposes it.
+  * @internal
+  */
+@@ -475,22 +495,23 @@ export interface ToolRuntimeScheduler {
+ }
+ 
+ /**
+- * Host-only capability that may dispatch a tool call on an agent's behalf.
++ * Proof-gated capability for one host tool batch.
++ *
++ * `dsh-tools` mints this only inside {@link ToolRuntime.beginToolBatch}, after
++ * the calling agent proves it minted the batch (a per-batch proof whose only
++ * issuer is the agent's own private method) and after the registry confirms
++ * the agent is the live one it registered. There is no global claim, no
++ * first-come bootstrap window, and no exported symbol: possession requires a
++ * proof a plugin cannot produce for a real host agent, and the capability is
++ * returned only to the caller of `beginToolBatch` (the agent loop), never
++ * stored on the service, an execution, or an event.
+  *
+- * A registry mints at most one authority, through
+- * {@link ToolRuntime.claimDispatchAuthority}, and the composition that owns
+- * agent dispatch (the agent loop) claims it during startup. Possession of this
+- * object is the provenance: the public {@link ToolRuntime.execute} entry
+- * refuses every call once an authority exists, so a plugin that constructs an
+- * `exec` — or copies a live `ToolRunContext` out of its own handler — cannot
+- * borrow an agent identity. The authority is held in an ECMAScript private
+- * field, is not an own property, symbol key, or export of the package, and is
+- * never handed to a tool body, a policy listener, or a result.
++ * The batch is one-shot per model call: `prepare` accepts each call id at most
++ * once and only for the batch's own agent, so a leaked batch cannot be reused
++ * for another call, another agent, or another set of arguments.
+  * @internal
+  */
+-export interface ToolDispatchAuthority {
+-  /** Materialize and run one host-dispatched call end to end. */
+-  execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
++export interface ToolBatchDispatch {
+   /** Materialize input, run the ordered pre-execute/guard gate, and decide what stage follows. */
+   prepare(exec: ToolExecutionInput): Promise<ScheduledToolPreparation>
+   /** Run only the around-dispatch/body stage of a prepared execution. */
+@@ -758,8 +779,8 @@ interface CompiledToolRestriction {
+ 
+ /** One scope's complete registry view, derived in a single layer traversal. */
+ interface ToolView {
+-  /** Visible definitions after restrictions, scoped shadowing, and transport insertion. */
+-  readonly visible: ReadonlyMap<string, ToolDefinition>
++  /** Visible descriptors after restrictions, scoped shadowing, and transport insertion. */
++  readonly visible: ReadonlyMap<string, ToolDescriptor>
+   /** Pre-restriction capability names used by prompt-order validation. */
+   readonly knownNames: ReadonlySet<string>
+   /** Current global names that a scoped restriction may name. */
+@@ -778,7 +799,7 @@ export type ToolGuard = (execution: Readonly<ToolExecution>) => string | undefin
+ 
+ /** One scope's complete tool-registry contribution. */
+ class ToolLayer implements ScopeLayer {
+-  readonly tools: NamedEntries<ToolDefinition>
++  readonly tools: NamedEntries<ToolDescriptor>
+   readonly restrictions = new AnonymousEntries<CompiledToolRestriction>()
+   readonly guards = new AnonymousEntries<ToolGuard>()
+   /**
+@@ -859,12 +880,12 @@ export class ToolRuntime extends Service {
+   })
+ 
+   /**
+-   * The single host dispatch authority, minted by
+-   * {@link claimDispatchAuthority}. ECMAScript-private: not an own property,
+-   * not a symbol key, and unreachable from any value the package exports or
+-   * hands to a caller.
++   * Whether a host agent loop owns tool dispatch in this process. Set by the
++   * loop at construction; it grants nothing and is deliberately write-only, so
++   * a plugin that sets it early only closes the legacy entry for everyone
++   * (a denial of service, never a capability).
+    */
+-  #dispatchAuthority: ToolDispatchAuthority | undefined
++  #hostActive = false
+   /** Executions this registry minted for the authority and has not dispatched yet. */
+   #authorizedExecutions = new WeakSet<ToolRunContext>()
+   /** Executions already handed to the dispatch stage; a second dispatch is a replay. */
+@@ -882,6 +903,8 @@ export class ToolRuntime extends Service {
+   private contentFinalizers = new WeakMap<ToolRunContext, ToolDefinition['finalizeContent']>()
+   /** Execution-prepared content installed before post-execute policy. */
+   private contentProjectors = new WeakMap<ToolRunContext, ToolDefinition['projectContent']>()
++  /** Stable public view per registration; see {@link ToolDescriptor}. */
++  private readonly descriptors = new WeakMap<ToolDefinition, ToolDescriptor>()
+   private readonly layers = new ScopedLayers(
+     scope => new ToolLayer(scope),
+     () => { this.ctx.emit('tools/change') },
+@@ -895,7 +918,7 @@ export class ToolRuntime extends Service {
+    * a PTC mode is no longer known when the service is constructed, and the
+    * transport owns its PTC call tracking and state-owner registrations.
+    */
+-  private ptcTransport: ToolDefinition | undefined
++  #ptcTransport: ToolDescriptor | undefined
+   private readonly ptcContext: Context
+ 
+   /**
+@@ -1008,35 +1031,39 @@ export class ToolRuntime extends Service {
+    * and only for scopes whose mode actually presents it.
+    * @returns the shared transport definition.
+    */
+-  private requirePtcTransport(): ToolDefinition {
++  private requirePtcTransport(): ToolDescriptor {
+     const self = rawService(this)
+-    this.ptcTransport ??= createRunCodeTool(this, {
+-      resolveWorkingDirectory: async (exec) => {
+-        // Only Agent-owned PTC requires directory state; native registries
+-        // and unowned programs can run without this service.
+-        if (exec.agent === undefined) return undefined
+-        const directories = this.ctx.get('workingDirectory')
+-        if (directories === undefined) throw new Error('dsh-tools: run_code with an Agent requires workingDirectory')
+-        return directories.ensure(exec.agent, exec.signal)
+-      },
+-      requireRuntime: () => this.requirePtcRuntime(this.defaultMode),
+-      peekApprover: () => this.ctx.get('approval'),
+-      resolveSandboxPolicy: (exec) => {
+-        const policy = this.ctx.get('sandboxPolicy')
+-        if (policy === undefined) throw new Error('dsh-tools: confined PTC runtime requires sandboxPolicy')
+-        return policy.resolve(exec.agent === undefined ? {} : { session: exec.agent.session })
+-      },
+-      // The language-aware description/parameters getters read the runtime
+-      // without demanding one, so a native-default process can still project
+-      // the transport for an agent that chose code.
+-      peekRuntime: () => this.ctx.get('ptcRuntime'),
+-      maxParallel: this.maxParallelSubCalls,
+-      scheduler: self.#scheduler,
+-      shapeDispatchLog: dispatch => this.shapeDispatchLog(dispatch),
+-    }, this.ptcContext)
+-    return this.ptcTransport
++    if (self.#ptcTransport === undefined) {
++      const raw = createRunCodeTool(self, {
++        resolveWorkingDirectory: async (exec) => {
++          // Only Agent-owned PTC requires directory state; native registries
++          // and unowned programs can run without this service.
++          if (exec.agent === undefined) return undefined
++          const directories = self.ctx.get('workingDirectory')
++          if (directories === undefined) throw new Error('dsh-tools: run_code with an Agent requires workingDirectory')
++          return directories.ensure(exec.agent, exec.signal)
++        },
++        requireRuntime: () => self.requirePtcRuntime(self.defaultMode),
++        peekApprover: () => self.ctx.get('approval'),
++        resolveSandboxPolicy: (exec) => {
++          const policy = self.ctx.get('sandboxPolicy')
++          if (policy === undefined) throw new Error('dsh-tools: confined PTC runtime requires sandboxPolicy')
++          return policy.resolve(exec.agent === undefined ? {} : { session: exec.agent.session })
++        },
++        // The language-aware description/parameters getters read the runtime
++        // without demanding one, so a native-default process can still project
++        // the transport for an agent that chose code.
++        peekRuntime: () => self.ctx.get('ptcRuntime'),
++        maxParallel: self.maxParallelSubCalls,
++        scheduler: self.#scheduler,
++        shapeDispatchLog: dispatch => self.shapeDispatchLog(dispatch),
++      }, self.ptcContext)
++      self.#ptcTransport = self.#descriptorOf(raw)
++    }
++    return self.#ptcTransport
+   }
+ 
++
+   /**
+    * Present the calling scope's tools in `mode` instead of the deployment
+    * default. Nearest scope on the chain wins, so a preset's standing
+@@ -1136,6 +1163,10 @@ export class ToolRuntime extends Service {
+    */
+   register(definition: ToolDefinition): () => void {
+     const name = definition.name
++    const self = rawService(this)
++    if (typeof definition.execute !== 'function') {
++      throw new TypeError(`tool "${name}" must declare an execute handler`)
++    }
+     const output = (definition as Partial<ToolDefinition>).output
+     if (output === undefined || typeof output !== 'object'
+       || typeof output.render !== 'function'
+@@ -1154,9 +1185,10 @@ export class ToolRuntime extends Service {
+     if (name === RUN_CODE_NAME) {
+       throw new Error(`tool name "${RUN_CODE_NAME}" is reserved for the PTC mode presentation transport and cannot be registered or shadowed`)
+     }
++    const descriptor = self.#descriptorOf(definition)
+     return this.layers.effect(
+       this.ctx,
+-      layer => layer.tools.insert(name, definition),
++      layer => layer.tools.insert(name, descriptor),
+       { label: 'tools.register()' },
+     )
+   }
+@@ -1258,12 +1290,12 @@ export class ToolRuntime extends Service {
+     const own = this.layers.peek(scope)
+     // Inherited surface, nearest ancestor last: a nearer scope's same-name
+     // entry shadows a farther one, and the global layer is the farthest.
+-    const inherited = new Map<string, ToolDefinition>(this.layers.global.tools.entries())
++    const inherited = new Map<string, ToolDescriptor>(this.layers.global.tools.entries())
+     for (const layer of layers) {
+       if (layer === own) continue
+       for (const [name, definition] of layer.tools.entries()) inherited.set(name, definition)
+     }
+-    const visible = new Map<string, ToolDefinition>()
++    const visible = new Map<string, ToolDescriptor>()
+     const knownNames = new Set<string>()
+     const restrictableNames = new Set<string>()
+     for (const [name, definition] of inherited) {
+@@ -1297,14 +1329,81 @@ export class ToolRuntime extends Service {
+    * shadows global; a restricted-away global reads as absent). Presenters pass
+    * the calling agent so the rendered card matches the definition that
+    * actually executed.
++   *
++   * The result is a frozen {@link ToolDescriptor}: metadata, schemas, and
++   * presentation hooks only — never the live `execute` handler. Repeated
++   * lookups of the same registration return the same view object.
+    * @param name - the tool name as registered.
+    * @param scope - the viewing scope (the agent); omitted = the global view.
+-   * @returns the definition the scope resolves, or undefined when none is visible.
++   * @returns the non-executable view the scope resolves, or undefined when none is visible.
+    */
+-  get(name: string, scope?: ScopeKey): ToolDefinition | undefined {
++  get(name: string, scope?: ScopeKey): ToolDescriptor | undefined {
+     return this.view(scope).visible.get(name)
+   }
+ 
++  /**
++   * Whether this exact registered definition is the one a scope currently
++   * sees. Scoped registration shadows global, and restrictions can hide a
++   * global name; this is the identity-preserving replacement for comparing
++   * `get(name, scope)` against the object a plugin passed to `register()`.
++   * @param definition - the definition object that was registered.
++   * @param scope - the viewing scope (the agent); omitted = the global view.
++   * @returns true when that exact registration is visible to the scope.
++   */
++  isVisible(definition: Pick<ToolDefinition, 'name'>, scope?: ScopeKey): boolean {
++    return this.view(scope).visible.get(definition.name) === rawService(this).#descriptorOf(definition as ToolDefinition)
++  }
++
++  /** The live definition for a scope; internal dispatch and execution-mode reads only. */
++  #rawGet(name: string, scope?: ScopeKey): ToolDefinition | undefined {
++    const descriptor = this.view(scope).visible.get(name)
++    return descriptor === undefined ? undefined : rawOfDescriptor.get(descriptor)
++  }
++
++  /** One frozen, handler-free view per registration. */
++  #descriptorOf(candidate: ToolDefinition | ToolDescriptor): ToolDescriptor {
++    // An existing view is its own descriptor (isVisible accepts both shapes).
++    if (rawOfDescriptor.has(candidate as ToolDescriptor)) return candidate as ToolDescriptor
++    const definition = candidate as ToolDefinition
++    let descriptor = this.descriptors.get(definition)
++    if (descriptor === undefined) {
++      const view: Record<PropertyKey, unknown> = {}
++      for (const key of Reflect.ownKeys(definition)) {
++        // The live handler is the one field the view must never carry.
++        if (key === 'execute') continue
++        const property = Object.getOwnPropertyDescriptor(definition, key)
++        if (property === undefined) continue
++        if ('get' in property) {
++          // Accessor fields stay accessors: `run_code` installs language-aware
++          // getters for `description`/`parameters`; the getters are pure
++          // closures, so a view-bound read still resolves against the live
++          // runtime without exposing code.
++          Object.defineProperty(view, key, { get: property.get, enumerable: property.enumerable === true, configurable: false })
++          continue
++        }
++        // Data fields the model or dispatch later reads are detached copies:
++        // mutating a view must never mutate the registry's declaration (the
++        // schema a call is validated against). Presentation/transform hooks are
++        // pure functions and stay shared.
++        let value = property.value
++        if (key === 'parameters') {
++          value = deepFreeze(snapshotJsonValue(value) ?? value)
++        } else if (key === 'output' && typeof value === 'object' && value !== null) {
++          const output = value as ToolOutputDefinition
++          value = Object.freeze({
++            ...output,
++            schema: deepFreeze(snapshotJsonValue(output.schema) ?? output.schema),
++          })
++        }
++        Object.defineProperty(view, key, { value, enumerable: property.enumerable === true, writable: false, configurable: false })
++      }
++      descriptor = Object.freeze(view) as ToolDescriptor
++      this.descriptors.set(definition, descriptor)
++      rawOfDescriptor.set(descriptor, definition)
++    }
++    return descriptor
++  }
++
+   /**
+    * Resolve the definition that MAY EXECUTE for a call, applying the mode
+    * collapse at the operation boundary that owns it. The registry view
+@@ -1318,8 +1417,8 @@ export class ToolRuntime extends Service {
+    * @param nested - whether the call is a transport sub-dispatch, not a model-direct call.
+    * @returns the definition that may run, or undefined when the call must be rejected.
+    */
+-  private resolveExecution(name: string, scope: ScopeKey | undefined, nested: boolean): ToolDefinition | undefined {
+-    const tool = this.get(name, scope)
++  #resolveExecution(name: string, scope: ScopeKey | undefined, nested: boolean): ToolDefinition | undefined {
++    const tool = this.#rawGet(name, scope)
+     if (tool === undefined) return undefined
+     if (this.collapses(name, scope, nested)) return undefined
+     return tool
+@@ -1353,7 +1452,7 @@ export class ToolRuntime extends Service {
+   }
+ 
+   /** Project one definition onto the model-facing schema fields. */
+-  private schemaOf(definition: ToolDefinition, detachParameters: boolean): ToolSchema {
++  private schemaOf(definition: ToolDescriptor, detachParameters: boolean): ToolSchema {
+     const { name, description, parameters, deferLoading } = definition
+     const detached = detachParameters ? snapshotJsonValue(parameters) : parameters
+     if (detached === undefined) {
+@@ -1375,7 +1474,7 @@ export class ToolRuntime extends Service {
+    * @returns the fail-closed scheduling mode.
+    */
+   executionMode(exec: ToolExecutionInput): ToolExecutionMode {
+-    const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== undefined)
++    const tool = rawService(this).#resolveExecution(exec.name, exec.agent, exec.parent !== undefined)
+     if (!tool?.isConcurrencySafe) return { kind: 'exclusive' }
+     try {
+       const concurrencySafe: unknown = tool.isConcurrencySafe(exec.arguments)
+@@ -1437,13 +1536,13 @@ export class ToolRuntime extends Service {
+    * successful started outcome with `ABORTED`; already-started work is still
+    * drained and may retain a tool-owned structured error.
+    *
+-   * This is the UNPRIVILEGED entry. Once the host claims the dispatch
+-   * authority ({@link claimDispatchAuthority}), it refuses every call with
++   * This is the UNPRIVILEGED entry. Once a host agent loop marks the process
++   * active ({@link markHostActive}), it refuses every call with
+    * `E_TOOL_EXEC_UNTRUSTED`: a caller-supplied `exec` is not provenance, so a
+    * plugin cannot execute a tool by constructing one or by copying a live
+-   * `ToolRunContext` out of its own handler. A bare registry with no host
+-   * dispatcher keeps the historical behavior because no trusted identity
+-   * exists for a caller to borrow there.
++   * `ToolRunContext` out of its own handler. Host turns dispatch through
++   * {@link beginToolBatch} instead. A bare registry with no host loop keeps
++   * the historical behavior because no trusted identity exists to borrow.
+    * @param exec - the caller-supplied call input.
+    * @returns the materialized final result, or the stable refusal result.
+    */
+@@ -1455,38 +1554,66 @@ export class ToolRuntime extends Service {
+   }
+ 
+   /**
+-   * Claim the one host dispatch authority for this registry.
++   * Close the legacy {@link execute} entry for this process.
++   *
++   * The agent loop calls this at construction, before it can drive a turn. It
++   * returns nothing: activation is not a capability, and a plugin that calls
++   * it early can only disable the legacy entry (a denial of service), never
++   * grant itself a way to run tools.
++   */
++  markHostActive(): void {
++    rawService(this).#hostActive = true
++  }
++
++  /**
++   * Mint the one-shot dispatch capability for a host agent's tool batch.
+    *
+-   * The composition that owns agent dispatch (the agent loop) calls this
+-   * during its own construction, before it can create or drive any agent. A
+-   * second claim is a programming error and fails loudly rather than handing
+-   * out a second capability, so a plugin cannot acquire one after the host has
+-   * started. The returned object is the only way to dispatch an agent-bound
+-   * call; it is deliberately absent from the service surface, the package
+-   * exports, and every execution/event object.
+-   * @returns the host dispatch authority.
+-   * @throws {ToolExecutionUntrustedError} when the authority was already claimed.
++   * The caller must present a batch proof minted by the exact live agent (its
++   * verifier consumes the proof) and an agent identity the registry has
++   * registered. Only the agent loop's own turn code has both, so a plugin
++   * cannot obtain a batch for a real host agent — and the public `execute`
++   * entry is already closed by the time a turn runs.
++   * @param agent - the live host agent the batch dispatches for.
++   * @param proof - the per-batch proof minted by that agent's private minter.
++   * @param toolCalls - the model-requested calls this batch may dispatch.
++   * @returns the one-shot batch capability.
++   * @throws {ToolExecutionUntrustedError} when any part of the proof is missing or foreign.
+    */
+-  claimDispatchAuthority(): ToolDispatchAuthority {
++  beginToolBatch(
++    agent: Agent,
++    proof: unknown,
++    toolCalls: readonly ToolCallBlock[],
++  ): ToolBatchDispatch {
+     const self = rawService(this)
+-    if (self.#dispatchAuthority !== undefined) {
+-      throw new ToolExecutionUntrustedError('the host dispatch authority has already been claimed on this registry')
+-    }
+-    const authority: ToolDispatchAuthority = {
+-      execute: (exec) => {
+-        self.#assertAuthorityInput(exec)
+-        return self.#prepareExecution(exec, prepared => self.#completeScheduledExecution(prepared))
+-      },
+-      prepare: (exec) => {
+-        self.#assertAuthorityInput(exec)
+-        return self.#prepareScheduledExecution(exec)
++    const agents = this.ctx.get('agents')
++    if (agents === undefined || agents.get(agent.id) !== agent) {
++      throw new ToolExecutionUntrustedError('tool batch requires a live registered host agent')
++    }
++    const verifier = (agent as unknown as { verifyToolBatch?: unknown }).verifyToolBatch
++    if (typeof verifier !== 'function') {
++      throw new ToolExecutionUntrustedError('host agent cannot verify tool batches')
++    }
++    if ((verifier as (p: unknown, c: readonly ToolCallBlock[]) => unknown).call(agent, proof, toolCalls) !== true) {
++      throw new ToolExecutionUntrustedError('tool batch proof was not minted by this host agent')
++    }
++    const expected = new Map<string, string>(toolCalls.map(call => [String(call.id), call.name]))
++    const batch: ToolBatchDispatch = {
++      prepare: async (input) => {
++        if (input.agent !== agent) {
++          throw new ToolExecutionUntrustedError('tool batch was minted for another agent')
++        }
++        const name = expected.get(String(input.callId))
++        if (name === undefined || name !== input.name) {
++          throw new ToolExecutionUntrustedError('tool call is not part of this host batch')
++        }
++        expected.delete(String(input.callId))
++        return self.#prepareScheduledExecution(input)
+       },
+       dispatch: exec => self.#dispatchScheduledExecution(exec),
+       finalize: (exec, result) => self.#finalizeScheduledExecution(exec, result),
+       finish: (exec, result) => self.#finishScheduledExecution(exec, result),
+     }
+-    self.#dispatchAuthority = authority
+-    return authority
++    return batch
+   }
+ 
+   /** Reject a public-`execute` input before any registry state or policy runs. */
+@@ -1500,24 +1627,12 @@ export class ToolRuntime extends Service {
+     if ('token' in exec || 'deferContext' in exec || 'concludeTurn' in exec) {
+       return toolUntrustedExecutionResult('a registry-minted execution cannot be reused as a dispatch input')
+     }
+-    if (this.#dispatchAuthority !== undefined) {
+-      return toolUntrustedExecutionResult('tool execution requires the host dispatch authority')
++    if (this.#hostActive) {
++      return toolUntrustedExecutionResult('tool execution requires the host dispatch pipeline')
+     }
+     return undefined
+   }
+ 
+-  /** Reject a structurally unusable input handed to the host authority itself. */
+-  #assertAuthorityInput(exec: ToolExecutionInput): void {
+-    if (exec === null || typeof exec !== 'object') {
+-      throw new ToolExecutionUntrustedError('tool execution input must be an object', TOOL_EXEC_INVALID)
+-    }
+-    if ('token' in exec || 'deferContext' in exec || 'concludeTurn' in exec) {
+-      throw new ToolExecutionUntrustedError('a registry-minted execution cannot be reused as a dispatch input')
+-    }
+-    const invalid = invalidExecutionFields(exec.callId, exec.name, exec.signal, exec.agent)
+-    if (invalid !== undefined) throw new ToolExecutionUntrustedError(invalid, TOOL_EXEC_INVALID)
+-  }
+-
+   async #completeScheduledExecution(prepared: ScheduledToolPreparation): Promise<ToolExecutionResult> {
+     switch (prepared.kind) {
+       case 'dispatch': {
+@@ -1573,7 +1688,7 @@ export class ToolRuntime extends Service {
+     // observe — or worse, approve — a call that can only fail. An unknown tool
+     // keeps the historical dispatch-stage `UNKNOWN_TOOL` path so policy
+     // listeners still see every name that reaches the registry.
+-    const visible = this.get(name, agent)
++    const visible = this.#rawGet(name, agent)
+     const collapsed = visible !== undefined && this.collapses(name, agent, parent !== undefined)
+     const concludingExecutions = this.concludingExecutions
+     const base = {
+@@ -1749,7 +1864,7 @@ export class ToolRuntime extends Service {
+     }
+     exec.signal = signal
+     try {
+-      const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== undefined)
++      const tool = rawService(this).#resolveExecution(exec.name, exec.agent, exec.parent !== undefined)
+       if (!tool) throw new ToolNotFoundError(exec.name)
+       state.bodyInvoked = true
+       const returned = await tool.execute(exec.arguments, exec)
+@@ -1995,7 +2110,7 @@ export class ToolRuntime extends Service {
+       if (result.isError) {
+         throw new TypeError('tools/post-execute cannot replace the value of a failed result')
+       }
+-      const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== undefined)
++      const tool = rawService(this).#resolveExecution(exec.name, exec.agent, exec.parent !== undefined)
+       if (tool === undefined) throw new ToolNotFoundError(exec.name)
+       const replaced = this.createSuccessResult(exec, tool, decision.value)
+       return this.markCanonical(exec, {
+@@ -2064,7 +2179,7 @@ export class ToolRuntime extends Service {
+         ...result.additionalContexts !== undefined ? { additionalContexts: result.additionalContexts } : {},
+       })
+     }
+-    const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== undefined)
++    const tool = rawService(this).#resolveExecution(exec.name, exec.agent, exec.parent !== undefined)
+     if (tool === undefined) throw new ToolNotFoundError(exec.name)
+     const normalized = this.createSuccessResult(exec, tool, result.value)
+     return this.markCanonical(exec, {
+diff --git a/packages/core/tools/tests/exec-provenance.spec.ts b/packages/core/tools/tests/exec-provenance.spec.ts
+index 36cfc858..ab724a0a 100644
+--- a/packages/core/tools/tests/exec-provenance.spec.ts
++++ b/packages/core/tools/tests/exec-provenance.spec.ts
+@@ -4,16 +4,18 @@
+  * Threat model: an ordinary cordis plugin shares this process and can reach
+  * the `tools` service, the package namespace, live agents, the initiator
+  * boundary, and any execution object a handler or policy listener was given.
+- * It cannot reach the one host dispatch authority the agent loop claimed at
+- * construction. Every case below therefore exercises the SAME surfaces a
+- * plugin has, not a private helper:
++ * There is no global signing capability to obtain: a host batch needs a proof
++ * minted by the exact live agent, and the public entry is closed once the host
++ * loop marks the process active. Every case below therefore exercises the SAME
++ * surfaces a plugin has, not a private helper:
+  *
+  * - `ctx.tools.execute(...)` with a hand-built input (T01, T02, T13)
+  * - a registry-minted `ToolRunContext` captured from a tool handler, copied,
+  *   mutated, replayed, or handed to another agent/session (T03, T04, T08, T09,
+  *   T12)
+  * - `ctx.agents.withInitiator(realAgent, ...)` (T05)
+- * - `ctx.tools.claimDispatchAuthority()` after the host claimed it (T06)
++ * - the removed global signing entry, the proof-gated batch, and host
++ *   activation as a write-only marker (T06, T06b)
+  * - the package namespace, the service proxy, its prototype, and the raw
+  *   cordis target behind the proxy (T07)
+  * - a fresh registry standing in for a restarted host (T14)
+@@ -36,11 +38,12 @@ import ToolRuntime, {
+   defineTool,
+   TOOL_EXEC_INVALID,
+   TOOL_EXEC_UNTRUSTED,
++  type ToolDefinition,
+   type ToolExecutionInput,
+   type ToolExecutionResult,
+   type ToolRunContext,
+ } from '@deepseek-ai/dsh-tools'
+-import { hostDispatchers } from '../../agent-loop/src/internal.ts'
++import { beginToolBatchForTest } from '../../agent-loop/src/internal.ts'
+ import { MockAdapter, textResponse, toolCallResponse } from '../../agent-loop/tests/mock-adapter.ts'
+ 
+ /** One live host: registries, the loop (which claims the authority), and a scripted model. */
+@@ -96,11 +99,9 @@ function probeTool(seen: ToolRunContext[]): ReturnType<typeof defineTool> {
+   })
+ }
+ 
+-/** The authority the harnessed loop claimed. Test-only handle; a plugin has no path to it. */
+-function authorityOf(ctx: Context) {
+-  const authority = hostDispatchers.get(ctx.root)?.authority
+-  if (authority === undefined) throw new Error('test harness: the agent loop claimed no dispatch authority')
+-  return authority
++/** A tool-call block for a synthetic batch (test-only mint). */
++function callBlock(id: string, name: string, args: unknown = {}): { type: 'tool-call'; id: ToolCallId; name: string; arguments: string } {
++  return { type: 'tool-call', id: ToolCallId(id), name, arguments: JSON.stringify(args) }
+ }
+ 
+ function expectUntrusted(result: ToolExecutionResult): void {
+@@ -225,23 +226,35 @@ describe('host tool-execution provenance', () => {
+     expect(seen).toHaveLength(0)
+   })
+ 
+-  it('T06 the signing authority is claimed once and cannot be obtained afterwards', async () => {
++  it('T06 there is no capability-signing entry, and a batch needs the live agent\'s proof', async () => {
+     const ctx = await harness()
+-    const authority = authorityOf(ctx)
+-    expect(authority).toBeTypeOf('object')
+-
+-    expect(() => ctx.tools.claimDispatchAuthority()).toThrow(/already been claimed/)
+-    // A second claim never yields a second capability.
+-    let claimed: unknown
+-    try { claimed = ctx.tools.claimDispatchAuthority() } catch { claimed = undefined }
+-    expect(claimed).toBeUndefined()
++    const raw = (ctx.tools as unknown as Record<symbol, unknown>)[Symbol.for('cordis.original')] as Record<string, unknown>
++    for (const surface of [ctx.tools as unknown as Record<string, unknown>, raw]) {
++      expect(surface['claimDispatchAuthority']).toBeUndefined()
++      expect(surface['dispatchAuthority']).toBeUndefined()
++    }
++
++    const agent = await liveAgent(ctx, 't06-agent')
++    // A forged, absent, or empty proof never mints a batch for a live agent.
++    expect(() => ctx.tools.beginToolBatch(agent, undefined, [callBlock('c1', 'probe')])).toThrow(/proof/i)
++    expect(() => ctx.tools.beginToolBatch(agent, { calls: [] }, [callBlock('c1', 'probe')])).toThrow(/proof/i)
++    expect(() => ctx.tools.beginToolBatch(agent, Object.freeze({ calls: [] }), [])).toThrow(/proof/i)
++
++    // The minter is not a symbol-keyed method: enumeration of the agent's
++    // prototype finds no callable symbol, and the public verifier only
++    // consumes proofs this agent already minted.
++    const prototype = Object.getPrototypeOf(agent) as Record<PropertyKey, unknown>
++    for (const key of Object.getOwnPropertySymbols(prototype)) {
++      expect(typeof prototype[key]).not.toBe('function')
++    }
++    const verifier = (agent as unknown as { verifyToolBatch: (p: unknown, c: readonly unknown[]) => boolean }).verifyToolBatch
++    expect(verifier.call(agent, Object.freeze({ calls: [] }), [])).toBe(false)
+   })
+ 
+-  it('T06b a pre-startup claimant disables the host dispatcher instead of sharing it', async () => {
+-    // The claim is first-come because cordis activates plugins concurrently and
+-    // exposes no caller identity. That race is fail-closed: if anything claims
+-    // before the agent loop, the loop cannot register its agent factory, so no
+-    // live host identity exists for the pre-claiming party to borrow.
++  it('T06b host activation is write-only: there is no bootstrap race to win', async () => {
++    // There is no signing entry at all, so nothing can be pre-claimed. The only
++    // startup-side method is `markHostActive`, which returns void and can only
++    // close the legacy entry (a denial of service), never grant a capability.
+     const ctx = new Context()
+     await ctx.plugin(LlmRuntime)
+     await ctx.plugin(SessionStore)
+@@ -250,12 +263,20 @@ describe('host tool-execution provenance', () => {
+     await ctx.plugin(ToolRuntime)
+     await ctx.plugin(AgentRegistry)
+     onTestFinished(() => ctx.fiber.dispose())
++    const seen: ToolRunContext[] = []
++    ctx.tools.register(probeTool(seen))
++
++    expect((ctx.tools as unknown as Record<string, unknown>)['claimDispatchAuthority']).toBeUndefined()
++    expect(ctx.tools.markHostActive()).toBeUndefined()
++    expectUntrusted(await ctx.tools.execute({
++      callId: ToolCallId('t06b'), name: 'probe', arguments: {}, signal: new AbortController().signal,
++    }))
+ 
+-    expect(ctx.tools.claimDispatchAuthority()).toBeTypeOf('object')
+-    await expect(ctx.plugin(AgentLoop, { agents: [] })).rejects.toMatchObject({ code: TOOL_EXEC_UNTRUSTED })
+-    await expect(ctx.agents.create({
+-      sessionId: SessionId('t06b'), agentOptions: { provider: 'mock', model: 'mock' },
+-    })).rejects.toThrow(/no agent factory/)
++    // The real loop still initializes after the write-only marker and can
++    // dispatch through a genuine proof-gated batch.
++    await ctx.plugin(AgentLoop, { agents: [] })
++    await liveAgent(ctx, 't06b-agent')
++    expect(seen).toHaveLength(0)
+   })
+ 
+   it('T07 no internal dispatch surface is exported or attached to the service', async () => {
+@@ -280,7 +301,20 @@ describe('host tool-execution provenance', () => {
+       expect(surface['scheduler']).toBeUndefined()
+     }
+ 
+-    // 3. No symbol key exposes a scheduler object either.
++    // 3. The TS-private `view()` is still reachable on a raw target in this
++    //    language, so the layer view must also carry handler-free descriptors.
++    const rawView = (raw as unknown as {
++      view?: (scope?: unknown) => { visible: Map<string, Record<string, unknown>> }
++    }).view?.(undefined)
++    if (rawView !== undefined) {
++      for (const tool of rawView.visible.values()) expect(tool['execute']).toBeUndefined()
++    }
++
++    // 4. A handler-less definition cannot be registered at all.
++    ctx.tools.register(probeTool([]))
++    expect(() => ctx.tools.register({ ...ctx.tools.get('probe')! } as unknown as ToolDefinition)).toThrow(/execute/)
++
++    // 5. No symbol key exposes a scheduler object either.
+     for (const key of Object.getOwnPropertySymbols(ctx.tools)) {
+       const value = (ctx.tools as unknown as Record<symbol, unknown>)[key]
+       expect(typeof value === 'object' && value !== null && 'prepare' in value).toBe(false)
+@@ -370,12 +404,12 @@ describe('host tool-execution provenance', () => {
+     }
+   })
+ 
+-  it('T12 an already-dispatched or settled execution is refused on replay', async () => {
++  it('T12 a batch is one-shot per call, and a dispatched execution cannot be replayed', async () => {
+     const ctx = await harness()
+     const seen: ToolRunContext[] = []
+     ctx.tools.register(probeTool(seen))
+     const agent = await liveAgent(ctx, 't12-agent')
+-    const authority = authorityOf(ctx)
++    const batch = beginToolBatchForTest(ctx, agent, [callBlock('t12', 'probe')])
+     const input: ToolExecutionInput = {
+       callId: ToolCallId('t12'),
+       name: 'probe',
+@@ -384,19 +418,21 @@ describe('host tool-execution provenance', () => {
+       signal: new AbortController().signal,
+     }
+ 
+-    const prepared = await authority.prepare(input)
++    const prepared = await batch.prepare(input)
+     expect(prepared.kind).toBe('dispatch')
+     if (prepared.kind !== 'dispatch') throw new Error('unreachable')
+-    const first = await authority.dispatch(prepared.exec)
++    // The same call id cannot be prepared twice inside one batch.
++    await expect(batch.prepare(input)).rejects.toMatchObject({ code: TOOL_EXEC_UNTRUSTED })
++    const first = await batch.dispatch(prepared.exec)
+     expect(seen).toHaveLength(1)
+     const result = first.result
+-    authority.finish(prepared.exec, result)
++    batch.finish(prepared.exec, result)
+ 
+     // A second dispatch of the same minted execution never reaches the body.
+-    await expect(authority.dispatch(prepared.exec)).rejects.toMatchObject({ code: TOOL_EXEC_UNTRUSTED })
++    await expect(batch.dispatch(prepared.exec)).rejects.toMatchObject({ code: TOOL_EXEC_UNTRUSTED })
+     expect(seen).toHaveLength(1)
+     // Settlement is terminal too.
+-    expect(() => authority.finish(prepared.exec, result)).toThrow(/already settled/)
++    expect(() => batch.finish(prepared.exec, result)).toThrow(/already settled/)
+     expect(seen).toHaveLength(1)
+   })
+ 
+@@ -452,8 +488,72 @@ describe('host tool-execution provenance', () => {
+     expectUntrusted(await restarted.tools.execute(previousProcessExec))
+     expectUntrusted(await restarted.tools.execute({ ...previousProcessExec, agent: restartedAgent }))
+     expect(restartedSeen).toHaveLength(0)
+-    // The new host still dispatches its own calls normally.
++    // The restarted host has no signing entry and only its own live agent's
++    // proofs can mint a batch; the previous process's execution stays inert.
++    expect((restarted.tools as unknown as Record<string, unknown>)['claimDispatchAuthority']).toBeUndefined()
+     expect(restartedSeen).toHaveLength(0)
+-    expect(authorityOf(restarted)).not.toBe(authorityOf(first))
++  })
++
++  it('T15 get() exposes a frozen descriptor with no handler', async () => {
++    const ctx = await harness()
++    const definition = probeTool([])
++    ctx.tools.register(definition)
++    const view = ctx.tools.get('probe')!
++    expect(view).toBeDefined()
++    expect('execute' in view).toBe(false)
++    expect((view as unknown as Record<string, unknown>)['execute']).toBeUndefined()
++    expect(Object.isFrozen(view)).toBe(true)
++    // Stable identity per registration, so existing identity comparisons work.
++    expect(ctx.tools.get('probe')).toBe(view)
++    // Frozen: no late re-attachment of a handler.
++    expect(() => { (view as unknown as Record<string, unknown>)['execute'] = () => undefined }).toThrow(TypeError)
++    // The raw cordis target answers with the same handler-free view.
++    const raw = (ctx.tools as unknown as Record<symbol, unknown>)[Symbol.for('cordis.original')] as {
++      get(name: string): Record<string, unknown> | undefined
++    }
++    expect(raw.get('probe')?.['execute']).toBeUndefined()
++    // No back-reference to the live definition.
++    expect(Object.values(view as object)).not.toContain(definition)
++  })
++
++  it('T16 copying a descriptor or its fields never yields a callable handler', async () => {
++    const ctx = await harness()
++    const seen: ToolRunContext[] = []
++    ctx.tools.register(probeTool(seen))
++    const view = ctx.tools.get('probe') as unknown as Record<string, unknown>
++    const copy = { ...view }
++    expect(copy['execute']).toBeUndefined()
++    expect(Object.assign({}, view)['execute']).toBeUndefined()
++    expect(JSON.parse(JSON.stringify(view))['execute']).toBeUndefined()
++    expect(seen).toHaveLength(0)
++  })
++
++  it('T17 isVisible preserves exact-registration identity for host callers', async () => {
++    const ctx = await harness()
++    const definition = probeTool([])
++    ctx.tools.register(definition)
++    expect(ctx.tools.isVisible(definition)).toBe(true)
++    expect(ctx.tools.isVisible({ name: 'probe' })).toBe(false)
++    expect(ctx.tools.isVisible({ name: 'missing' })).toBe(false)
++  })
++
++  it('T18 host events carry executions and results, never a handler', async () => {
++    const ctx = await harness([toolCallResponse('c1', 'probe', {}), textResponse('done')])
++    const seen: ToolRunContext[] = []
++    ctx.tools.register(probeTool(seen))
++    const payloads: unknown[] = []
++    ctx.on('tools/pre-execute', (exec, next) => { payloads.push(exec); return next() })
++    ctx.on('tools/execute', (exec, next) => { payloads.push(exec); return next() })
++    ctx.on('tools/result', (exec, result) => { payloads.push(exec, result) })
++    const agent = await liveAgent(ctx, 't18-agent')
++    const idle = waitForIdle(ctx, agent)
++    followup(agent)
++    await idle
++    expect(seen).toHaveLength(1)
++    expect(payloads.length).toBeGreaterThan(0)
++    for (const payload of payloads) {
++      expect(typeof payload).toBe('object')
++      expect((payload as Record<string, unknown>)['execute']).toBeUndefined()
++    }
+   })
+ })
+diff --git a/packages/core/tools/tests/tools.spec.ts b/packages/core/tools/tests/tools.spec.ts
+index 86f1d183..1439f538 100644
+--- a/packages/core/tools/tests/tools.spec.ts
++++ b/packages/core/tools/tests/tools.spec.ts
+@@ -5,9 +5,7 @@ import type { ContextFormed } from '@deepseek-ai/dsh-llm'
+ import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
+ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+-import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
+-import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+-import { hostDispatchers } from '../../agent-loop/src/internal.ts'
++import type { Agent } from '@deepseek-ai/dsh-agent'
+ import ApprovalService, { type ApprovalOutcome, type ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
+ import ToolRuntime, {
+   defineContentToolFixture, defineTool, JsonSchemaError, parameterSchemaSpecToJsonSchema, validateArgs, ToolArgsError, ToolNotFoundError,
+@@ -805,11 +803,6 @@ describe('ToolRuntime', () => {
+       return { session } as unknown as Agent
+     }
+ 
+-    function dispatchOf(ctx: Context) {
+-      const authority = hostDispatchers.get(ctx.root)?.authority
+-      if (authority === undefined) throw new Error('test harness: the agent loop claimed no dispatch authority')
+-      return authority
+-    }
+ 
+     async function approvalSetup() {
+       const ctx = new Context()
+@@ -818,8 +811,6 @@ describe('ToolRuntime', () => {
+       await ctx.plugin(SessionProjectionRegistry)
+       await ctx.plugin(SystemPrompt)
+       await ctx.plugin(ToolRuntime)
+-      await ctx.plugin(AgentRegistry)
+-      await ctx.plugin(AgentLoop, { agents: [] })
+       await ctx.plugin(ApprovalService)
+       ctx.tools.register(echoTool)
+       return ctx
+@@ -837,7 +828,7 @@ describe('ToolRuntime', () => {
+       ctx.on('tools/pre-execute', async (_exec, _next): Promise<PreToolDecision> =>
+         ({ kind: 'ask', reason: 'hook wants a human', displayReason: { en: 'Allow it?', zh: '允许吗？' } }))
+ 
+-      const result = await dispatchOf(ctx).execute({
++      const result = await ctx.tools.execute({
+         callId: ToolCallId('c1'), name: 'echo', arguments: { text: 'hi' }, agent, signal: controller.signal,
+       })
+ 
+@@ -854,7 +845,7 @@ describe('ToolRuntime', () => {
+       ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('rejected'))
+       ctx.on('tools/pre-execute', async (_exec, _next): Promise<PreToolDecision> => ({ kind: 'ask' }))
+ 
+-      const result = await dispatchOf(ctx).execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: {}, agent: fakeAgent() })
++      const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: {}, agent: fakeAgent() })
+       expect(result.isError).toBe(true)
+       expect(result.content[0]).toMatchObject({ text: 'Error: the user rejected tool "echo"' })
+     })
+@@ -864,7 +855,7 @@ describe('ToolRuntime', () => {
+       ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('cancelled'))
+       ctx.on('tools/pre-execute', async (_exec, _next): Promise<PreToolDecision> => ({ kind: 'ask' }))
+ 
+-      const result = await dispatchOf(ctx).execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: {}, agent: fakeAgent() })
++      const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: {}, agent: fakeAgent() })
+       expect(result.isError).toBe(true)
+       expect(result.content[0]).toMatchObject({ text: 'Error: approval for tool "echo" was cancelled' })
+     })
+@@ -885,7 +876,7 @@ describe('ToolRuntime', () => {
+       })
+       ctx.on('tools/pre-execute', async (_exec, _next): Promise<PreToolDecision> => ({ kind: 'ask' }))
+       const controller = new AbortController()
+-      const pending = dispatchOf(ctx).execute({
++      const pending = ctx.tools.execute({
+         callId: ToolCallId('approval-cancelled'),
+         name: 'approval-probe',
+         arguments: {},
+@@ -908,7 +899,7 @@ describe('ToolRuntime', () => {
+       const ctx = await approvalSetup()
+       ctx.on('tools/pre-execute', async (_exec, _next): Promise<PreToolDecision> => ({ kind: 'ask' }))
+ 
+-      const result = await dispatchOf(ctx).execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: {}, agent: fakeAgent() })
++      const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: {}, agent: fakeAgent() })
+       expect(result.isError).toBe(true)
+       expect(result.content[0]).toMatchObject({ text: 'Error: tool "echo" requires approval, but no approval channel is available' })
+     })
+@@ -922,7 +913,7 @@ describe('ToolRuntime', () => {
+       })
+       ctx.on('tools/pre-execute', async (_exec, _next): Promise<PreToolDecision> => ({ kind: 'ask' }))
+ 
+-      const result = await dispatchOf(ctx).execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: {} })
++      const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: {} })
+       expect(asked).toBe(false)
+       expect(result.isError).toBe(true)
+       expect(result.content[0]).toMatchObject({ text: 'Error: tool "echo" requires approval, but the call has no agent to route it through' })
+@@ -2567,12 +2558,15 @@ describe('schema DSL optional and nested contracts', () => {
+ })
+ 
+ describe('ToolRuntime.get', () => {
+-  it('get() returns the registered tool definition', async () => {
++  it('get() returns the handler-free descriptor for the registered tool', async () => {
+     const ctx = await setup()
+     ctx.tools.register(echoTool)
+     const tool = ctx.tools.get('echo')
+     expect(tool).toBeDefined()
+     expect(tool!.name).toBe('echo')
++    expect('execute' in tool!).toBe(false)
++    expect(ctx.tools.get('echo')).toBe(tool)
++    expect(ctx.tools.isVisible(echoTool)).toBe(true)
+   })
+ 
+   it('get() returns undefined for unknown tool names', async () => {
+diff --git a/packages/extensions/tool-cordis/src/api-catalog.ts b/packages/extensions/tool-cordis/src/api-catalog.ts
+index e8531631..1475d0b5 100644
+--- a/packages/extensions/tool-cordis/src/api-catalog.ts
++++ b/packages/extensions/tool-cordis/src/api-catalog.ts
+@@ -3441,10 +3441,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
+         returns: 'the exact disposer that unregisters the guard.',
+       },
+       {
+-        signature: 'get(name: string, scope?: ScopeKey): ToolDefinition | undefined',
+-        description: 'Look up a tool as one scope sees it (scoped shadows global; a restricted-away global reads as absent). Presenters pass the calling agent so the rendered card matches the definition that actually executed.',
++        signature: 'get(name: string, scope?: ScopeKey): ToolDescriptor | undefined',
++        description: 'Look up a tool as one scope sees it (scoped shadows global; a restricted-away global reads as absent). Presenters pass the calling agent so the rendered card matches the definition that actually executed.\n\nThe result is a frozen ToolDescriptor: metadata, schemas, and presentation hooks only — never the live `execute` handler. Repeated lookups of the same registration return the same view object.',
+         parameters: [{ name: 'name', description: 'the tool name as registered.' }, { name: 'scope', description: 'the viewing scope (the agent); omitted = the global view.' }],
+-        returns: 'the definition the scope resolves, or undefined when none is visible.',
++        returns: 'the non-executable view the scope resolves, or undefined when none is visible.',
++      },
++      {
++        signature: 'isVisible(definition: Pick<ToolDefinition, \'name\'>, scope?: ScopeKey): boolean',
++        description: 'Whether this exact registered definition is the one a scope currently sees. Scoped registration shadows global, and restrictions can hide a global name; this is the identity-preserving replacement for comparing `get(name, scope)` against the object a plugin passed to `register()`.',
++        parameters: [{ name: 'definition', description: 'the definition object that was registered.' }, { name: 'scope', description: 'the viewing scope (the agent); omitted = the global view.' }],
++        returns: 'true when that exact registration is visible to the scope.',
+       },
+       {
+         signature: 'schemas(scope?: ScopeKey): ToolSchema[]',
+@@ -3460,16 +3466,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
+       },
+       {
+         signature: 'async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>',
+-        description: 'Execute through pre-policy, guards, around-dispatch, post-policy, definition-owned content finalization, and final notification. Tool and listener failures resolve as materialized error results; an invisible tool reports `UNKNOWN_TOOL`. The returned outcome is the same lossless, frozen snapshot final observers receive. Cancellation arriving after entry and before final result materialization skips a not-yet-started body with `ABORTED_BEFORE_DISPATCH` or replaces a successful started outcome with `ABORTED`; already-started work is still drained and may retain a tool-owned structured error.\n\nThis is the UNPRIVILEGED entry. Once the host claims the dispatch authority (claimDispatchAuthority), it refuses every call with `E_TOOL_EXEC_UNTRUSTED`: a caller-supplied `exec` is not provenance, so a plugin cannot execute a tool by constructing one or by copying a live `ToolRunContext` out of its own handler. A bare registry with no host dispatcher keeps the historical behavior because no trusted identity exists for a caller to borrow there.',
++        description: 'Execute through pre-policy, guards, around-dispatch, post-policy, definition-owned content finalization, and final notification. Tool and listener failures resolve as materialized error results; an invisible tool reports `UNKNOWN_TOOL`. The returned outcome is the same lossless, frozen snapshot final observers receive. Cancellation arriving after entry and before final result materialization skips a not-yet-started body with `ABORTED_BEFORE_DISPATCH` or replaces a successful started outcome with `ABORTED`; already-started work is still drained and may retain a tool-owned structured error.\n\nThis is the UNPRIVILEGED entry. Once a host agent loop marks the process active (markHostActive), it refuses every call with `E_TOOL_EXEC_UNTRUSTED`: a caller-supplied `exec` is not provenance, so a plugin cannot execute a tool by constructing one or by copying a live `ToolRunContext` out of its own handler. Host turns dispatch through beginToolBatch instead. A bare registry with no host loop keeps the historical behavior because no trusted identity exists to borrow.',
+         parameters: [{ name: 'exec', description: 'the caller-supplied call input.' }],
+         returns: 'the materialized final result, or the stable refusal result.',
+       },
+       {
+-        signature: 'claimDispatchAuthority(): ToolDispatchAuthority',
+-        description: 'Claim the one host dispatch authority for this registry.\n\nThe composition that owns agent dispatch (the agent loop) calls this during its own construction, before it can create or drive any agent. A second claim is a programming error and fails loudly rather than handing out a second capability, so a plugin cannot acquire one after the host has started. The returned object is the only way to dispatch an agent-bound call; it is deliberately absent from the service surface, the package exports, and every execution/event object.',
++        signature: 'markHostActive(): void',
++        description: 'Close the legacy execute entry for this process.\n\nThe agent loop calls this at construction, before it can drive a turn. It returns nothing: activation is not a capability, and a plugin that calls it early can only disable the legacy entry (a denial of service), never grant itself a way to run tools.',
+         parameters: [],
+-        returns: 'the host dispatch authority.',
+-        throws: ['{ToolExecutionUntrustedError} when the authority was already claimed.'],
++      },
++      {
++        signature: 'beginToolBatch( agent: Agent, proof: unknown, toolCalls: readonly ToolCallBlock[], ): ToolBatchDispatch',
++        description: 'Mint the one-shot dispatch capability for a host agent\'s tool batch.\n\nThe caller must present a batch proof minted by the exact live agent (its verifier consumes the proof) and an agent identity the registry has registered. Only the agent loop\'s own turn code has both, so a plugin cannot obtain a batch for a real host agent — and the public `execute` entry is already closed by the time a turn runs.',
++        parameters: [{ name: 'agent', description: 'the live host agent the batch dispatches for.' }, { name: 'proof', description: 'the per-batch proof minted by that agent\'s private minter.' }, { name: 'toolCalls', description: 'the model-requested calls this batch may dispatch.' }],
++        returns: 'the one-shot batch capability.',
++        throws: ['{ToolExecutionUntrustedError} when any part of the proof is missing or foreign.'],
+       },
+     ],
+   },
+@@ -8200,6 +8211,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+     name: 'ToolAdditionBlock',
+     declaration: 'export interface ToolAdditionBlock {\n    type: \'tool-addition\';\n    toolName: string;\n    tool?: never;\n}',
+   },
++  {
++    name: 'ToolBatchDispatch',
++    declaration: 'export interface ToolBatchDispatch {\n    prepare(exec: ToolExecutionInput): Promise<ScheduledToolPreparation>;\n    dispatch(exec: ToolRunContext): Promise<ScheduledToolDispatch>;\n    finalize(exec: ToolRunContext, result: ToolExecutionResult): Promise<ToolExecutionResult>;\n    finish(exec: ToolRunContext, result: ToolExecutionResult): ToolExecutionResult;\n}',
++  },
+   {
+     name: 'ToolCallBlock',
+     declaration: 'export interface ToolCallBlock {\n    type: \'tool-call\';\n    id: ToolCallId;\n    name: string;\n    arguments: string;\n}',
+@@ -8229,8 +8244,8 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+     declaration: 'export interface ToolDefinition extends ToolSchema {\n    readonly output: ToolOutputDefinition;\n    execute(args: unknown, exec: ToolRunContext): Promise<unknown>;\n    projectContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined;\n    finalizeContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined;\n    timeoutMs?: number;\n    isConcurrencySafe?(args: unknown): boolean;\n    presentCall?(args: unknown): ToolCallView | undefined;\n    presentResult?(args: unknown, result: ToolResult): ToolResultView | undefined;\n}',
+   },
+   {
+-    name: 'ToolDispatchAuthority',
+-    declaration: 'export interface ToolDispatchAuthority {\n    execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n    prepare(exec: ToolExecutionInput): Promise<ScheduledToolPreparation>;\n    dispatch(exec: ToolRunContext): Promise<ScheduledToolDispatch>;\n    finalize(exec: ToolRunContext, result: ToolExecutionResult): Promise<ToolExecutionResult>;\n    finish(exec: ToolRunContext, result: ToolExecutionResult): ToolExecutionResult;\n}',
++    name: 'ToolDescriptor',
++    declaration: 'export type ToolDescriptor = Omit<ToolDefinition, \'execute\'>;',
+   },
+   {
+     name: 'ToolDispatchExecution',
+@@ -8326,7 +8341,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+   },
+   {
+     name: 'ToolRuntime',
+-    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n    claimDispatchAuthority(): ToolDispatchAuthority;\n}',
++    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDescriptor | undefined;\n    isVisible(definition: Pick<ToolDefinition, \'name\'>, scope?: ScopeKey): boolean;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n    markHostActive(): void;\n    beginToolBatch(agent: Agent, proof: unknown, toolCalls: readonly ToolCallBlock[]): ToolBatchDispatch;\n}',
+   },
+   {
+     name: 'ToolSchema',
+diff --git a/packages/fs/tool-fs-search/src/direct-call.ts b/packages/fs/tool-fs-search/src/direct-call.ts
+index d2eaa83c..be95fd4e 100644
+--- a/packages/fs/tool-fs-search/src/direct-call.ts
++++ b/packages/fs/tool-fs-search/src/direct-call.ts
+@@ -23,6 +23,6 @@ export function acceptedDirectCallValue(
+ ): JsonValue | undefined {
+   if (decision.kind !== 'accept' || decision.content !== undefined || Object.hasOwn(decision, 'value')
+     || exec.parent !== undefined || exec.name !== tool.name || result.isError
+-    || ctx.tools.get(exec.name, exec.agent) !== tool) return undefined
++    || !ctx.tools.isVisible(tool, exec.agent)) return undefined
+   return result.value
+ }
+diff --git a/packages/fs/tool-fs/tests/tools.spec.ts b/packages/fs/tool-fs/tests/tools.spec.ts
+index 2ea469c3..df06b8e7 100644
+--- a/packages/fs/tool-fs/tests/tools.spec.ts
++++ b/packages/fs/tool-fs/tests/tools.spec.ts
+@@ -1098,7 +1098,9 @@ describe('scope-aware filesystem guidance', () => {
+   it('honors deny filters and the existing exemption for own-scope tools', async () => {
+     const { ctx } = await setup()
+     const { key, scope } = await guidanceScope(ctx)
+-    const write = ctx.tools.get('write')!
++    // `get()` is handler-free by design; this re-registration only exercises
++    // scope visibility, so a metadata copy with an inert body is enough.
++    const write = { ...ctx.tools.get('write')!, execute: async () => undefined }
+     scope.ctx.tools.restrict({ deny: ['write', 'edit'] })
+     try {
+       expect(renderPrompt(await ctx.systemPrompt.assemble({ scope: key }))).toBe(withPersona(originalGuidance.read))
+diff --git a/packages/mcp/mcp-client/tests/mcp-client.spec.ts b/packages/mcp/mcp-client/tests/mcp-client.spec.ts
+index 4a330850..5b277fbd 100644
+--- a/packages/mcp/mcp-client/tests/mcp-client.spec.ts
++++ b/packages/mcp/mcp-client/tests/mcp-client.spec.ts
+@@ -720,7 +720,9 @@ describe('tool execution', () => {
+         if (replacement === 'value') {
+           return { ...result, value: { content: [{ type: 'text', text: 'dispatch replacement' }] } }
+         }
+-        const definition = rich.ctx.tools.get('mcp__srv__img')!
++        // Only the renderer matters here: the original body already ran and the
++        // replacement is registered for this call's result presentation.
++        const definition = { ...rich.ctx.tools.get('mcp__srv__img')!, execute: async () => undefined }
+         registrations.get('mcp__srv__img')!()
+         rich.ctx.tools.register({
+           ...definition,
+diff --git a/packages/schedule/tool-schedule/tests/harness.ts b/packages/schedule/tool-schedule/tests/harness.ts
+index 68484ce4..691e63de 100644
+--- a/packages/schedule/tool-schedule/tests/harness.ts
++++ b/packages/schedule/tool-schedule/tests/harness.ts
+@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
+ import type { Agent } from '@deepseek-ai/dsh-agent'
+ import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
+ import * as ToolSchedule from '../src/index.ts'
++import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+ 
+ export { agentFor, harness } from '../../schedule/tests/harness.ts'
+ 
+@@ -16,8 +17,32 @@ export { agentFor, harness } from '../../schedule/tests/harness.ts'
+  * @param agent - Exact Agent whose dispatches may reach the tools.
+  * @returns The scope owning the registrations, for disposal.
+  */
+-export async function mountToolSchedule(ctx: Context, agent: Agent): Promise<Scope> {
++export async function mountToolSchedule(
++  ctx: Context,
++  agent: Agent,
++  capture?: Map<string, ToolDefinition>,
++): Promise<Scope> {
+   const scope = createScope(ctx, agent)
+-  await scope.ctx.plugin(ToolSchedule)
++  if (capture === undefined) {
++    await scope.ctx.plugin(ToolSchedule)
++    return scope
++  }
++  // Capture the exact registered definitions for suites that drive a body
++  // directly; `get()` is handler-free by design.
++  const raw = (ctx.tools as unknown as Record<symbol, unknown>)[Symbol.for('cordis.original')] as {
++    register: (definition: ToolDefinition) => () => void
++  }
++  const original = raw.register
++  // A plain function, not an arrow: the registry derives the registration
++  // scope from the caller-bound `this.ctx`, and the traced proxy supplies it.
++  raw.register = function (this: unknown, definition: ToolDefinition) {
++    capture.set(definition.name, definition)
++    return original.apply(this, [definition])
++  }
++  try {
++    await scope.ctx.plugin(ToolSchedule)
++  } finally {
++    delete (raw as Partial<typeof raw>).register
++  }
+   return scope
+ }
+diff --git a/packages/schedule/tool-schedule/tests/tool-schedule.spec.ts b/packages/schedule/tool-schedule/tests/tool-schedule.spec.ts
+index 7e2c2949..7ecbbcda 100644
+--- a/packages/schedule/tool-schedule/tests/tool-schedule.spec.ts
++++ b/packages/schedule/tool-schedule/tests/tool-schedule.spec.ts
+@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+ import { ToolCallId } from '@deepseek-ai/dsh-llm'
+ import { SessionId } from '@deepseek-ai/dsh-session'
+ import type { Agent } from '@deepseek-ai/dsh-agent'
+-import type { ToolExecutionToken } from '@deepseek-ai/dsh-tools'
++import type { ToolDefinition, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
+ import * as ToolSchedule from '../src/index.ts'
+ import { MAX_TITLE_LENGTH, REQUIRED_TITLE_MESSAGE, ScheduleId, createAfterScheduleRecord, scheduleDomain } from '@deepseek-ai/dsh-schedule'
+ import { agentFor, harness, mountToolSchedule } from './harness.ts'
+@@ -17,8 +17,9 @@ afterEach(async () => {
+ async function setup(options: Parameters<typeof harness>[0] = {}) {
+   const test = await harness(options); tests.push(test)
+   const agent = agentFor(test.ctx)
+-  const scope = await mountToolSchedule(test.ctx, agent)
+-  return { ...test, agent, scope }
++  const definitions = new Map<string, ToolDefinition>()
++  const scope = await mountToolSchedule(test.ctx, agent, definitions)
++  return { ...test, agent, scope, definitions }
+ }
+ async function execute(test: Awaited<ReturnType<typeof setup>>, name: string, args: unknown, agent: Agent = test.agent) {
+   return await test.ctx.tools.execute({
+@@ -27,7 +28,7 @@ async function execute(test: Awaited<ReturnType<typeof setup>>, name: string, ar
+ }
+ 
+ async function executeBody(test: Awaited<ReturnType<typeof setup>>, name: string, args: unknown, signal: AbortSignal) {
+-  const definition = test.ctx.tools.get(name, test.agent)
++  const definition = test.definitions.get(name)
+   if (definition === undefined) throw new Error('missing Schedule tool')
+   return await definition.execute(args, {
+     callId: ToolCallId('body-call'), rootCallId: ToolCallId('body-call'), token: Symbol('test-body') as ToolExecutionToken,
+diff --git a/packages/shell/tool-bash-persistent/tests/tools.spec.ts b/packages/shell/tool-bash-persistent/tests/tools.spec.ts
+index d3507373..da2c89a7 100644
+--- a/packages/shell/tool-bash-persistent/tests/tools.spec.ts
++++ b/packages/shell/tool-bash-persistent/tests/tools.spec.ts
+@@ -554,13 +554,17 @@ describe('tool-bash-persistent', () => {
+     session.mode = 'wait-for-abort'
+     const runningController = new AbortController()
+     // Dispatch observation distinguishes the tool's queue from cancellation before tool entry.
+-    const execute = vi.spyOn(ctx.tools.get('bash', owner)!, 'execute')
++    let entered = 0
++    ctx.on('tools/execute', (exec, next) => {
++      if (exec.name === 'bash' && exec.agent === owner) entered += 1
++      return next()
++    })
+     const queuedController = new AbortController()
+     const running = call(ctx, owner, 'hang', runningController.signal)
+     const queued = call(ctx, owner, 'never sent', queuedController.signal)
+     try {
+       await expect.poll(() => session.sends).toBe(3)
+-      await expect.poll(() => execute.mock.calls.length).toBe(2)
++      await expect.poll(() => entered).toBe(2)
+       queuedController.abort({ kind: 'user' })
+       runningController.abort({ kind: 'user' })
+       const result = await queued
+diff --git a/packages/shell/tool-pwsh-persistent/tests/tools.spec.ts b/packages/shell/tool-pwsh-persistent/tests/tools.spec.ts
+index b2b6d961..5efd864e 100644
+--- a/packages/shell/tool-pwsh-persistent/tests/tools.spec.ts
++++ b/packages/shell/tool-pwsh-persistent/tests/tools.spec.ts
+@@ -640,13 +640,17 @@ describe('tool-pwsh-persistent', () => {
+     session.mode = 'wait-for-abort'
+     const runningController = new AbortController()
+     // Dispatch observation distinguishes the tool's queue from cancellation before tool entry.
+-    const execute = vi.spyOn(ctx.tools.get('pwsh', owner)!, 'execute')
++    let entered = 0
++    ctx.on('tools/execute', (exec, next) => {
++      if (exec.name === 'pwsh' && exec.agent === owner) entered += 1
++      return next()
++    })
+     const queuedController = new AbortController()
+     const running = call(ctx, owner, 'hang', runningController.signal)
+     const queued = call(ctx, owner, 'never sent', queuedController.signal)
+     try {
+       await expect.poll(() => session.sends).toBe(2)
+-      await expect.poll(() => execute.mock.calls.length).toBe(2)
++      await expect.poll(() => entered).toBe(2)
+       queuedController.abort({ kind: 'user' })
+       runningController.abort({ kind: 'user' })
+       const result = await queued
+diff --git a/packages/skill/tool-skill/src/index.ts b/packages/skill/tool-skill/src/index.ts
+index 243ef108..538730a6 100644
+--- a/packages/skill/tool-skill/src/index.ts
++++ b/packages/skill/tool-skill/src/index.ts
+@@ -219,7 +219,7 @@ export function apply(ctx: Context, config: Config = {}): void {
+     const decision = await next()
+     if (decision.kind === 'reject') return decision
+     signal.throwIfAborted()
+-    const toolVisible = ctx.tools.get(skillTool.name, agent) === skillTool
++    const toolVisible = ctx.tools.isVisible(skillTool, agent)
+     const snapshot = toolVisible
+       ? await ctx.skills.snapshot({ cwd: await ctx.workingDirectory.ensure(agent, signal), signal, scope: agent })
+       : { skills: [], complete: true }
+diff --git a/packages/subagent/subagent/src/internal.ts b/packages/subagent/subagent/src/internal.ts
+index 4d19c554..e6858944 100644
+--- a/packages/subagent/subagent/src/internal.ts
++++ b/packages/subagent/subagent/src/internal.ts
+@@ -29,7 +29,7 @@ export function markAdjacentAgentSendMessageTool(definition: ToolDefinition): To
+  * @param definition - the scope-resolved `send_message` candidate.
+  * @returns whether the definition carries the internal standard-tool identity.
+  */
+-export function isAdjacentAgentSendMessageTool(definition: ToolDefinition | undefined): boolean {
++export function isAdjacentAgentSendMessageTool(definition: object | undefined): boolean {
+   return definition !== undefined
+     && (definition as ToolDefinition & { [adjacentAgentSendMessageTool]?: true })[adjacentAgentSendMessageTool] === true
+ }
+diff --git a/packages/subagent/tool-subagent/src/index.ts b/packages/subagent/tool-subagent/src/index.ts
+index 7346edb5..efc450b5 100644
+--- a/packages/subagent/tool-subagent/src/index.ts
++++ b/packages/subagent/tool-subagent/src/index.ts
+@@ -371,7 +371,7 @@ export async function apply(ctx: Context, config: Config, session?: Session): Pr
+       text: (context) => {
+         if (mounted === undefined) return ''
+         const visible = [...delegationTools]
+-          .filter(tool => runtimeCtx.tools.get(tool.name, context.scope) === tool)
++          .filter(tool => runtimeCtx.tools.isVisible(tool, context.scope))
+           .map(tool => tool.name)
+           .sort()
+         if (visible[0] !== toolName) return ''
+@@ -384,7 +384,7 @@ export async function apply(ctx: Context, config: Config, session?: Session): Pr
+       order: runtimeCtx.systemPrompt.getContextOrder('SUBAGENT_DELEGATION'),
+       text: (context) => {
+         if (context.agent === undefined || mounted === undefined
+-          || runtimeCtx.tools.get(toolName, context.scope) !== mounted.definition) return ''
++          || !runtimeCtx.tools.isVisible(mounted.definition, context.scope)) return ''
+         const maxDepth = runtimeCtx.subagents.resolveMaxDepth(config.maxDepth)
+         if (maxDepth === undefined) return ''
+         const depth = delegationDepthOf(context.agent)
+diff --git a/packages/subagent/tool-subagent/tests/depth-context.spec.ts b/packages/subagent/tool-subagent/tests/depth-context.spec.ts
+index 6bd34e9e..4091f0ae 100644
+--- a/packages/subagent/tool-subagent/tests/depth-context.spec.ts
++++ b/packages/subagent/tool-subagent/tests/depth-context.spec.ts
+@@ -86,7 +86,8 @@ describe('delegation depth context', () => {
+     expect(await depthContext(ctx, root)).toEqual([
+       'Delegation depth for `subagent`: current 0, maximum 0, remaining levels 0. Do not call `subagent` at this depth; carry out the work directly.',
+     ])
+-    const removeOverride = root.ctx.tools.register({ ...ctx.tools.get('subagent')!, description: 'Scoped replacement' })
++    // Metadata-only replacement for the visibility assertion; the body never runs.
++    const removeOverride = root.ctx.tools.register({ ...ctx.tools.get('subagent')!, description: 'Scoped replacement', execute: async () => undefined })
+     expect(await depthContext(ctx, root)).toEqual([])
+     removeOverride()
+     await disposeSetupProvider(ctx)
+diff --git a/packages/subagent/tool-subagent/tests/harness.ts b/packages/subagent/tool-subagent/tests/harness.ts
+index 326fa5c3..8ed65fa5 100644
+--- a/packages/subagent/tool-subagent/tests/harness.ts
++++ b/packages/subagent/tool-subagent/tests/harness.ts
+@@ -7,6 +7,10 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
+ import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+ import { SessionId } from '@deepseek-ai/dsh-session'
++import type { ToolDefinition, ToolExecutionResult, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
++import { HarnessError } from '@deepseek-ai/dsh-llm'
++import type { JsonValue } from '@deepseek-ai/dsh-util-values'
++import { runToolCallForTest } from '../../../core/agent-loop/src/internal.ts'
+ import * as mock from './scripted-provider.ts'
+ import * as tool from '../src/index.ts'
+ import SubagentModelSelectionConfig from '../src/model-selection-settings.ts'
+@@ -46,8 +50,37 @@ const TEST_ALLOWED_MODELS = [
+   { provider: 'missing', model },
+ ])
+ 
++const setupDefinitions = new WeakMap<Context, Map<string, ToolDefinition>>()
++
+ export async function setup(toolConfig: SetupConfig, mockConfig: Partial<mock.Config> = {}): Promise<Context> {
+   const ctx = ownContext(new Context())
++  const definitions = new Map<string, ToolDefinition>()
++  setupDefinitions.set(ctx, definitions)
++  await mountSetup(ctx, definitions, toolConfig, mockConfig)
++  return ctx
++}
++
++/** Capture the exact definitions a tool registration files, before `get()` hides the handler. */
++function captureRegistrations(ctx: Context, definitions: Map<string, ToolDefinition>): () => void {
++  const raw = (ctx.tools as unknown as Record<symbol, unknown>)[Symbol.for('cordis.original')] as {
++    register: (definition: ToolDefinition) => () => void
++  }
++  const register = raw.register
++  // A plain function: the registry derives the registration scope from the
++  // caller-bound `this.ctx` supplied by the traced proxy.
++  raw.register = function (this: unknown, definition: ToolDefinition) {
++    definitions.set(definition.name, definition)
++    return register.apply(this, [definition])
++  }
++  return () => { delete (raw as Partial<typeof raw>).register }
++}
++
++async function mountSetup(
++  ctx: Context,
++  definitions: Map<string, ToolDefinition>,
++  toolConfig: SetupConfig,
++  mockConfig: Partial<mock.Config>,
++): Promise<void> {
+   const { withModelSelection, parentAgentOptions, ...config } = toolConfig
+   if (withModelSelection === true) {
+     await ctx.plugin(SubagentModelSelectionConfig, {
+@@ -55,34 +88,43 @@ export async function setup(toolConfig: SetupConfig, mockConfig: Partial<mock.Co
+       allowedModels: TEST_ALLOWED_MODELS,
+     })
+     await mountAgentLoopTestDependencies(ctx)
++    const restore = captureRegistrations(ctx, definitions)
++    try {
++      await ctx.plugin(AgentLoop, { agents: [] })
++      await mountWorkingDirectoryFixture(ctx)
++      await ctx.plugin(SubagentRuntime)
++      const provider = await mock.mountScriptedProvider(ctx, { name: 'mock', ...mockConfig })
++      setupProviders.set(ctx, provider)
++      const handle = await ctx.agents.create({
++        sessionId: SessionId(`model-selection-setup-${++setupAgentCounter}`),
++        ...parentAgentOptions !== undefined ? { agentOptions: parentAgentOptions } : {},
++        setup: async (agentCtx, agent) => {
++          const fiber = agentCtx.inject(tool.inject, (runtimeCtx) => {
++            return tool.apply(runtimeCtx, { ...config, modelSelectionSettings: true }, agent.session)
++          })
++          await fiber.await()
++        },
++      })
++      setupAgents.set(ctx, handle.agent)
++    } finally {
++      restore()
++    }
++    return
++  }
++  await mountAgentLoopTestDependencies(ctx)
++  const restore = captureRegistrations(ctx, definitions)
++  try {
+     await ctx.plugin(AgentLoop, { agents: [] })
+     await mountWorkingDirectoryFixture(ctx)
+     await ctx.plugin(SubagentRuntime)
+     const provider = await mock.mountScriptedProvider(ctx, { name: 'mock', ...mockConfig })
+     setupProviders.set(ctx, provider)
+-    const handle = await ctx.agents.create({
+-      sessionId: SessionId(`model-selection-setup-${++setupAgentCounter}`),
+-      ...parentAgentOptions !== undefined ? { agentOptions: parentAgentOptions } : {},
+-      setup: async (agentCtx, agent) => {
+-        const fiber = agentCtx.inject(tool.inject, (runtimeCtx) => {
+-          return tool.apply(runtimeCtx, { ...config, modelSelectionSettings: true }, agent.session)
+-        })
+-        await fiber.await()
+-      },
+-    })
++    await ctx.plugin(tool, config)
++    const handle = await ctx.agents.create({ sessionId: SessionId(`tool-setup-${++setupAgentCounter}`) })
+     setupAgents.set(ctx, handle.agent)
+-    return ctx
++  } finally {
++    restore()
+   }
+-  await mountAgentLoopTestDependencies(ctx)
+-  await ctx.plugin(AgentLoop, { agents: [] })
+-  await mountWorkingDirectoryFixture(ctx)
+-  await ctx.plugin(SubagentRuntime)
+-  const provider = await mock.mountScriptedProvider(ctx, { name: 'mock', ...mockConfig })
+-  setupProviders.set(ctx, provider)
+-  await ctx.plugin(tool, config)
+-  const handle = await ctx.agents.create({ sessionId: SessionId(`tool-setup-${++setupAgentCounter}`) })
+-  setupAgents.set(ctx, handle.agent)
+-  return ctx
+ }
+ 
+ /** Dispose the scripted provider mounted by {@link setup}. */
+@@ -107,20 +149,45 @@ export async function callSubagent(
+   ctx: Context,
+   args: unknown,
+   over: { agent?: Agent | undefined; signal?: AbortSignal } = {},
+-) {
++): Promise<ToolExecutionResult> {
+   // Distinguish "no override" (use a default agent) from an explicit
+   // `{ agent: undefined }` (test the no-agent path). Under
+   // exactOptionalPropertyTypes the key is omitted rather than set to undefined.
+   const agent = 'agent' in over ? over.agent : setupAgents.get(ctx)
+     ?? (await ctx.agents.create({ sessionId: SessionId(`tool-call-parent-${++setupAgentCounter}`) })).agent
+-  return ctx.tools.execute({
+-    signal: testToolSignal,
+-    callId: ToolCallId(`call-${++callCounter}`),
++  const signal = over.signal ?? testToolSignal
++  const callId = ToolCallId(`call-${++callCounter}`)
++  // A real host agent drives the production staged pipeline.
++  if (agent !== undefined && typeof (agent as unknown as { verifyToolBatch?: unknown }).verifyToolBatch === 'function') {
++    return await runToolCallForTest(ctx, agent, 'subagent', args, signal, callId)
++  }
++  // Stub / no-agent suites (and the host's already-closed public entry): drive
++  // the registered body directly. The subject here is the tool, not policy.
++  const definition = setupDefinitions.get(ctx)?.get('subagent')
++  if (definition === undefined) throw new Error('subagent tool is not registered')
++  const exec = {
++    callId,
++    rootCallId: callId,
++    token: Symbol('test-body') as ToolExecutionToken,
+     name: 'subagent',
+     arguments: args,
+-    ...agent ? { agent } : {},
+-    ...over.signal ? { signal: over.signal } : {},
+-  })
++    ...agent !== undefined ? { agent } : {},
++    signal,
++    deferContext() {},
++    concludeTurn() {},
++  }
++  try {
++    const value = await definition.execute(args, exec) as JsonValue
++    return { isError: false, value, content: definition.output.render(args, value) }
++  } catch (error: unknown) {
++    const message = error instanceof Error ? error.message : String(error)
++    const info = error instanceof HarnessError ? { name: error.name, code: error.code } : undefined
++    return {
++      isError: true,
++      content: [{ type: 'text', text: `Error: ${message}` }],
++      error: { message, ...info === undefined ? {} : { info } },
++    }
++  }
+ }
+ 
+ /** Join text blocks from one rendered tool result. */
+diff --git a/packages/subagent/tool-subagent/tests/tool-subagent.spec.ts b/packages/subagent/tool-subagent/tests/tool-subagent.spec.ts
+index 9fdff052..539e34c3 100644
+--- a/packages/subagent/tool-subagent/tests/tool-subagent.spec.ts
++++ b/packages/subagent/tool-subagent/tests/tool-subagent.spec.ts
+@@ -20,6 +20,7 @@ import { loadStoredSession } from '../../subagent/tests/persistence-helpers.ts'
+ import * as mock from './scripted-provider.ts'
+ import * as tool from '../src/index.ts'
+ import { SessionId } from '@deepseek-ai/dsh-session'
++import { runToolCallForTest } from '../../../core/agent-loop/src/internal.ts'
+ import {
+   callSubagent,
+   disposeSetupProvider,
+@@ -161,8 +162,8 @@ describe('dsh-tool-subagent', () => {
+     expect(names).toEqual(['subagent', 'subagent_acp'])
+ 
+     const parent = (await ctx.agents.create({ sessionId: SessionId('multi-provider-parent') })).agent
+-    const viaSpawn = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c-spawn'), name: 'subagent', arguments: { description: 'd', prompt: 'p' }, agent: parent })
+-    const viaAcp = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c-acp'), name: 'subagent_acp', arguments: { description: 'd', prompt: 'p' }, agent: parent })
++    const viaSpawn = await runToolCallForTest(ctx, parent, 'subagent', { description: 'd', prompt: 'p' }, testToolSignal, 'c-spawn')
++    const viaAcp = await runToolCallForTest(ctx, parent, 'subagent_acp', { description: 'd', prompt: 'p' }, testToolSignal, 'c-acp')
+     expect(text(viaSpawn)).toMatch(/^started subagent /)
+     expect(text(viaAcp)).toMatch(/^started subagent /)
+   })
+@@ -778,13 +779,8 @@ describe('dsh-tool-subagent local activation', () => {
+       maxDepth: 3,
+     })
+ 
+-    const execute = (callId: string, description: string, signal: AbortSignal) => ctx.tools.execute({
+-      signal,
+-      callId: ToolCallId(callId),
+-      name: 'subagent_gated',
+-      arguments: { description, prompt: 'work' },
+-      agent: parent,
+-    })
++    const execute = (callId: string, description: string, signal: AbortSignal) =>
++      runToolCallForTest(ctx, parent, 'subagent_gated', { description, prompt: 'work' }, signal, callId)
+     const cancelledResult = execute('continuable-cancelled', 'cancelled sibling', cancelled.signal)
+     const survivingResult = execute('continuable-surviving', 'surviving sibling', testToolSignal)
+     await bothPreparing.promise
+diff --git a/scripts/gen-cordis-catalog.ts b/scripts/gen-cordis-catalog.ts
+index c4e1b025..e4cf6b11 100644
+--- a/scripts/gen-cordis-catalog.ts
++++ b/scripts/gen-cordis-catalog.ts
+@@ -339,6 +339,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
+   AgentStatus: 'core.md',
+   AssistantStreamFrame: 'core.md',
+   ContentBlock: 'llm-streaming.md',
++  ToolCallBlock: 'llm-streaming.md',
+   CreateAgentOptions: 'core.md',
+   CreateWorktreeRequest: 'worktrees.md',
+   CreatedWorktree: 'worktrees.md',
+@@ -727,7 +728,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
+   ToolExecutionMode: 'tools.md',
+   ToolExecutionResult: 'tools.md',
+   ToolExecutionToken: 'tools.md',
+-  ToolDispatchAuthority: 'tools.md',
++  ToolBatchDispatch: 'tools.md',
++  ToolDescriptor: 'tools.md',
+   ToolGuard: 'tools.md',
+   ToolPresentationMode: 'tools.md',
+   ToolRuntime: 'tools.md',
