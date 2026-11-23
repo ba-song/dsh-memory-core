@@ -1,67 +1,110 @@
 # DSHA「汐」统一交付看板
 
-> 版本：BOARD-0001  
-> 更新时间：2026-11-23 21:10（Asia/Shanghai）  
-> 维护者：项目负责人 GPT  
-> 定位：交付状态快照；以各仓库精确 commit、专项报告和可复核测试证据为准。此看板不替代代码、HANDOFF 或专项报告。
+> 版本：BOARD-0002
+> 更新时间：2026-11-23
+> 维护者：项目负责人 GPT
+> 本看板是交付状态快照；代码事实以精确 commit 为准，实机状态以 DSH 对应 commit 的测试证据为准。
 
-## 状态口径
+## 一、六个常驻智能体
 
-- **已完成（隔离验收）**：指定开发分支的代码/测试证据已验收；不代表生产集成或部署。
-- **进行中**：已有明确目标和执行中的任务，尚未达到验收门槛。
-- **待复验**：已有代码交付，但最新目标 HEAD 尚无独立测试结果。
-- **阻塞**：存在明确安全、兼容、授权或验证缺口。
-- **未验证**：当前没有足够的代码/运行时/测试证据。
-- 调研、开发、测试、集成、生产验收分别记录，不互相替代。
+| 智能体 | 职责 | 当前安排 |
+|---|---|---|
+| Memory | 长期记忆、事实/事件/关系、来源、召回、有效性和连续性 | 当前重点推进 |
+| Persona / EI | 自我身份、人格、情绪认知与状态 | 当前重点推进 |
+| Channel Bridge | QQ/OneBot 收发、消息路由、联系人/群成员身份和会话上下文 | 保持身份边界工作 |
+| Douyin | 抖音相关能力 | Owner 明确要求暂不推进 |
+| Autonomy / Life | Home、目标、唤醒、主动思考、计划和行动 | 保持现有成果；未经授权不启用真实行动 |
+| Android | Android 宿主、后台运行、生命周期、恢复和设备能力 | 保持设备运行与恢复工作 |
 
-## 六条专业工作线
+Host 不属于六个常驻智能体。Host 是 Owner 另行新开的临时工程智能体，专门执行 Host Runtime 安全改造，不注册为汐的常驻第七个业务角色。
 
-| 工作线 / 智能体职责域 | 权威仓库 | 当前已核对基线 | 当前状态 | 正在执行 / 下一交付 |
-|---|---|---|---|---|
-| Memory（记忆、事实/经历、来源、召回与修订） | [ba-song/dsh-memory-core](https://github.com/ba-song/dsh-memory-core) | main `752cd0861e9c86c9f7be4bdf18302fa72a3b95dd`；minimal-integration `a63f994e001da2e6636ed07c75988fa681ecaf7c) | **待复验 + 集成阻塞**。A–E 累计栈 `4bf92aad...` 隔离代码 PASS，但相对 main 有 300 commits / 117 files；不得直接合并。minimal-integration 新 HEAD 的复验尚未见结果。 | 先对 `a63f994e` 做全量、专项和 N9 复验；独立评估 A–E 窄范围集成策略。禁止将 v3/v5 schema 分支直接混入 v4 最小集成。 |
-| Persona / EI（身份、人格、情绪与关系状态） | [ba-song/dsh-persona-core](https://github.com/ba-song/dsh-persona-core) | main `a84c7badd1e6c971a66b6c39dd4f7ab795df4b90`；EI-1 目标 `3a137618...` | **EI-1 隔离代码 PASS；设备复验未验证；EI-2A 未授权**。EI-2 设计分支与报告分支曾存在 blob 不一致。 | 统一 EI-2 设计与报告基线；整理 EI-1 设备复验所需材料。未获 Owner 授权前不启动 EI-2A，不改变真实情绪/人格行为。 |
-| Channel Bridge（QQ/OneBot 收发、会话与群成员身份） | [ba-song/dsh-channel-bridge](https://github.com/ba-song/dsh-channel-bridge) | main `bffcabc306a21e3cbdb7549ab3bfca8e2ec43f13` | **P0-1 阻塞**。群成员 speaker 身份链此前独立审查 REJECT；旧 550/550 测试数字不绑定当前 main HEAD。 | 在精确 main HEAD 复跑 fake-transport 全量测试；修复/验证 sender_id 到 transcript/group-turn 的端到端身份保真，并证明 handover 不把群成员误标 Owner。 |
-| Douyin（抖音浏览、通知与私信适配） | [ba-song/dsh-douyin](https://github.com/ba-song/dsh-douyin) | main `da799dd4492ad5093aa0c5cd9376d68919a6ebd3` | **功能代码存在；当前运行配置未验证**。README 声明 watcher 默认关闭；与 Autonomy 通知订阅并启用时有重复投递风险。 | 在不改配置、不发消息前提下核对 main 全量测试与通知/私信事件接口；与 Autonomy 联合审查重复投递和 owner 路由。 |
-| Autonomy / Life（目标、Home、唤醒、主动行动与审计） | [ba-song/dsh-autonomy](https://github.com/ba-song/dsh-autonomy) | main `6c4a4753b4737060211955b1f022cab2f1d39521` | **代码含 mock/dry-run 与 realSafe 执行路径；实际 profile 开关未核实**。v4 恢复协议设计对齐，不代表实现或真机运行。 | 只读核对实际 profile 开关、Douyin watcher 订阅、QQ send gate；复核 realSafe 可达路径。未核实前不启动 tick、executor、唤醒或自动回复。 |
-| Android / DSHA（宿主、设备桥、后台生命周期与恢复） | [DSH-APP/DSHA](https://github.com/DSH-APP/DSHA) | main `36d89b72294348d0482d509109cf8e76d51fc1cb`（本轮提交搜索所见） | **设计对齐；真机验收未完成**。Android/Autonomy v4 的 60 秒观察窗已由 Autonomy 采纳，但 Android 报告仍有 PARTIAL；kill/reboot、双 worker、fsync、ENOSPC、FGS/OEM/force-stop 等证据未齐。 | 先核对当前 Android main 的 AGENTS/测试规范与报告版本；按风险排序准备真实设备验收矩阵。故障注入、kill/reboot、权限变更须单独授权。 |
+## 二、基本开发协作闭环
 
-> 六条工作线是根据当前可访问仓库与 HANDOFF-0076 中的四专业智能体审计、Autonomy 和 Android 独立工作线归纳的职责域。当前 GitHub 证据未完整证明六个运行中智能体的实际 agent ID、分配人和在线状态；不得虚构名称或宣称已确认运行实例。
+**GPT 负责 GitHub 侧开发；DSH 负责本地与实机验证；GPT 负责独立验收并继续开发。**
 
-## 横向 P0：Host Runtime provenance（临时工程任务，不是第七个常驻业务智能体）
+1. GPT：读取仓库规范、HANDOFF/REPORT、精确 HEAD 和代码；作技术决策；在独立分支直接修改 GitHub 源码、测试和必要文档；提交并记录 SHA。
+2. DSH：检出 GPT 指定的精确 commit，在本地和真实 Android/运行环境测试；提供命令、环境、日志、设备观察和结果。
+3. GPT：核对证据是否对应精确 commit，独立审查代码与测试覆盖，给出 PASS/PARTIAL/REJECT；未通过时由 GPT 分析并继续修改 GitHub。
+4. Owner：保留最终授权权。GPT 不得因接任负责人扩大生产权限；生产写入、部署/重启、真实外发、自动执行、不可逆操作及设备故障注入均遵守既有明确授权要求。
 
-- 仓库：`ba-song/dsh-harness-host-provenance`
-- 上轮实现 HEAD：`98f0b832e8a09c277ee4d9f4b36a3706780f786d`
-- 上轮报告：`ba-song/dsh-memory-core` 分支 `report/host-tool-exec-provenance`，commit `15085641e46410af97db91514df4503458dddb50`。
-- 状态：**PARTIAL / Host 安全验收未通过**。T01–T14 与报告测试日志通过，但 GPT 独立审查发现公开 capability claim 入口与 `get(name).execute()` handler 旁路；本轮已交付第二阶段修复任务，等待临时工程角色交付。
-- 下一交付：关闭普通插件 capability 签发与真实 handler 旁路，补真实负向测试、全量回归、typecheck、catalog，并提交 REMEDIATION-REPORT。
-- 限制：不注册常驻智能体；不触碰 Memory/Persona/Bridge/Android 业务行为；不合并、部署、重启或操作生产。Host PASS 仅是 Host 阶段 PASS，不代表 P0-1 整体 PASS。
+验收分层：
+- 静态审查/隔离测试 PASS 不等于 DSH 本地验证 PASS。
+- DSH 本地测试 PASS 不等于 Android 真机验证 PASS。
+- 真机验证 PASS 不等于生产部署或生产运行 PASS。
+- 所有测试必须绑定精确 commit SHA；不得用旧 HEAD 的测试数字证明新 HEAD。
 
-## 跨工作线阻塞与依赖
+## 三、当前重点交付
 
-1. **P0-1 身份与会话隔离**：Host provenance、Memory session capability、Channel Bridge 群成员 sender_id、Persona session binding 必须各自闭环；任一模块的 PASS 不能替代其他模块。
-2. **Memory 集成风险**：A–E 累计分支相对 main 范围过大；minimal-integration 与 wake-capture 分支 schema/index 冲突，禁止直接合并。
-3. **通知与外发**：Douyin notify watcher 与 Autonomy 订阅可能重复投递；Autonomy 存在真实自动私信回复路径，profile 未核对前不得启用。
-4. **情绪数据流**：Persona raw emotion snapshot 已存在；Memory episode emotion link 与情绪召回信号尚未闭环。
-5. **设备恢复**：Android/Autonomy v4 设计对齐，不等于设备端 kill/reboot 与后台恢复已验收。
-6. **Host → Memory 顺序**：Host 独立验收 PASS 后才申请 Memory 阶段授权；未 PASS 前不启动 Memory provenance 改造。
+### P0：Host Runtime 安全改造（临时工程智能体）
 
-## 负责人当前执行顺序
+- 仓库：ba-song/dsh-harness-host-provenance
+- 上轮实现 HEAD：98f0b832e8a09c277ee4d9f4b36a3706780f786d
+- 上轮报告 commit：15085641e46410af97db91514df4503458dddb50
+- 状态：PARTIAL。GPT 独立审查发现公开 capability claim 入口及 get(name).execute() handler 旁路。
+- 当前执行者：Owner 新开的临时 Host 智能体，执行第二阶段修复。
+- GPT 负责复核代码、测试证据与独立验收。
+- 不合并、不发布、不部署、不重启、不操作生产。
 
-| 优先级 | 工作 | 类型 | 交付门槛 |
-|---|---|---|---|
-| P0-1 | Host capability claim + handler bypass 修复 | 开发 → 测试 → GPT 独立验收 | 真实攻击路径负向测试、原回归、类型检查、catalog、报告齐全 |
-| P0-1 | Memory minimal-integration 新 HEAD 复验 | 测试 | 精确 HEAD、全量测试、N9、工作树/日志证据 |
-| P0-1 | Channel Bridge 群成员身份链 | 开发/测试 | 精确 main HEAD 的 sender_id 全链路测试，群成员与 Owner 不混淆 |
-| P1 | Autonomy/Douyin 实际配置与重复投递只读核查 | 调研（服务执行） | 脱敏 profile 事实、调用链、默认开关与重复投递测试 |
-| P1 | Persona EI-1 / EI-2 交付同步 | 集成准备 | 报告/设计 blob 一致；EI-1 设备复验；EI-2A 需单独授权 |
-| P1 | Android v4 设备验收准备 | 测试准备 | 与 DSHA 当前源码/设备版本绑定的测试矩阵；执行前授权 |
+### P0：Memory
 
-## 验收与更新规则
+- 仓库：ba-song/dsh-memory-core
+- main 本轮提交搜索所见 HEAD：752cd0861e9c86c9f7be4bdf18302fa72a3b95dd
+- minimal-integration 目标 HEAD：a63f994e001da2e6636ed07c75988fa681ecaf7c
+- HANDOFF-0076 记录：minimal-integration 新 HEAD 等待 Memory 本地复验；与 wake-capture 分支 schema/index 冲突，不可直接合并。
+- A–E 累计栈曾报告隔离代码 PASS，但相对 main 范围较大（约 300 commits / 117 files），不能直接集成。
+- P0-1 session capability 与 archive 访问边界仍须独立处理。
+- 下一交付：验证精确 HEAD 的全量测试、专项测试和 N9 scope 隔离；GPT 分析并直接推进最小可集成代码改动；DSH 对指定 commit 做本地/实机验证，GPT 复核验收。
+- 任何改变汐真实记忆写入、召回或自动行为的修改，先说明具体影响并取得 Owner 授权。
 
-- 每项交付必须绑定仓库、分支、精确 HEAD、diff 范围、测试命令/退出码/日志、未验证项和副作用声明。
-- DSH/专业智能体的自评不等于负责人独立验收。
-- GitHub CI、隔离 worktree 测试、DSHA 实机测试、生产运行验收分别记录。
-- 不因分支存在或文档报告存在而推断代码已合并、部署或启用。
-- 任何会改变汐实际记忆、人格、情绪、召回、自动写入或行动行为的工作，先说明具体影响并按既有授权规则处理。
-- 生产写入、profile/config 修改、合并、部署、重启、真实 QQ/抖音操作和设备故障注入，不因负责人接任自动获得授权。
-- 本看板每次只更新真实状态变化；无新证据时标记“未验证/待复验”，不制造管理性进度。
+### P0：Persona / EI
+
+- 仓库：ba-song/dsh-persona-core
+- main 本轮提交搜索所见 HEAD：a84c7badd1e6c971a66b6c39dd4f7ab795df4b90
+- EI-1 代码隔离验收曾 PASS（21/21 定向、324/324 全量），设备复验 NOT RUN。
+- EI-2 设计文档曾有报告与分支 blob 不一致问题；EI-2A 未获 Owner 授权，不得启动。
+- 下一交付：GPT 核对 EI-1/EI-2 实际代码和设计基线；先闭合身份绑定、canonical self、conversation 边界与 Memory/Channel 契约；GPT 直接实施已获授权且不改变汐实际行为的代码/测试优化；DSH 按指定 commit 做本地/设备验证，GPT 独立验收。
+- 改变真实人格、情绪或持久化行为的修改，先说明影响并请求 Owner 授权。
+
+## 四、其他常驻工作线状态
+
+### Channel Bridge
+- 仓库：ba-song/dsh-channel-bridge
+- 已知 main HEAD：bffcabc306a21e3cbdb7549ab3bfca8e2ec43f13（执行新任务前重新核对）。
+- 历史 P0-1 审查发现群消息 sender_id 未贯通，可能把群号/群成员错误归属为 speaker/Owner。
+- 下一交付：精确 HEAD 的全量测试与 sender_id 到 session、group-turn、transcript、handover 的身份链修复和验证。
+- 不发送真实 QQ 消息；真实外发需 Owner 明确授权。
+
+### Douyin
+- 当前状态：暂停。
+- Owner 明确要求暂不做 Douyin 内容。不得自行安排实现、调研或占用其他智能体资源。
+
+### Autonomy / Life
+- 仓库：ba-song/dsh-autonomy
+- 已知 main HEAD：6c4a4753b4737060211955b1f022cab2f1d39521（执行前重新核对）。
+- v4 恢复协议设计与 Android 对齐不代表实机运行通过。
+- 源码存在 realSafe 执行路径；实际 profile 开关需以合法只读证据确认。
+- 不擅自启动 tick、Home 唤醒、真实 executor、自动回复或 QQ 外发。
+
+### Android
+- 仓库：DSH-APP/DSHA
+- 已知 main 提交线索：36d89b72294348d0482d509109cf8e76d51fc1cb（执行前重新核对）。
+- v4 后台恢复设计仍需真机证据；kill/reboot、双 worker、fsync、ENOSPC、FGS/OEM/force-stop 等项目不可用文档对齐替代。
+- 故障注入、权限变更、重启等操作需单独授权。
+
+## 五、跨模块依赖
+
+1. Memory、Persona、Channel Bridge 必须共同保证身份、conversation、speaker/experiencer 归属正确。
+2. Host provenance 是工具执行信任边界；Host 阶段通过不代表 Memory 或 P0-1 整体通过。
+3. Android 与 Autonomy 的设计协议一致不代表设备恢复已经验证。
+4. Douyin 暂停，不作为当前主线依赖。
+5. 六个常驻智能体可以并行，但同一代码文件/同一分支必须避免并发冲突；GPT 统一控制 GitHub 修改和集成节奏。
+
+## 六、负责人执行原则
+
+- GPT 是 GitHub 侧实际开发者与项目技术负责人，不只是任务提示词编写者。
+- DSH 是本地环境、真实设备和运行期验证执行者；GPT 不假称已操作设备。
+- 用户是 Owner、最终决策与授权人，也是 GPT 与 DSH 的唯一中转人。
+- 优先 Memory 与 Persona 优化；Douyin 暂停。
+- 任务以代码、测试、实机证据和可用能力交付衡量，不以报告数量衡量。
+- 每次交付记录仓库、分支、基线、HEAD、diff、测试命令/exit code、实机证据和未解决风险。
+- 生产默认只读；未经明确授权不合并、部署、重启、迁移、写生产 DB、修改生产配置、真实外发或执行不可逆操作。
