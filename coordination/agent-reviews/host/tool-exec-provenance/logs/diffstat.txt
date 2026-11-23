@@ -1,0 +1,16 @@
+ docs/subsystems/tools.md                           |  28 +-
+ docs/subsystems/tools.zh.md                        |  28 +-
+ packages/core/agent-loop/src/index.ts              |  14 +
+ packages/core/agent-loop/src/internal.ts           |  37 ++
+ packages/core/agent-loop/src/tool-calls.ts         |  29 +-
+ .../core/agent-loop/tests/agent-initiator.spec.ts  |   5 +-
+ .../agent-loop/tests/resource-lifecycle.spec.ts    |   5 +-
+ packages/core/agent-loop/tests/resume.spec.ts      |   7 +-
+ packages/core/agent-loop/tests/tool-calls.spec.ts  |  22 +-
+ packages/core/tools/src/index.ts                   | 333 +++++++++++++--
+ packages/core/tools/src/ptc.ts                     |  15 +-
+ packages/core/tools/tests/exec-provenance.spec.ts  | 459 +++++++++++++++++++++
+ packages/core/tools/tests/tools.spec.ts            |  19 +-
+ packages/extensions/tool-cordis/src/api-catalog.ts |  23 +-
+ scripts/gen-cordis-catalog.ts                      |   1 +
+ 15 files changed, 951 insertions(+), 74 deletions(-)

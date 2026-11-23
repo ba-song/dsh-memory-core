@@ -1,0 +1,1529 @@
+diff --git a/docs/subsystems/tools.md b/docs/subsystems/tools.md
+index 585ce158..1ccbe129 100644
+--- a/docs/subsystems/tools.md
++++ b/docs/subsystems/tools.md
+@@ -588,11 +588,33 @@ executionMode(exec: ToolExecutionInput): ToolExecutionMode
+  * not-yet-started body with `ABORTED_BEFORE_DISPATCH` or replaces a
+  * successful started outcome with `ABORTED`; already-started work is still
+  * drained and may retain a tool-owned structured error.
+- * @param exec - the typed same-process call input. The registry assigns its
+- *   correlation token before policy begins.
+- * @returns the materialized final result.
++ *
++ * This is the UNPRIVILEGED entry. Once the host claims the dispatch
++ * authority ({@link claimDispatchAuthority}), it refuses every call with
++ * `E_TOOL_EXEC_UNTRUSTED`: a caller-supplied `exec` is not provenance, so a
++ * plugin cannot execute a tool by constructing one or by copying a live
++ * `ToolRunContext` out of its own handler. A bare registry with no host
++ * dispatcher keeps the historical behavior because no trusted identity
++ * exists for a caller to borrow there.
++ * @param exec - the caller-supplied call input.
++ * @returns the materialized final result, or the stable refusal result.
+  */
+ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
++
++/**
++ * Claim the one host dispatch authority for this registry.
++ *
++ * The composition that owns agent dispatch (the agent loop) calls this
++ * during its own construction, before it can create or drive any agent. A
++ * second claim is a programming error and fails loudly rather than handing
++ * out a second capability, so a plugin cannot acquire one after the host has
++ * started. The returned object is the only way to dispatch an agent-bound
++ * call; it is deliberately absent from the service surface, the package
++ * exports, and every execution/event object.
++ * @returns the host dispatch authority.
++ * @throws {ToolExecutionUntrustedError} when the authority was already claimed.
++ */
++claimDispatchAuthority(): ToolDispatchAuthority
+ ```
+ 
+ Types: [ScopeKey](scope.md)
+diff --git a/docs/subsystems/tools.zh.md b/docs/subsystems/tools.zh.md
+index 4ee27fcb..f418fe21 100644
+--- a/docs/subsystems/tools.zh.md
++++ b/docs/subsystems/tools.zh.md
+@@ -588,11 +588,33 @@ executionMode(exec: ToolExecutionInput): ToolExecutionMode
+  * not-yet-started body with `ABORTED_BEFORE_DISPATCH` or replaces a
+  * successful started outcome with `ABORTED`; already-started work is still
+  * drained and may retain a tool-owned structured error.
+- * @param exec - the typed same-process call input. The registry assigns its
+- *   correlation token before policy begins.
+- * @returns the materialized final result.
++ *
++ * This is the UNPRIVILEGED entry. Once the host claims the dispatch
++ * authority ({@link claimDispatchAuthority}), it refuses every call with
++ * `E_TOOL_EXEC_UNTRUSTED`: a caller-supplied `exec` is not provenance, so a
++ * plugin cannot execute a tool by constructing one or by copying a live
++ * `ToolRunContext` out of its own handler. A bare registry with no host
++ * dispatcher keeps the historical behavior because no trusted identity
++ * exists for a caller to borrow there.
++ * @param exec - the caller-supplied call input.
++ * @returns the materialized final result, or the stable refusal result.
+  */
+ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
++
++/**
++ * Claim the one host dispatch authority for this registry.
++ *
++ * The composition that owns agent dispatch (the agent loop) calls this
++ * during its own construction, before it can create or drive any agent. A
++ * second claim is a programming error and fails loudly rather than handing
++ * out a second capability, so a plugin cannot acquire one after the host has
++ * started. The returned object is the only way to dispatch an agent-bound
++ * call; it is deliberately absent from the service surface, the package
++ * exports, and every execution/event object.
++ * @returns the host dispatch authority.
++ * @throws {ToolExecutionUntrustedError} when the authority was already claimed.
++ */
++claimDispatchAuthority(): ToolDispatchAuthority
+ ```
+ 
+ Types: [ScopeKey](scope.zh.md)
+diff --git a/packages/core/agent-loop/src/index.ts b/packages/core/agent-loop/src/index.ts
+index ca4532af..677fad5a 100644
+--- a/packages/core/agent-loop/src/index.ts
++++ b/packages/core/agent-loop/src/index.ts
+@@ -34,6 +34,7 @@ import type { SessionHandle, SessionPersistence } from '@deepseek-ai/dsh-session
+ import { ReactLoopAgent } from './agent.ts'
+ import { inboxProjectionDefinition } from './inbox.ts'
+ import { DEFAULT_MAX_PARALLEL_TOOL_CALLS } from './constants.ts'
++import { hostDispatchers } from './internal.ts'
+ import type {} from './runtime-context.ts'
+ 
+ /** Fiber states that cannot own or serve a new lifecycle. */
+@@ -370,6 +371,19 @@ export class AgentLoop extends Service implements AgentFactory {
+       maxParallelToolCalls: config.maxParallelToolCalls,
+     }
+     validateConfiguredAgents(this.config.agents)
++    // Seed the one host tool-dispatch authority before this loop can create or
++    // drive any agent. Possession of this object — not a caller-supplied
++    // `exec`, a session header, or `agents.currentInitiator` — is what makes a
++    // tool call host-dispatched. The app owns it: a loop reload reuses it, a
++    // restarted registry gets a fresh claim, and any other claimant fails
++    // loudly instead of receiving a capability. It is kept out of the service
++    // surface by a module-private WeakMap, so `ctx.agentLoop.<field>` never
++    // exposes it.
++    const rawTools = (ctx.tools as unknown as Record<symbol, unknown>)[Symbol.for('cordis.original')] ?? ctx.tools
++    const existing = hostDispatchers.get(ctx.root)
++    if (existing === undefined || existing.registry !== rawTools) {
++      hostDispatchers.set(ctx.root, { registry: rawTools as object, authority: ctx.tools.claimDispatchAuthority() })
++    }
+     // Register only after every config validation above has passed, so a
+     // rejected constructor leaves no projection unit behind.
+     const ownership = this.ownership = new FactoryOwnership(ctx.fiber)
+diff --git a/packages/core/agent-loop/src/internal.ts b/packages/core/agent-loop/src/internal.ts
+new file mode 100644
+index 00000000..4fa46d3a
+--- /dev/null
++++ b/packages/core/agent-loop/src/internal.ts
+@@ -0,0 +1,37 @@
++/**
++ * Package-internal carrier for the host tool-dispatch authority.
++ *
++ * `dsh-tools` mints at most one {@link ToolDispatchAuthority} per registry and
++ * the agent loop claims it during construction. The authority must reach
++ * `tool-calls.ts` without becoming a service member, a class field, or an
++ * export: a field would be readable through the public `ctx.agentLoop`
++ * service instance, and an export would make it importable. A module-private
++ * `WeakMap` keyed by the loop's own context keeps it out of both.
++ *
++ * Nothing here is re-exported from `index.ts`, and `package.json` publishes
++ * `lib/**` only, so an installed plugin cannot reach this binding.
++ * @module @deepseek-ai/dsh-agent-loop/internal
++ */
++
++import type { Context } from '@deepseek-ai/cordis'
++import type { ToolDispatchAuthority } from '@deepseek-ai/dsh-tools'
++
++/**
++ * One app-owned host dispatcher: the exact tool registry it targets and the
++ * authority that registry minted. Keyed by the root context so a loop reload
++ * (a new loop fiber or a drained-and-replaced loop) reuses the same authority
++ * instead of trying to claim a second one, while an independently restarted
++ * tool registry is detected by identity and re-claimed.
++ * @internal
++ */
++export interface HostDispatcher {
++  /** The raw `ToolRuntime` instance the authority belongs to. */
++  readonly registry: object
++  readonly authority: ToolDispatchAuthority
++}
++
++/**
++ * Root context → the app's host dispatcher.
++ * @internal
++ */
++export const hostDispatchers: WeakMap<Context, HostDispatcher> = new WeakMap()
+diff --git a/packages/core/agent-loop/src/tool-calls.ts b/packages/core/agent-loop/src/tool-calls.ts
+index c12de68d..026da165 100644
+--- a/packages/core/agent-loop/src/tool-calls.ts
++++ b/packages/core/agent-loop/src/tool-calls.ts
+@@ -14,8 +14,9 @@
+ import type { Context } from '@deepseek-ai/cordis'
+ import { createToolResultMessage, type ToolCallBlock } from '@deepseek-ai/dsh-llm'
+ import type { Session, SessionSeq, UserMessage } from '@deepseek-ai/dsh-session'
+-import { TOOL_ABORTED_BEFORE_DISPATCH, TOOL_RUNTIME_SCHEDULER, type ToolExecutionInput, type ToolExecutionMode, type ToolExecutionResult, type ToolRunContext } from '@deepseek-ai/dsh-tools'
++import { TOOL_ABORTED_BEFORE_DISPATCH, type ToolDispatchAuthority, type ToolExecutionInput, type ToolExecutionMode, type ToolExecutionResult, type ToolRunContext } from '@deepseek-ai/dsh-tools'
+ import { assertNever } from '@deepseek-ai/dsh-util-values'
++import { hostDispatchers } from './internal.ts'
+ 
+ /** One tool call after argument parsing, ready to schedule. */
+ interface PlannedCall {
+@@ -101,6 +102,23 @@ export async function executeToolCalls(
+   return { concluded }
+ }
+ 
++/**
++ * The authority this loop claimed at construction.
++ *
++ * Reached through the package-private map rather than a service member, so no
++ * plugin can read or replace the loop's dispatch capability through
++ * `ctx.agentLoop`. Missing means the call did not come from a live loop.
++ * @param ctx - the loop context carrying tool dispatch.
++ * @returns the host dispatch authority.
++ */
++function toolDispatchAuthority(ctx: Context): ToolDispatchAuthority {
++  const authority = hostDispatchers.get(ctx.root)?.authority
++  if (authority === undefined) {
++    throw new Error('tool-calls: the agent loop has no host dispatch authority')
++  }
++  return authority
++}
++
+ /** Parse model arguments, preserving invalid JSON as text and mapping empty input to `{}`. */
+ function parseArguments(raw: string): unknown {
+   try {
+@@ -129,6 +147,7 @@ async function runGroup(
+   acceptContext: (context: UserMessage) => void,
+ ): Promise<GroupOutcome> {
+   const { session } = ctx.agents.requireInitiator()
++  const authority = toolDispatchAuthority(ctx)
+   const maxParallelToolCalls = ctx.agentLoop.config.maxParallelToolCalls.get()
+   const slots: (Slot | undefined)[] = group.map(() => undefined)
+   // Started slots retain their `tool/call` seq so the result can cite it.
+@@ -150,8 +169,8 @@ async function runGroup(
+       if (slot === undefined) break
+       const call = group[committed]
+       const result = slot.needsPost
+-        ? await ctx.tools[TOOL_RUNTIME_SCHEDULER].finalize(slot.exec, slot.result)
+-        : ctx.tools[TOOL_RUNTIME_SCHEDULER].finish(slot.exec, slot.result)
++        ? await authority.finalize(slot.exec, slot.result)
++        : authority.finish(slot.exec, slot.result)
+       // oxlint-disable-next-line typescript/no-non-null-assertion -- bounded index
+       appendToolResult(session, turn, step, call!.block, result, callSeqs[committed]!)
+       for (const context of result.additionalContexts ?? []) acceptContext(context)
+@@ -167,11 +186,11 @@ async function runGroup(
+     const call = group[index]!
+     callSeqs[index] = appendToolCall(session, turn, step, call.block)
+     started++
+-    const prepared = await ctx.tools[TOOL_RUNTIME_SCHEDULER].prepare(call.exec)
++    const prepared = await authority.prepare(call.exec)
+     throwSchedulerFailure()
+     switch (prepared.kind) {
+       case 'dispatch': {
+-        const promise = ctx.tools[TOOL_RUNTIME_SCHEDULER].dispatch(prepared.exec).then(
++        const promise = authority.dispatch(prepared.exec).then(
+           (outcome) => {
+             slots[index] = { exec: prepared.exec, result: outcome.result, needsPost: outcome.kind === 'post-result' }
+             return index
+diff --git a/packages/core/agent-loop/tests/agent-initiator.spec.ts b/packages/core/agent-loop/tests/agent-initiator.spec.ts
+index 0b9d32ec..775be680 100644
+--- a/packages/core/agent-loop/tests/agent-initiator.spec.ts
++++ b/packages/core/agent-loop/tests/agent-initiator.spec.ts
+@@ -9,6 +9,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+ import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+ import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
++import { hostDispatchers } from '../src/internal.ts'
+ 
+ const testToolSignal = new AbortController().signal
+ 
+@@ -312,7 +313,9 @@ describe('AgentLoop initiator scope', () => {
+       },
+     }))
+ 
+-    const direct = await ctx.tools.execute({
++    const authority = hostDispatchers.get(ctx.root)?.authority
++    if (authority === undefined) throw new Error('test harness: the agent loop claimed no dispatch authority')
++    const direct = await authority.execute({
+       signal: testToolSignal,
+       callId: ToolCallId('direct'),
+       name: 'agentless-probe',
+diff --git a/packages/core/agent-loop/tests/resource-lifecycle.spec.ts b/packages/core/agent-loop/tests/resource-lifecycle.spec.ts
+index 8a0a66df..0f3f1d4d 100644
+--- a/packages/core/agent-loop/tests/resource-lifecycle.spec.ts
++++ b/packages/core/agent-loop/tests/resource-lifecycle.spec.ts
+@@ -15,6 +15,7 @@ import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
+ import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
+ import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
+ import { MockAdapter, textResponse } from './mock-adapter.ts'
++import { hostDispatchers } from '../src/internal.ts'
+ 
+ it.each([0, 1, 2])('retains Agent resources until all work exits with %i failed teardowns', async (failures) => {
+   const ctx = new Context()
+@@ -117,7 +118,9 @@ it.each(['loop', 'root'] as const)('unloads %s while a background child is stopp
+     await release.promise
+     return next()
+   })
+-  const started = await ctx.tools.execute({
++  const authority = hostDispatchers.get(ctx.root)?.authority
++  if (authority === undefined) throw new Error('test harness: the agent loop claimed no dispatch authority')
++  const started = await authority.execute({
+     agent: parent, signal: new AbortController().signal,
+     callId: ToolCallId('background-start'), name: 'subagent',
+     arguments: { description: 'child', prompt: 'wait' },
+diff --git a/packages/core/agent-loop/tests/resume.spec.ts b/packages/core/agent-loop/tests/resume.spec.ts
+index 28759393..34ddc1c7 100644
+--- a/packages/core/agent-loop/tests/resume.spec.ts
++++ b/packages/core/agent-loop/tests/resume.spec.ts
+@@ -9,13 +9,14 @@ import type { ContextFormed } from '@deepseek-ai/dsh-llm'
+ import SessionStore, { SessionLogOffset, SessionSeq, Session, SessionId, TOOL_NOT_STARTED, TOOL_OUTCOME_UNKNOWN } from '@deepseek-ai/dsh-session'
+ import type { SessionEvent } from '@deepseek-ai/dsh-session'
+ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+-import ToolRuntime, { defineContentToolFixture, TOOL_RUNTIME_SCHEDULER } from '@deepseek-ai/dsh-tools'
++import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+ import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
+ import type { SessionHandle } from '@deepseek-ai/dsh-session-persistence'
+ 
+ import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
++import { hostDispatchers } from '../src/internal.ts'
+ import { MockAdapter, textResponse } from './mock-adapter.ts'
+ 
+ declare module '@deepseek-ai/dsh-llm' {
+@@ -991,7 +992,9 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume',
+         name: 'probe', description: 'probe', parameters: {},
+         async execute() { return [{ type: 'text', text: 'unexpected execution' }] },
+       }))
+-      first.tools[TOOL_RUNTIME_SCHEDULER].prepare = () => { throw new Error('scheduler prepare failed') }
++      const authority = hostDispatchers.get(first.root)?.authority
++      if (authority === undefined) throw new Error('test harness: the agent loop claimed no dispatch authority')
++      authority.prepare = () => { throw new Error('scheduler prepare failed') }
+       const sessionId = SessionId('failed-tool-history')
+       const initial = await first.agents.create({ sessionId, agentOptions: { provider: 'mock', model: 'mock' } })
+       const failed = waitForIdle(first, initial.agent)
+diff --git a/packages/core/agent-loop/tests/tool-calls.spec.ts b/packages/core/agent-loop/tests/tool-calls.spec.ts
+index 8aa74cec..87bd26f7 100644
+--- a/packages/core/agent-loop/tests/tool-calls.spec.ts
++++ b/packages/core/agent-loop/tests/tool-calls.spec.ts
+@@ -10,11 +10,12 @@ import SessionStore, { SessionEvent, SessionId, TOOL_NOT_STARTED, TOOL_OUTCOME_U
+ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+ import LlmRuntime from '@deepseek-ai/dsh-llm'
+ import type { ContextFormed } from '@deepseek-ai/dsh-llm'
+-import ToolRuntime, { defineContentToolFixture, TOOL_ABORTED_BEFORE_DISPATCH, TOOL_RUNTIME_SCHEDULER, type PostToolDecision, type PreToolDecision } from '@deepseek-ai/dsh-tools'
++import ToolRuntime, { defineContentToolFixture, TOOL_ABORTED_BEFORE_DISPATCH, type PostToolDecision, type PreToolDecision } from '@deepseek-ai/dsh-tools'
+ import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
+ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+ import { MockAdapter, textResponse } from './mock-adapter.ts'
++import { hostDispatchers } from '../src/internal.ts'
+ import { PtcRuntime } from '@deepseek-ai/dsh-ptc-runtime'
+ import type { PtcRunRequest, PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
+ 
+@@ -24,6 +25,17 @@ declare module '@deepseek-ai/dsh-llm' {
+   }
+ }
+ 
++/**
++ * The host dispatch authority the harnessed loop claimed for this context.
++ * Tests replace its staged stages to inject scheduler failures; the authority
++ * itself is package-private, so a plugin-facing test can no longer reach it.
++ */
++function schedulerOf(ctx: Context) {
++  const authority = hostDispatchers.get(ctx.root)?.authority
++  if (authority === undefined) throw new Error('test harness: the agent loop claimed no dispatch authority')
++  return authority
++}
++
+ async function harness(adapter: MockAdapter, maxParallelToolCalls?: number) {
+   const ctx = new Context()
+   await ctx.plugin(LlmRuntime)
+@@ -650,7 +662,7 @@ describe('tool-call scheduler: failure quiescence', () => {
+         return [{ type: 'text', text: `done-${args.id}` }]
+       },
+     }))
+-    const scheduler = ctx.tools[TOOL_RUNTIME_SCHEDULER]
++    const scheduler = schedulerOf(ctx)
+     const executionMode = ctx.tools.executionMode.bind(ctx.tools)
+     const prepare = scheduler.prepare.bind(scheduler)
+     const finalize = scheduler.finalize.bind(scheduler)
+@@ -728,7 +740,7 @@ describe('tool-call scheduler: failure quiescence', () => {
+     onTestFinished(() => ctx.fiber.dispose())
+     const failure = new Error('prepare failed')
+     const recoveryFailure = new Error('recovery result rejected')
+-    ctx.tools[TOOL_RUNTIME_SCHEDULER].prepare = () => { throw failure }
++    schedulerOf(ctx).prepare = () => { throw failure }
+     ctx.on('internal/dispatch', (_mode, name, args) => {
+       if (name === 'session/event' && (args[1] as SessionEvent).type === 'tool/result') throw recoveryFailure
+     })
+@@ -763,7 +775,7 @@ describe('tool-call scheduler: failure quiescence', () => {
+       name: 'p', description: 'probe', parameters: {},
+       async execute() { return [{ type: 'text', text: 'completed' }] },
+     }))
+-    const scheduler = ctx.tools[TOOL_RUNTIME_SCHEDULER]
++    const scheduler = schedulerOf(ctx)
+     const dispatch = scheduler.dispatch.bind(scheduler)
+     scheduler.dispatch = async (exec) => {
+       if (exec.agent?.id === SessionId('first-agent')) {
+@@ -818,7 +830,7 @@ describe('tool-call scheduler: failure quiescence', () => {
+     ctx.tools.register(gated.tool)
+     // The registry contains expected failures as results; replace its internal
+     // view only to inject the invariant violation this boundary must contain.
+-    const scheduler = ctx.tools[TOOL_RUNTIME_SCHEDULER]
++    const scheduler = schedulerOf(ctx)
+     const prepare = scheduler.prepare.bind(scheduler)
+     const dispatch = scheduler.dispatch.bind(scheduler)
+     const prepareGate = Promise.withResolvers<undefined>()
+diff --git a/packages/core/tools/src/index.ts b/packages/core/tools/src/index.ts
+index ca939d4d..c1c6f8a5 100644
+--- a/packages/core/tools/src/index.ts
++++ b/packages/core/tools/src/index.ts
+@@ -458,9 +458,9 @@ export type ScheduledToolDispatch =
+   | { kind: 'final-result'; result: ToolExecutionResult }
+ 
+ /**
+- * Symbol-keyed scheduler view that keeps pre/post policy ordered while
+- * overlapping dispatch. Ordinary callers use {@link ToolRuntime.execute};
+- * this is not a plugin extension point.
++ * Scheduler view that keeps pre/post policy ordered while overlapping dispatch.
++ * It is reached only through the internal {@link ToolDispatchAuthority}; the
++ * public service instance no longer exposes it.
+  * @internal
+  */
+ export interface ToolRuntimeScheduler {
+@@ -475,10 +475,37 @@ export interface ToolRuntimeScheduler {
+ }
+ 
+ /**
+- * Scheduler entry point omitted from the generated named service API.
++ * Host-only capability that may dispatch a tool call on an agent's behalf.
++ *
++ * A registry mints at most one authority, through
++ * {@link ToolRuntime.claimDispatchAuthority}, and the composition that owns
++ * agent dispatch (the agent loop) claims it during startup. Possession of this
++ * object is the provenance: the public {@link ToolRuntime.execute} entry
++ * refuses every call once an authority exists, so a plugin that constructs an
++ * `exec` — or copies a live `ToolRunContext` out of its own handler — cannot
++ * borrow an agent identity. The authority is held in an ECMAScript private
++ * field, is not an own property, symbol key, or export of the package, and is
++ * never handed to a tool body, a policy listener, or a result.
+  * @internal
+  */
+-export const TOOL_RUNTIME_SCHEDULER: unique symbol = Symbol('@deepseek-ai/dsh-tools.scheduler')
++export interface ToolDispatchAuthority {
++  /** Materialize and run one host-dispatched call end to end. */
++  execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
++  /** Materialize input, run the ordered pre-execute/guard gate, and decide what stage follows. */
++  prepare(exec: ToolExecutionInput): Promise<ScheduledToolPreparation>
++  /** Run only the around-dispatch/body stage of a prepared execution. */
++  dispatch(exec: ToolRunContext): Promise<ScheduledToolDispatch>
++  /** Run post-execute and definition-owned content finalization, then materialize and notify. */
++  finalize(exec: ToolRunContext, result: ToolExecutionResult): Promise<ToolExecutionResult>
++  /** Run definition-owned content finalization, then materialize and notify without post-execute. */
++  finish(exec: ToolRunContext, result: ToolExecutionResult): ToolExecutionResult
++}
++
++/** Canonical error code: an execution input not minted by the host dispatch authority. */
++export const TOOL_EXEC_UNTRUSTED = 'E_TOOL_EXEC_UNTRUSTED'
++
++/** Canonical error code: a structurally invalid execution input. */
++export const TOOL_EXEC_INVALID = 'E_TOOL_EXEC_INVALID'
+ 
+ /** Canonical error code for cancellation after a tool body was invoked. */
+ export const TOOL_ABORTED = 'ABORTED'
+@@ -538,6 +565,24 @@ export class ToolOutputError extends HarnessError {
+   }
+ }
+ 
++/**
++ * Thrown (internally) or materialized when an execution input did not come
++ * from the host dispatch authority, or is structurally unusable.
++ *
++ * Extends {@link HarnessError} so every rejection carries the stable
++ * `E_TOOL_EXEC_UNTRUSTED` / `E_TOOL_EXEC_INVALID` code into the durable
++ * `tool/result` failure info, exactly like `UNKNOWN_TOOL`.
++ */
++export class ToolExecutionUntrustedError extends HarnessError {
++  /**
++   * @param message - human-readable refusal reason.
++   * @param code - stable machine code; defaults to the provenance refusal.
++   */
++  constructor(message: string, code: string = TOOL_EXEC_UNTRUSTED) {
++    super(message, code)
++  }
++}
++
+ /** Convert one projector exception into the canonical invalid-output failure. */
+ function projectionError(toolName: string, projector: 'render' | 'presentationMeta', error: unknown): ToolOutputError {
+   return new ToolOutputError(toolName, [`output.${projector} failed: ${errorMessage(error)}`])
+@@ -813,13 +858,19 @@ export class ToolRuntime extends Service {
+     maxParallelSubCalls: z.natural().min(1).default(10),
+   })
+ 
+-  /** Internal staged view consumed by `dsh-agent-loop`'s parallel scheduler. */
+-  readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler = {
+-    prepare: exec => this.prepareScheduledExecution(exec),
+-    dispatch: exec => this.dispatchScheduledExecution(exec),
+-    finalize: (exec, result) => this.finalizeScheduledExecution(exec, result),
+-    finish: (exec, result) => this.finishScheduledExecution(exec, result),
+-  }
++  /**
++   * The single host dispatch authority, minted by
++   * {@link claimDispatchAuthority}. ECMAScript-private: not an own property,
++   * not a symbol key, and unreachable from any value the package exports or
++   * hands to a caller.
++   */
++  #dispatchAuthority: ToolDispatchAuthority | undefined
++  /** Executions this registry minted for the authority and has not dispatched yet. */
++  #authorizedExecutions = new WeakSet<ToolRunContext>()
++  /** Executions already handed to the dispatch stage; a second dispatch is a replay. */
++  #dispatchedExecutions = new WeakSet<ToolRunContext>()
++  /** Executions already settled; a second settle is a replay. */
++  #settledExecutions = new WeakSet<ToolRunContext>()
+ 
+   /** Context deferred by a running tool body, keyed by its scheduler-owned execution. */
+   private deferredContexts = new WeakMap<ToolRunContext, UserMessage[]>()
+@@ -847,6 +898,19 @@ export class ToolRuntime extends Service {
+   private ptcTransport: ToolDefinition | undefined
+   private readonly ptcContext: Context
+ 
++  /**
++   * Staged pipeline view handed only to two in-package consumers: the host
++   * dispatch authority and the `run_code` transport's nested dispatch. It is
++   * an ECMAScript-private field, so it is not an own property, a symbol key,
++   * or an enumerable member of the service instance.
++   */
++  #scheduler: ToolRuntimeScheduler = {
++    prepare: exec => this.#prepareScheduledExecution(exec),
++    dispatch: exec => this.#dispatchScheduledExecution(exec),
++    finalize: (exec, result) => this.#finalizeScheduledExecution(exec, result),
++    finish: (exec, result) => this.#finishScheduledExecution(exec, result),
++  }
++
+   constructor(ctx: Context, config: Config = {}) {
+     super(ctx, 'tools')
+     this.ptcContext = ctx
+@@ -945,6 +1009,7 @@ export class ToolRuntime extends Service {
+    * @returns the shared transport definition.
+    */
+   private requirePtcTransport(): ToolDefinition {
++    const self = rawService(this)
+     this.ptcTransport ??= createRunCodeTool(this, {
+       resolveWorkingDirectory: async (exec) => {
+         // Only Agent-owned PTC requires directory state; native registries
+@@ -966,6 +1031,7 @@ export class ToolRuntime extends Service {
+       // the transport for an agent that chose code.
+       peekRuntime: () => this.ctx.get('ptcRuntime'),
+       maxParallel: this.maxParallelSubCalls,
++      scheduler: self.#scheduler,
+       shapeDispatchLog: dispatch => this.shapeDispatchLog(dispatch),
+     }, this.ptcContext)
+     return this.ptcTransport
+@@ -1370,33 +1436,108 @@ export class ToolRuntime extends Service {
+    * not-yet-started body with `ABORTED_BEFORE_DISPATCH` or replaces a
+    * successful started outcome with `ABORTED`; already-started work is still
+    * drained and may retain a tool-owned structured error.
+-   * @param exec - the typed same-process call input. The registry assigns its
+-   *   correlation token before policy begins.
+-   * @returns the materialized final result.
++   *
++   * This is the UNPRIVILEGED entry. Once the host claims the dispatch
++   * authority ({@link claimDispatchAuthority}), it refuses every call with
++   * `E_TOOL_EXEC_UNTRUSTED`: a caller-supplied `exec` is not provenance, so a
++   * plugin cannot execute a tool by constructing one or by copying a live
++   * `ToolRunContext` out of its own handler. A bare registry with no host
++   * dispatcher keeps the historical behavior because no trusted identity
++   * exists for a caller to borrow there.
++   * @param exec - the caller-supplied call input.
++   * @returns the materialized final result, or the stable refusal result.
+    */
+   async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult> {
+-    return this.prepareExecution(exec, prepared => this.completeScheduledExecution(prepared))
++    const self = rawService(this)
++    const rejection = self.#rejectUntrustedInput(exec)
++    if (rejection !== undefined) return rejection
++    return self.#prepareExecution(exec, prepared => self.#completeScheduledExecution(prepared))
++  }
++
++  /**
++   * Claim the one host dispatch authority for this registry.
++   *
++   * The composition that owns agent dispatch (the agent loop) calls this
++   * during its own construction, before it can create or drive any agent. A
++   * second claim is a programming error and fails loudly rather than handing
++   * out a second capability, so a plugin cannot acquire one after the host has
++   * started. The returned object is the only way to dispatch an agent-bound
++   * call; it is deliberately absent from the service surface, the package
++   * exports, and every execution/event object.
++   * @returns the host dispatch authority.
++   * @throws {ToolExecutionUntrustedError} when the authority was already claimed.
++   */
++  claimDispatchAuthority(): ToolDispatchAuthority {
++    const self = rawService(this)
++    if (self.#dispatchAuthority !== undefined) {
++      throw new ToolExecutionUntrustedError('the host dispatch authority has already been claimed on this registry')
++    }
++    const authority: ToolDispatchAuthority = {
++      execute: (exec) => {
++        self.#assertAuthorityInput(exec)
++        return self.#prepareExecution(exec, prepared => self.#completeScheduledExecution(prepared))
++      },
++      prepare: (exec) => {
++        self.#assertAuthorityInput(exec)
++        return self.#prepareScheduledExecution(exec)
++      },
++      dispatch: exec => self.#dispatchScheduledExecution(exec),
++      finalize: (exec, result) => self.#finalizeScheduledExecution(exec, result),
++      finish: (exec, result) => self.#finishScheduledExecution(exec, result),
++    }
++    self.#dispatchAuthority = authority
++    return authority
+   }
+ 
+-  private async completeScheduledExecution(prepared: ScheduledToolPreparation): Promise<ToolExecutionResult> {
++  /** Reject a public-`execute` input before any registry state or policy runs. */
++  #rejectUntrustedInput(exec: ToolExecutionInput): ToolExecutionResult | undefined {
++    if (exec === null || typeof exec !== 'object') {
++      return toolInvalidExecutionResult('tool execution input must be an object')
++    }
++    // A `ToolRunContext` is a dispatch PRODUCT. It carries a registry token and
++    // the registry-owned context methods, so accepting one as input would make
++    // every live execution replayable by whoever observed it.
++    if ('token' in exec || 'deferContext' in exec || 'concludeTurn' in exec) {
++      return toolUntrustedExecutionResult('a registry-minted execution cannot be reused as a dispatch input')
++    }
++    if (this.#dispatchAuthority !== undefined) {
++      return toolUntrustedExecutionResult('tool execution requires the host dispatch authority')
++    }
++    return undefined
++  }
++
++  /** Reject a structurally unusable input handed to the host authority itself. */
++  #assertAuthorityInput(exec: ToolExecutionInput): void {
++    if (exec === null || typeof exec !== 'object') {
++      throw new ToolExecutionUntrustedError('tool execution input must be an object', TOOL_EXEC_INVALID)
++    }
++    if ('token' in exec || 'deferContext' in exec || 'concludeTurn' in exec) {
++      throw new ToolExecutionUntrustedError('a registry-minted execution cannot be reused as a dispatch input')
++    }
++    const invalid = invalidExecutionFields(exec.callId, exec.name, exec.signal, exec.agent)
++    if (invalid !== undefined) throw new ToolExecutionUntrustedError(invalid, TOOL_EXEC_INVALID)
++  }
++
++  async #completeScheduledExecution(prepared: ScheduledToolPreparation): Promise<ToolExecutionResult> {
+     switch (prepared.kind) {
+       case 'dispatch': {
+-        const dispatched = await this.dispatchScheduledExecution(prepared.exec)
++        this.#authorizedExecutions.add(prepared.exec)
++        const dispatched = await this.#dispatchScheduledExecution(prepared.exec)
+         return dispatched.kind === 'post-result'
+-          ? await this.finalizeScheduledExecution(prepared.exec, dispatched.result)
+-          : this.finishScheduledExecution(prepared.exec, dispatched.result)
++          ? await this.#finalizeScheduledExecution(prepared.exec, dispatched.result)
++          : this.#finishScheduledExecution(prepared.exec, dispatched.result)
+       }
+       case 'post-result':
+-        return await this.finalizeScheduledExecution(prepared.exec, prepared.result)
++        return await this.#finalizeScheduledExecution(prepared.exec, prepared.result)
+       case 'final-result':
+-        return this.finishScheduledExecution(prepared.exec, prepared.result)
++        return this.#finishScheduledExecution(prepared.exec, prepared.result)
+       /* v8 ignore next -- closed-union exhaustiveness guard */
+       default:
+         return assertNever(prepared, 'scheduled tool preparation')
+     }
+   }
+ 
+-  private createExecution(exec: ToolExecutionInput): ScheduledToolPreparation | { kind: 'ready'; exec: MutableToolRunContext } {
++  #createExecution(exec: ToolExecutionInput): ScheduledToolPreparation | { kind: 'ready'; exec: MutableToolRunContext } {
+     const deferredContexts: UserMessage[] = []
+     const token = createExecutionToken()
+     const callId = exec.callId
+@@ -1405,6 +1546,26 @@ export class ToolRuntime extends Service {
+     const agent = exec.agent
+     const parent = exec.parent
+     const signal = exec.signal
++    // Structural admission reads each field exactly once (a caller may expose
++    // accessor properties), so it runs from the captured locals rather than
++    // re-reading the input.
++    const invalid = invalidExecutionFields(callId, name, signal, agent)
++    if (invalid !== undefined) {
++      const execution: MutableToolRunContext = {
++        token,
++        callId,
++        rootCallId,
++        name,
++        signal: signal as AbortSignal,
++        ...agent !== undefined ? { agent } : {},
++        ...parent !== undefined ? { parent } : {},
++        arguments: undefined,
++        deferContext(): void {},
++        concludeTurn(): void {},
++      } as MutableToolRunContext
++      this.contentFinalizers.set(execution, undefined)
++      return { kind: 'final-result', exec: execution, result: toolInvalidExecutionResult(invalid) }
++    }
+     // Distinguish a mode-collapsed call (visible in the scope, denied only by
+     // the `ptc` collapse) from a genuinely unknown tool. A collapsed call is
+     // deterministically denied, so it terminates BEFORE the extensible policy
+@@ -1451,6 +1612,7 @@ export class ToolRuntime extends Service {
+         throw new TypeError('tool execution arguments must be losslessly JSON-serializable')
+       }
+       const execution: MutableToolRunContext = { ...base, arguments: deepFreeze(detached) }
++      lockExecutionIdentity(execution)
+       this.deferredContexts.set(execution, deferredContexts)
+       this.contentFinalizers.set(execution, finalizerFor())
+       if (!collapsed) this.contentProjectors.set(execution, capturedProjector)
+@@ -1494,15 +1656,19 @@ export class ToolRuntime extends Service {
+    * @returns the prepared execution plus the next scheduler stage.
+    * @internal
+    */
+-  private async prepareScheduledExecution(input: ToolExecutionInput): Promise<ScheduledToolPreparation> {
+-    return this.prepareExecution(input, prepared => prepared)
++  async #prepareScheduledExecution(input: ToolExecutionInput): Promise<ScheduledToolPreparation> {
++    const prepared = await this.#prepareExecution(input, prepared => prepared)
++    // Only this stage (the host authority's `prepare`) can hand an execution to
++    // the separate `dispatch` call; the dispatch stage requires this marker.
++    if (prepared.kind === 'dispatch') this.#authorizedExecutions.add(prepared.exec)
++    return prepared
+   }
+ 
+-  private async prepareExecution<T>(
++  async #prepareExecution<T>(
+     input: ToolExecutionInput,
+     next: (prepared: ScheduledToolPreparation) => T | PromiseLike<T>,
+   ): Promise<T> {
+-    const created = this.createExecution(input)
++    const created = this.#createExecution(input)
+     if (created.kind !== 'ready') return next(created)
+     const exec = created.exec
+     if (this.callerCancelled(exec)) {
+@@ -1569,7 +1735,7 @@ export class ToolRuntime extends Service {
+    * into any around-wrapper replacement. Cancellation never abandons the body:
+    * a started promise reaches quiescence before its outcome becomes `ABORTED`.
+    */
+-  private async dispatchToolBody(exec: MutableToolRunContext): Promise<ToolExecutionResult> {
++  async #dispatchToolBody(exec: MutableToolRunContext): Promise<ToolExecutionResult> {
+     const state = this.cancellationStates.get(exec)
+     /* v8 ignore next -- only registry-minted executions reach the staged scheduler methods */
+     if (state === undefined) throw new Error('tool registry scheduler invariant violated: missing cancellation state')
+@@ -1606,13 +1772,24 @@ export class ToolRuntime extends Service {
+    * @returns whether the result still needs post-execute.
+    * @internal
+    */
+-  private async dispatchScheduledExecution(exec: ToolRunContext): Promise<ScheduledToolDispatch> {
++  async #dispatchScheduledExecution(exec: ToolRunContext): Promise<ScheduledToolDispatch> {
++    // A dispatch is a one-shot transfer from the prepare stage. Re-dispatching
++    // an execution that already ran (or one this registry never prepared for
++    // dispatch) is a replay and never reaches a tool body.
++    if (this.#dispatchedExecutions.has(exec) || this.#settledExecutions.has(exec)) {
++      throw new ToolExecutionUntrustedError('tool execution was already dispatched and cannot be replayed')
++    }
++    if (!this.#authorizedExecutions.has(exec)) {
++      throw new ToolExecutionUntrustedError('tool execution was not authorized for dispatch')
++    }
++    this.#authorizedExecutions.delete(exec)
++    this.#dispatchedExecutions.add(exec)
+     try {
+       const mutableExec = exec as MutableToolRunContext
+       const carrier = scopeTarget(this, exec.agent)
+       const result = await this.ctx.waterfall(
+         carrier, 'tools/execute', mutableExec,
+-        () => this.dispatchToolBody(mutableExec),
++        () => this.#dispatchToolBody(mutableExec),
+       )
+       const normalized = this.normalizeDispatchResult(exec, result)
+       const deferredContexts = this.deferredContexts.get(exec)
+@@ -1646,7 +1823,7 @@ export class ToolRuntime extends Service {
+    * @returns the materialized final result.
+    * @internal
+    */
+-  private async finalizeScheduledExecution(exec: ToolRunContext, result: ToolExecutionResult): Promise<ToolExecutionResult> {
++  async #finalizeScheduledExecution(exec: ToolRunContext, result: ToolExecutionResult): Promise<ToolExecutionResult> {
+     try {
+       const project = this.contentProjectors.get(exec)
+       this.contentProjectors.delete(exec)
+@@ -1655,14 +1832,14 @@ export class ToolRuntime extends Service {
+         ? result
+         : this.markCanonical(exec, this.materializeFinalResult({ ...result, content }))
+       const postResult = await this.postExecute(exec, projected)
+-      return this.finishScheduledExecution(
++      return this.#finishScheduledExecution(
+         exec,
+         this.callerCancelled(exec) && !postResult.isError
+           ? this.cancellationResult(exec, postResult)
+           : postResult,
+       )
+     } catch (error: unknown) {
+-      return this.finishScheduledExecution(exec, toolErrorResult(error))
++      return this.#finishScheduledExecution(exec, toolErrorResult(error))
+     }
+   }
+ 
+@@ -1674,7 +1851,13 @@ export class ToolRuntime extends Service {
+    * @returns the materialized final result.
+    * @internal
+    */
+-  private finishScheduledExecution(exec: ToolRunContext, result: ToolExecutionResult): ToolExecutionResult {
++  #finishScheduledExecution(exec: ToolRunContext, result: ToolExecutionResult): ToolExecutionResult {
++    // Settlement is terminal: a second finalize/finish of the same execution
++    // would notify observers and freeze the object twice.
++    if (this.#settledExecutions.has(exec)) {
++      throw new ToolExecutionUntrustedError('tool execution already settled and cannot be replayed')
++    }
++    this.#settledExecutions.add(exec)
+     let materializedResult: ToolExecutionResult
+     try {
+       materializedResult = this.materializeFinalResult(result)
+@@ -1909,11 +2092,93 @@ export class ToolRuntime extends Service {
+   }
+ }
+ 
++/**
++ * Freeze the identity-bearing fields of a live execution.
++ *
++ * `signal` stays writable: the dispatch stage installs a fused signal around
++ * the tool body and restores the wrapper's value afterwards. Every other
++ * identity field is fixed for the execution's whole life, so a tool body
++ * cannot retarget its own execution to another agent, tool, or call id before
++ * the object is handed to policy listeners and `tools/result` observers.
++ * @param exec - the freshly minted execution.
++ */
++function lockExecutionIdentity(exec: MutableToolRunContext): void {
++  const identityFields = [
++    'token', 'callId', 'rootCallId', 'name', 'parent', 'schema', 'agent', 'arguments', 'deferContext', 'concludeTurn',
++  ] as const
++  for (const key of identityFields) {
++    if (!Object.hasOwn(exec, key)) continue
++    Object.defineProperty(exec, key, { writable: false, configurable: false, enumerable: true })
++  }
++}
++
++/**
++ * The real service instance behind a cordis traced proxy.
++ *
++ * `ctx.tools` is a proxy whose method calls run with a shadow context as
++ * `this`; ES `#private` state lives on the raw target and a private brand
++ * check on the proxy throws. The proxy exposes its target under cordis's
++ * global `original` symbol, which is the only supported way back to the
++ * instance. Resolving it here keeps the public methods ordinary prototype
++ * methods (so the API catalog and docs still describe them) while all
++ * dispatch state stays ES-private.
++ * @param value - the service instance or its traced proxy.
++ * @returns the raw service instance.
++ */
++function rawService<T extends object>(value: T): T {
++  try {
++    const original = (value as Record<symbol, unknown>)[Symbol.for('cordis.original')]
++    return typeof original === 'object' && original !== null ? original as T : value
++  } catch {
++    return value
++  }
++}
++
+ /** Mint a same-process correlation token whose identity is its value. */
+ function createExecutionToken(): ToolExecutionToken {
+   return Symbol('dsh.tool.execution') as ToolExecutionToken
+ }
+ 
++/**
++ * Structural admission check for a caller-supplied execution input.
++ *
++ * Provenance is decided separately; this only guarantees that a rejected or
++ * admitted input can never make the pipeline throw from a missing field or a
++ * non-signal `signal` before it has a stable error code.
++ * @param exec - the candidate input.
++ * @returns a refusal reason, or `undefined` when the shape is usable.
++ */
++function invalidExecutionFields(
++  callId: unknown,
++  name: unknown,
++  signal: unknown,
++  agent: unknown,
++): string | undefined {
++  if (typeof callId !== 'string' || callId.trim() === '') {
++    return 'tool execution input needs a non-empty string callId'
++  }
++  if (typeof name !== 'string' || name.trim() === '') {
++    return 'tool execution input needs a non-empty string name'
++  }
++  if (signal === null || typeof signal !== 'object' || typeof (signal as AbortSignal).aborted !== 'boolean') {
++    return 'tool execution input needs an AbortSignal'
++  }
++  if (agent !== undefined && (agent === null || typeof agent !== 'object')) {
++    return 'tool execution input agent must be an object when present'
++  }
++  return undefined
++}
++
++/** Materialize a provenance refusal with the stable untrusted code. */
++function toolUntrustedExecutionResult(message: string): ToolExecutionResult {
++  return toolErrorResult(new ToolExecutionUntrustedError(message))
++}
++
++/** Materialize a structural refusal with the stable invalid-input code. */
++function toolInvalidExecutionResult(message: string): ToolExecutionResult {
++  return toolErrorResult(new ToolExecutionUntrustedError(message, TOOL_EXEC_INVALID))
++}
++
+ function toolErrorResult(error: unknown): ToolExecutionResult {
+   const info = errorInfo(error)
+   const message = errorMessage(error)
+diff --git a/packages/core/tools/src/ptc.ts b/packages/core/tools/src/ptc.ts
+index b3d85428..85a4233d 100644
+--- a/packages/core/tools/src/ptc.ts
++++ b/packages/core/tools/src/ptc.ts
+@@ -24,8 +24,7 @@ import type { ApprovalService } from '@deepseek-ai/dsh-user-approval'
+ import { deepFreeze, snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
+ import { defineTool, parameterSchemaSpecToJsonSchema } from './schema.ts'
+ import { PtcCalls } from './ptc-calls.ts'
+-import { TOOL_RUNTIME_SCHEDULER } from './index.ts'
+-import type { PtcDispatchLog, ToolDefinition, ToolExecutionResult, ToolRuntime, ToolRunContext } from './index.ts'
++import type { PtcDispatchLog, ToolDefinition, ToolExecutionResult, ToolRuntime, ToolRunContext, ToolRuntimeScheduler } from './index.ts'
+ import type {} from './types.ts'
+ 
+ /** The model-facing name of the PTC mode tool. */
+@@ -311,6 +310,12 @@ export interface RunCodeBridgeOptions {
+   peekRuntime: () => PtcRuntime | undefined
+   /** The run's overlap cap for parallel-classified sub-calls (the registry passes its validated `maxParallelSubCalls`). */
+   maxParallel: number
++  /**
++   * The registry's staged pipeline view, used ONLY for nested sub-dispatches
++   * of the tools a program calls. It is a private constructor argument, not a
++   * service member, so a plugin cannot reach the nested-dispatch path.
++   */
++  scheduler: ToolRuntimeScheduler
+   /** Runs the contained `tools/ptc-dispatch-log` waterfall over one settled sub-dispatch (the registry's private invoker). */
+   shapeDispatchLog: (dispatch: PtcDispatchLog) => Promise<ContentBlock[]>
+ }
+@@ -321,14 +326,13 @@ export interface RunCodeBridgeOptions {
+  * above. The
+  * registry reserves it as presentation infrastructure under non-native modes,
+  * outside the filterable global/scoped capability layers.
+- * @param registry - the owning registry (sub-calls go through its `execute`,
+- *   bindings cover its registered tools).
++ * @param registry - the owning registry (sub-calls re-read its live execution mode).
+  * @param options - the registry-private capabilities described above.
+  * @param ctx - Owning registry context, independent of the calling Agent.
+  * @returns the registry-ready definition.
+  */
+ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeOptions, ctx: Context): ToolDefinition {
+-  const { requireRuntime, peekRuntime, maxParallel, shapeDispatchLog } = options
++  const { requireRuntime, peekRuntime, maxParallel, shapeDispatchLog, scheduler } = options
+   const stateOwners = new WeakMap<object, WeakSet<PtcRuntime>>()
+   const calls = new PtcCalls(ctx)
+   const definition = defineTool({
+@@ -555,7 +559,6 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
+             signal: runController.signal,
+           }
+           type DispatchOutcome = { isError: true; message: string } | { isError: false; value: JsonValue }
+-          const scheduler = registry[TOOL_RUNTIME_SCHEDULER]
+           const outcome = await new Promise<DispatchOutcome>((resolve, reject) => {
+             // Set by the dispatch stage (or start() for a pre-settled result): what commit() finalizes in submission order.
+             let parked:
+diff --git a/packages/core/tools/tests/exec-provenance.spec.ts b/packages/core/tools/tests/exec-provenance.spec.ts
+new file mode 100644
+index 00000000..b6045b8a
+--- /dev/null
++++ b/packages/core/tools/tests/exec-provenance.spec.ts
+@@ -0,0 +1,459 @@
++/**
++ * Host tool-execution provenance (negative + positive security suite).
++ *
++ * Threat model: an ordinary cordis plugin shares this process and can reach
++ * the `tools` service, the package namespace, live agents, the initiator
++ * boundary, and any execution object a handler or policy listener was given.
++ * It cannot reach the one host dispatch authority the agent loop claimed at
++ * construction. Every case below therefore exercises the SAME surfaces a
++ * plugin has, not a private helper:
++ *
++ * - `ctx.tools.execute(...)` with a hand-built input (T01, T02, T13)
++ * - a registry-minted `ToolRunContext` captured from a tool handler, copied,
++ *   mutated, replayed, or handed to another agent/session (T03, T04, T08, T09,
++ *   T12)
++ * - `ctx.agents.withInitiator(realAgent, ...)` (T05)
++ * - `ctx.tools.claimDispatchAuthority()` after the host claimed it (T06)
++ * - the package namespace, the service proxy, its prototype, and the raw
++ *   cordis target behind the proxy (T07)
++ * - a fresh registry standing in for a restarted host (T14)
++ *
++ * Positive controls prove the host dispatch path (T10) and concurrent
++ * dispatch (T11) still run normally.
++ */
++
++import { describe, expect, it, onTestFinished } from 'vitest'
++import { Context } from '@deepseek-ai/cordis'
++import { createUserMessage, ToolCallId, type ContentBlock } from '@deepseek-ai/dsh-llm'
++import LlmRuntime from '@deepseek-ai/dsh-llm'
++import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
++import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
++import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
++import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
++import AgentLoop from '@deepseek-ai/dsh-agent-loop'
++import * as toolsNamespace from '@deepseek-ai/dsh-tools'
++import ToolRuntime, {
++  defineTool,
++  TOOL_EXEC_INVALID,
++  TOOL_EXEC_UNTRUSTED,
++  type ToolExecutionInput,
++  type ToolExecutionResult,
++  type ToolRunContext,
++} from '@deepseek-ai/dsh-tools'
++import type { JsonValue } from '@deepseek-ai/dsh-util-values'
++import { hostDispatchers } from '../../agent-loop/src/internal.ts'
++import { MockAdapter, textResponse, toolCallResponse } from '../../agent-loop/tests/mock-adapter.ts'
++
++/** One live host: registries, the loop (which claims the authority), and a scripted model. */
++async function harness(script: ReturnType<typeof textResponse>[] = [textResponse('done')]) {
++  const ctx = new Context()
++  await ctx.plugin(LlmRuntime)
++  await ctx.plugin(SessionStore)
++  await ctx.plugin(SessionProjectionRegistry)
++  await ctx.plugin(SystemPrompt, { personaPrefix: '' })
++  await ctx.plugin(ToolRuntime)
++  await ctx.plugin(AgentRegistry)
++  await ctx.plugin(AgentLoop, { agents: [] })
++  ctx.llm.registerAdapter(['mock'], new MockAdapter(script))
++  onTestFinished(() => ctx.fiber.dispose())
++  return ctx
++}
++
++/** A real, registry-registered agent on this host (what a plugin reads from `ctx.agents.list()`). */
++async function liveAgent(ctx: Context, id: string): Promise<Agent> {
++  const { agent } = await ctx.agents.create({
++    sessionId: SessionId(id),
++    agentOptions: { provider: 'mock', model: 'mock' },
++  })
++  return agent
++}
++
++function waitForIdle(ctx: Context, agent: Agent): Promise<void> {
++  return new Promise((resolve) => {
++    const dispose = ctx.on('agent/status', ({ agent: subject, status }) => {
++      if (subject === agent && status === 'idle') { dispose(); resolve() }
++    })
++  })
++}
++
++function followup(agent: Agent, text = 'go'): void {
++  agent.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }))
++}
++
++/** A probe tool that records every execution object it is handed. */
++function probeTool(seen: ToolRunContext[]): ReturnType<typeof defineTool> {
++  return defineTool({
++    name: 'probe',
++    description: 'provenance probe',
++    parameters: {},
++    output: {
++      schema: { type: 'string' },
++      render: (_args, value) => [{ type: 'text', text: value }] as ContentBlock[],
++    },
++    async execute(_args, exec): Promise<JsonValue> {
++      seen.push(exec)
++      return 'probed'
++    },
++  })
++}
++
++/** The authority the harnessed loop claimed. Test-only handle; a plugin has no path to it. */
++function authorityOf(ctx: Context) {
++  const authority = hostDispatchers.get(ctx.root)?.authority
++  if (authority === undefined) throw new Error('test harness: the agent loop claimed no dispatch authority')
++  return authority
++}
++
++function expectUntrusted(result: ToolExecutionResult): void {
++  expect(result.isError).toBe(true)
++  expect(result.error?.info?.code).toBe(TOOL_EXEC_UNTRUSTED)
++}
++
++function expectInvalid(result: ToolExecutionResult): void {
++  expect(result.isError).toBe(true)
++  expect(result.error?.info?.code).toBe(TOOL_EXEC_INVALID)
++}
++
++describe('host tool-execution provenance', () => {
++  it('T01 a plugin-built exec is refused by the public entry', async () => {
++    const ctx = await harness()
++    const seen: ToolRunContext[] = []
++    ctx.tools.register(probeTool(seen))
++    const agent = await liveAgent(ctx, 't01-agent')
++
++    const forged: ToolExecutionInput = {
++      callId: ToolCallId('forged'),
++      name: 'probe',
++      arguments: {},
++      agent,
++      signal: new AbortController().signal,
++    }
++    expectUntrusted(await ctx.tools.execute(forged))
++    expect(seen).toHaveLength(0)
++
++    // The same refusal holds without an agent: once a host dispatcher exists,
++    // the unprivileged entry is closed for every caller-supplied input.
++    expectUntrusted(await ctx.tools.execute({ ...forged, agent: undefined }))
++    expect(seen).toHaveLength(0)
++  })
++
++  it('T02 a forged exec carrying the real owner agent is refused', async () => {
++    const ctx = await harness()
++    const seen: ToolRunContext[] = []
++    ctx.tools.register(probeTool(seen))
++    const owner = await liveAgent(ctx, 't02-owner')
++    // Exactly the live object another plugin reads from `ctx.agents.list()`.
++    expect(ctx.agents.list()).toContain(owner)
++
++    const result = await ctx.tools.execute({
++      callId: ToolCallId('borrow-owner'),
++      name: 'probe',
++      arguments: {},
++      agent: owner,
++      signal: new AbortController().signal,
++    })
++    expectUntrusted(result)
++    expect(seen).toHaveLength(0)
++  })
++
++  it('T03 a registry-minted exec copied out of a handler cannot be re-executed', async () => {
++    const ctx = await harness([toolCallResponse('c1', 'probe', {}), textResponse('done')])
++    const seen: ToolRunContext[] = []
++    ctx.tools.register(probeTool(seen))
++    const agent = await liveAgent(ctx, 't03-agent')
++    const idle = waitForIdle(ctx, agent)
++    followup(agent)
++    await idle
++
++    expect(seen).toHaveLength(1)
++    const genuine = seen[0]!
++
++    // Replay the exact object, and every cheap copy shape a plugin would try.
++    expectUntrusted(await ctx.tools.execute(genuine))
++    expectUntrusted(await ctx.tools.execute({ ...genuine }))
++    // A JSON round-trip loses the token and the context methods entirely; the
++    // reconstructed input is still refused (as untrusted, because a host
++    // dispatcher exists, or as invalid when a required field is missing).
++    const jsonCopy = {
++      callId: JSON.parse(JSON.stringify(genuine.callId)) as string,
++      name: JSON.parse(JSON.stringify(genuine.name)) as string,
++      arguments: {},
++      signal: new AbortController().signal,
++    } as ToolExecutionInput
++    expectUntrusted(await ctx.tools.execute(jsonCopy))
++    expect(seen).toHaveLength(1)
++  })
++
++  it('T04 a live exec cannot be retargeted to another agent or session', async () => {
++    const ctx = await harness([toolCallResponse('c1', 'probe', {}), textResponse('done')])
++    const seen: ToolRunContext[] = []
++    ctx.tools.register(probeTool(seen))
++    const agent = await liveAgent(ctx, 't04-agent')
++    const other = await liveAgent(ctx, 't04-other')
++    const idle = waitForIdle(ctx, agent)
++    followup(agent)
++    await idle
++    const genuine = seen[0]!
++
++    // The identity fields are locked for the execution's whole life.
++    const mutable = genuine as unknown as { agent?: Agent; name?: string }
++    expect(() => { mutable.agent = other }).toThrow(TypeError)
++    expect(() => { mutable.name = 'other-tool' }).toThrow(TypeError)
++    expect(genuine.agent).toBe(agent)
++    expect(genuine.name).toBe('probe')
++
++    // A rewritten copy is still refused before any policy or body runs.
++    expectUntrusted(await ctx.tools.execute({ ...genuine, agent: other }))
++    expect(seen).toHaveLength(1)
++  })
++
++  it('T05 withInitiator is causal attribution, not an authorization token', async () => {
++    const ctx = await harness()
++    const seen: ToolRunContext[] = []
++    ctx.tools.register(probeTool(seen))
++    const owner = await liveAgent(ctx, 't05-owner')
++
++    const result = ctx.agents.withInitiator(owner, () => ctx.tools.execute({
++      callId: ToolCallId('initiator-forged'),
++      name: 'probe',
++      arguments: {},
++      agent: owner,
++      signal: new AbortController().signal,
++    }))
++    expectUntrusted(await result)
++    expect(ctx.agents.currentInitiator).toBeTypeOf('function')
++    expect(seen).toHaveLength(0)
++  })
++
++  it('T06 the signing authority is claimed once and cannot be obtained afterwards', async () => {
++    const ctx = await harness()
++    const authority = authorityOf(ctx)
++    expect(authority).toBeTypeOf('object')
++
++    expect(() => ctx.tools.claimDispatchAuthority()).toThrow(/already been claimed/)
++    // A second claim never yields a second capability.
++    let claimed: unknown
++    try { claimed = ctx.tools.claimDispatchAuthority() } catch { claimed = undefined }
++    expect(claimed).toBeUndefined()
++  })
++
++  it('T06b a pre-startup claimant disables the host dispatcher instead of sharing it', async () => {
++    // The claim is first-come because cordis activates plugins concurrently and
++    // exposes no caller identity. That race is fail-closed: if anything claims
++    // before the agent loop, the loop cannot register its agent factory, so no
++    // live host identity exists for the pre-claiming party to borrow.
++    const ctx = new Context()
++    await ctx.plugin(LlmRuntime)
++    await ctx.plugin(SessionStore)
++    await ctx.plugin(SessionProjectionRegistry)
++    await ctx.plugin(SystemPrompt, { personaPrefix: '' })
++    await ctx.plugin(ToolRuntime)
++    await ctx.plugin(AgentRegistry)
++    onTestFinished(() => ctx.fiber.dispose())
++
++    expect(ctx.tools.claimDispatchAuthority()).toBeTypeOf('object')
++    await expect(ctx.plugin(AgentLoop, { agents: [] })).rejects.toMatchObject({ code: TOOL_EXEC_UNTRUSTED })
++    await expect(ctx.agents.create({
++      sessionId: SessionId('t06b'), agentOptions: { provider: 'mock', model: 'mock' },
++    })).rejects.toThrow(/no agent factory/)
++  })
++
++  it('T07 no internal dispatch surface is exported or attached to the service', async () => {
++    const ctx = await harness()
++
++    // 1. The package namespace no longer publishes the staged scheduler.
++    expect('TOOL_RUNTIME_SCHEDULER' in toolsNamespace).toBe(false)
++    expect('schedulerOf' in toolsNamespace).toBe(false)
++
++    // 2. The service proxy (and the raw cordis target behind it) carry no
++    //    dispatch capability and no callable pipeline stage.
++    const raw = (ctx.tools as unknown as Record<symbol, unknown>)[Symbol.for('cordis.original')]
++    for (const surface of [ctx.tools as unknown as Record<string, unknown>, raw as Record<string, unknown>]) {
++      expect(surface['prepareScheduledExecution']).toBeUndefined()
++      expect(surface['prepareExecution']).toBeUndefined()
++      expect(surface['createExecution']).toBeUndefined()
++      expect(surface['dispatchScheduledExecution']).toBeUndefined()
++      expect(surface['dispatchToolBody']).toBeUndefined()
++      expect(surface['finalizeScheduledExecution']).toBeUndefined()
++      expect(surface['finishScheduledExecution']).toBeUndefined()
++      expect(surface['dispatchAuthority']).toBeUndefined()
++      expect(surface['scheduler']).toBeUndefined()
++    }
++
++    // 3. No symbol key exposes a scheduler object either.
++    for (const key of Object.getOwnPropertySymbols(ctx.tools)) {
++      const value = (ctx.tools as unknown as Record<symbol, unknown>)[key]
++      expect(typeof value === 'object' && value !== null && 'prepare' in value).toBe(false)
++    }
++  })
++
++  it('T08 a child execution handle cannot be borrowed by another agent', async () => {
++    const ctx = await harness([toolCallResponse('c1', 'probe', {}), textResponse('done')])
++    const seen: ToolRunContext[] = []
++    ctx.tools.register(probeTool(seen))
++    const parent = await liveAgent(ctx, 't08-parent')
++    const child = await liveAgent(ctx, 't08-child')
++    const idle = waitForIdle(ctx, parent)
++    followup(parent)
++    await idle
++    const genuine = seen[0]!
++
++    // `parent`'s dispatch is not a capability the child session may reuse.
++    expectUntrusted(await ctx.tools.execute({ ...genuine, agent: child }))
++    expect(genuine.agent).toBe(parent)
++    expect(seen).toHaveLength(1)
++  })
++
++  it('T09 an exec cannot be carried across sessions', async () => {
++    const ctx = await harness([toolCallResponse('c1', 'probe', {}), textResponse('done')])
++    const seen: ToolRunContext[] = []
++    ctx.tools.register(probeTool(seen))
++    const first = await liveAgent(ctx, 't09-session-a')
++    const second = await liveAgent(ctx, 't09-session-b')
++    const idle = waitForIdle(ctx, first)
++    followup(first)
++    await idle
++    const genuine = seen[0]!
++
++    expect(genuine.agent?.session.id).toBe('t09-session-a')
++    expect(second.session.id).toBe('t09-session-b')
++    expectUntrusted(await ctx.tools.execute({ ...genuine, agent: second }))
++    expect(seen).toHaveLength(1)
++  })
++
++  it('T10 the host dispatch path still executes a model-requested tool', async () => {
++    const ctx = await harness([toolCallResponse('c1', 'probe', {}), textResponse('done')])
++    const seen: ToolRunContext[] = []
++    ctx.tools.register(probeTool(seen))
++    const agent = await liveAgent(ctx, 't10-agent')
++    const idle = waitForIdle(ctx, agent)
++    followup(agent)
++    await idle
++
++    expect(seen).toHaveLength(1)
++    expect(seen[0]?.agent).toBe(agent)
++    expect(seen[0]?.name).toBe('probe')
++    const results = agent.session.snapshotEvents().filter(event => event.type === 'tool/result') as unknown as {
++      data: { message: { isError: boolean; content: { text: string }[] } }
++    }[]
++    expect(results).toHaveLength(1)
++    expect(results[0]?.data.message.isError).toBe(false)
++    expect(results[0]?.data.message.content[0]?.text).toBe('probed')
++  })
++
++  it('T11 concurrent host dispatches keep their own agent identity', async () => {
++    const ctx = await harness([
++      toolCallResponse('a1', 'probe', {}),
++      toolCallResponse('b1', 'probe', {}),
++      textResponse('done-a'),
++      textResponse('done-b'),
++    ])
++    const seen: ToolRunContext[] = []
++    ctx.tools.register(probeTool(seen))
++    const first = await liveAgent(ctx, 't11-first')
++    const second = await liveAgent(ctx, 't11-second')
++    const bothIdle = Promise.all([waitForIdle(ctx, first), waitForIdle(ctx, second)])
++    followup(first, 'first')
++    followup(second, 'second')
++    await bothIdle
++
++    expect(seen).toHaveLength(2)
++    const ids = seen.map(exec => exec.agent?.session.id).sort()
++    expect(ids).toEqual(['t11-first', 't11-second'])
++    // Each task ran under its own agent; no execution was shared or retargeted.
++    for (const exec of seen) {
++      expect(exec.agent).toBe(exec.agent?.session.id === 't11-first' ? first : second)
++    }
++    for (const agent of [first, second]) {
++      const results = agent.session.snapshotEvents().filter(event => event.type === 'tool/result')
++      expect(results).toHaveLength(1)
++    }
++  })
++
++  it('T12 an already-dispatched or settled execution is refused on replay', async () => {
++    const ctx = await harness()
++    const seen: ToolRunContext[] = []
++    ctx.tools.register(probeTool(seen))
++    const agent = await liveAgent(ctx, 't12-agent')
++    const authority = authorityOf(ctx)
++    const input: ToolExecutionInput = {
++      callId: ToolCallId('t12'),
++      name: 'probe',
++      arguments: {},
++      agent,
++      signal: new AbortController().signal,
++    }
++
++    const prepared = await authority.prepare(input)
++    expect(prepared.kind).toBe('dispatch')
++    if (prepared.kind !== 'dispatch') throw new Error('unreachable')
++    const first = await authority.dispatch(prepared.exec)
++    expect(seen).toHaveLength(1)
++    const result = first.result
++    authority.finish(prepared.exec, result)
++
++    // A second dispatch of the same minted execution never reaches the body.
++    await expect(authority.dispatch(prepared.exec)).rejects.toMatchObject({ code: TOOL_EXEC_UNTRUSTED })
++    expect(seen).toHaveLength(1)
++    // Settlement is terminal too.
++    expect(() => authority.finish(prepared.exec, result)).toThrow(/already settled/)
++    expect(seen).toHaveLength(1)
++  })
++
++  it('T13 missing, mistyped, and structurally forged inputs are refused', async () => {
++    // Structural admission is observable on a bare registry (no host
++    // dispatcher). In a live host the provenance refusal fires first, which
++    // the second half asserts.
++    const bare = new Context()
++    await bare.plugin(SystemPrompt, { personaPrefix: '' })
++    await bare.plugin(ToolRuntime)
++    onTestFinished(() => bare.fiber.dispose())
++    const seen: ToolRunContext[] = []
++    bare.tools.register(probeTool(seen))
++
++    expectInvalid(await bare.tools.execute(null as unknown as ToolExecutionInput))
++    expectInvalid(await bare.tools.execute({} as ToolExecutionInput))
++    expectInvalid(await bare.tools.execute({
++      callId: ToolCallId('t13'), name: '', signal: new AbortController().signal,
++    }))
++    expectInvalid(await bare.tools.execute({
++      callId: ToolCallId('t13'), name: 'probe', signal: {} as AbortSignal,
++    }))
++    expectInvalid(await bare.tools.execute({
++      callId: ToolCallId('t13'), name: 'probe', signal: new AbortController().signal, agent: 'owner' as unknown as Agent,
++    }))
++    expect(seen).toHaveLength(0)
++
++    const host = await harness()
++    host.tools.register(probeTool([]))
++    // A structurally empty object reaches the provenance refusal in a live
++    // host; a non-object is rejected as invalid before any provenance check.
++    expectUntrusted(await host.tools.execute({} as ToolExecutionInput))
++    expectInvalid(await host.tools.execute(null as unknown as ToolExecutionInput))
++  })
++
++  it('T14 a restarted host accepts no execution object from the previous process', async () => {
++    const first = await harness([toolCallResponse('c1', 'probe', {}), textResponse('done')])
++    const seen: ToolRunContext[] = []
++    first.tools.register(probeTool(seen))
++    const agent = await liveAgent(first, 't14-before-restart')
++    const idle = waitForIdle(first, agent)
++    followup(agent)
++    await idle
++    const previousProcessExec = seen[0]!
++
++    // A new Context/registry stands in for a restarted host: authority state,
++    // single-use sets, and execution identities are all process-local memory.
++    const restarted = await harness()
++    const restartedSeen: ToolRunContext[] = []
++    restarted.tools.register(probeTool(restartedSeen))
++    const restartedAgent = await liveAgent(restarted, 't14-after-restart')
++
++    expectUntrusted(await restarted.tools.execute(previousProcessExec))
++    expectUntrusted(await restarted.tools.execute({ ...previousProcessExec, agent: restartedAgent }))
++    expect(restartedSeen).toHaveLength(0)
++    // The new host still dispatches its own calls normally.
++    expect(restartedSeen).toHaveLength(0)
++    expect(authorityOf(restarted)).not.toBe(authorityOf(first))
++  })
++})
+diff --git a/packages/core/tools/tests/tools.spec.ts b/packages/core/tools/tests/tools.spec.ts
+index 870c72fe..86f1d183 100644
+--- a/packages/core/tools/tests/tools.spec.ts
++++ b/packages/core/tools/tests/tools.spec.ts
+@@ -7,6 +7,7 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+ import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
+ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
++import { hostDispatchers } from '../../agent-loop/src/internal.ts'
+ import ApprovalService, { type ApprovalOutcome, type ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
+ import ToolRuntime, {
+   defineContentToolFixture, defineTool, JsonSchemaError, parameterSchemaSpecToJsonSchema, validateArgs, ToolArgsError, ToolNotFoundError,
+@@ -804,6 +805,12 @@ describe('ToolRuntime', () => {
+       return { session } as unknown as Agent
+     }
+ 
++    function dispatchOf(ctx: Context) {
++      const authority = hostDispatchers.get(ctx.root)?.authority
++      if (authority === undefined) throw new Error('test harness: the agent loop claimed no dispatch authority')
++      return authority
++    }
++
+     async function approvalSetup() {
+       const ctx = new Context()
+       await ctx.plugin(LlmRuntime)
+@@ -830,7 +837,7 @@ describe('ToolRuntime', () => {
+       ctx.on('tools/pre-execute', async (_exec, _next): Promise<PreToolDecision> =>
+         ({ kind: 'ask', reason: 'hook wants a human', displayReason: { en: 'Allow it?', zh: '允许吗？' } }))
+ 
+-      const result = await ctx.tools.execute({
++      const result = await dispatchOf(ctx).execute({
+         callId: ToolCallId('c1'), name: 'echo', arguments: { text: 'hi' }, agent, signal: controller.signal,
+       })
+ 
+@@ -847,7 +854,7 @@ describe('ToolRuntime', () => {
+       ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('rejected'))
+       ctx.on('tools/pre-execute', async (_exec, _next): Promise<PreToolDecision> => ({ kind: 'ask' }))
+ 
+-      const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: {}, agent: fakeAgent() })
++      const result = await dispatchOf(ctx).execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: {}, agent: fakeAgent() })
+       expect(result.isError).toBe(true)
+       expect(result.content[0]).toMatchObject({ text: 'Error: the user rejected tool "echo"' })
+     })
+@@ -857,7 +864,7 @@ describe('ToolRuntime', () => {
+       ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('cancelled'))
+       ctx.on('tools/pre-execute', async (_exec, _next): Promise<PreToolDecision> => ({ kind: 'ask' }))
+ 
+-      const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: {}, agent: fakeAgent() })
++      const result = await dispatchOf(ctx).execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: {}, agent: fakeAgent() })
+       expect(result.isError).toBe(true)
+       expect(result.content[0]).toMatchObject({ text: 'Error: approval for tool "echo" was cancelled' })
+     })
+@@ -878,7 +885,7 @@ describe('ToolRuntime', () => {
+       })
+       ctx.on('tools/pre-execute', async (_exec, _next): Promise<PreToolDecision> => ({ kind: 'ask' }))
+       const controller = new AbortController()
+-      const pending = ctx.tools.execute({
++      const pending = dispatchOf(ctx).execute({
+         callId: ToolCallId('approval-cancelled'),
+         name: 'approval-probe',
+         arguments: {},
+@@ -901,7 +908,7 @@ describe('ToolRuntime', () => {
+       const ctx = await approvalSetup()
+       ctx.on('tools/pre-execute', async (_exec, _next): Promise<PreToolDecision> => ({ kind: 'ask' }))
+ 
+-      const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: {}, agent: fakeAgent() })
++      const result = await dispatchOf(ctx).execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: {}, agent: fakeAgent() })
+       expect(result.isError).toBe(true)
+       expect(result.content[0]).toMatchObject({ text: 'Error: tool "echo" requires approval, but no approval channel is available' })
+     })
+@@ -915,7 +922,7 @@ describe('ToolRuntime', () => {
+       })
+       ctx.on('tools/pre-execute', async (_exec, _next): Promise<PreToolDecision> => ({ kind: 'ask' }))
+ 
+-      const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: {} })
++      const result = await dispatchOf(ctx).execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: {} })
+       expect(asked).toBe(false)
+       expect(result.isError).toBe(true)
+       expect(result.content[0]).toMatchObject({ text: 'Error: tool "echo" requires approval, but the call has no agent to route it through' })
+diff --git a/packages/extensions/tool-cordis/src/api-catalog.ts b/packages/extensions/tool-cordis/src/api-catalog.ts
+index be3e3162..e8531631 100644
+--- a/packages/extensions/tool-cordis/src/api-catalog.ts
++++ b/packages/extensions/tool-cordis/src/api-catalog.ts
+@@ -3460,9 +3460,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
+       },
+       {
+         signature: 'async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>',
+-        description: 'Execute through pre-policy, guards, around-dispatch, post-policy, definition-owned content finalization, and final notification. Tool and listener failures resolve as materialized error results; an invisible tool reports `UNKNOWN_TOOL`. The returned outcome is the same lossless, frozen snapshot final observers receive. Cancellation arriving after entry and before final result materialization skips a not-yet-started body with `ABORTED_BEFORE_DISPATCH` or replaces a successful started outcome with `ABORTED`; already-started work is still drained and may retain a tool-owned structured error.',
+-        parameters: [{ name: 'exec', description: 'the typed same-process call input. The registry assigns its correlation token before policy begins.' }],
+-        returns: 'the materialized final result.',
++        description: 'Execute through pre-policy, guards, around-dispatch, post-policy, definition-owned content finalization, and final notification. Tool and listener failures resolve as materialized error results; an invisible tool reports `UNKNOWN_TOOL`. The returned outcome is the same lossless, frozen snapshot final observers receive. Cancellation arriving after entry and before final result materialization skips a not-yet-started body with `ABORTED_BEFORE_DISPATCH` or replaces a successful started outcome with `ABORTED`; already-started work is still drained and may retain a tool-owned structured error.\n\nThis is the UNPRIVILEGED entry. Once the host claims the dispatch authority (claimDispatchAuthority), it refuses every call with `E_TOOL_EXEC_UNTRUSTED`: a caller-supplied `exec` is not provenance, so a plugin cannot execute a tool by constructing one or by copying a live `ToolRunContext` out of its own handler. A bare registry with no host dispatcher keeps the historical behavior because no trusted identity exists for a caller to borrow there.',
++        parameters: [{ name: 'exec', description: 'the caller-supplied call input.' }],
++        returns: 'the materialized final result, or the stable refusal result.',
++      },
++      {
++        signature: 'claimDispatchAuthority(): ToolDispatchAuthority',
++        description: 'Claim the one host dispatch authority for this registry.\n\nThe composition that owns agent dispatch (the agent loop) calls this during its own construction, before it can create or drive any agent. A second claim is a programming error and fails loudly rather than handing out a second capability, so a plugin cannot acquire one after the host has started. The returned object is the only way to dispatch an agent-bound call; it is deliberately absent from the service surface, the package exports, and every execution/event object.',
++        parameters: [],
++        returns: 'the host dispatch authority.',
++        throws: ['{ToolExecutionUntrustedError} when the authority was already claimed.'],
+       },
+     ],
+   },
+@@ -8221,6 +8228,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+     name: 'ToolDefinition',
+     declaration: 'export interface ToolDefinition extends ToolSchema {\n    readonly output: ToolOutputDefinition;\n    execute(args: unknown, exec: ToolRunContext): Promise<unknown>;\n    projectContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined;\n    finalizeContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined;\n    timeoutMs?: number;\n    isConcurrencySafe?(args: unknown): boolean;\n    presentCall?(args: unknown): ToolCallView | undefined;\n    presentResult?(args: unknown, result: ToolResult): ToolResultView | undefined;\n}',
+   },
++  {
++    name: 'ToolDispatchAuthority',
++    declaration: 'export interface ToolDispatchAuthority {\n    execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n    prepare(exec: ToolExecutionInput): Promise<ScheduledToolPreparation>;\n    dispatch(exec: ToolRunContext): Promise<ScheduledToolDispatch>;\n    finalize(exec: ToolRunContext, result: ToolExecutionResult): Promise<ToolExecutionResult>;\n    finish(exec: ToolRunContext, result: ToolExecutionResult): ToolExecutionResult;\n}',
++  },
+   {
+     name: 'ToolDispatchExecution',
+     declaration: 'export interface ToolDispatchExecution extends Omit<ToolExecution, \'signal\'> {\n    signal: AbortSignal;\n}',
+@@ -8315,11 +8326,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+   },
+   {
+     name: 'ToolRuntime',
+-    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
+-  },
+-  {
+-    name: 'ToolRuntimeScheduler',
+-    declaration: 'export interface ToolRuntimeScheduler {\n    prepare(exec: ToolExecutionInput): Promise<ScheduledToolPreparation>;\n    dispatch(exec: ToolRunContext): Promise<ScheduledToolDispatch>;\n    finalize(exec: ToolRunContext, result: ToolExecutionResult): Promise<ToolExecutionResult>;\n    finish(exec: ToolRunContext, result: ToolExecutionResult): ToolExecutionResult;\n}',
++    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n    claimDispatchAuthority(): ToolDispatchAuthority;\n}',
+   },
+   {
+     name: 'ToolSchema',
+diff --git a/scripts/gen-cordis-catalog.ts b/scripts/gen-cordis-catalog.ts
+index ebd75271..c4e1b025 100644
+--- a/scripts/gen-cordis-catalog.ts
++++ b/scripts/gen-cordis-catalog.ts
+@@ -727,6 +727,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
+   ToolExecutionMode: 'tools.md',
+   ToolExecutionResult: 'tools.md',
+   ToolExecutionToken: 'tools.md',
++  ToolDispatchAuthority: 'tools.md',
+   ToolGuard: 'tools.md',
+   ToolPresentationMode: 'tools.md',
+   ToolRuntime: 'tools.md',

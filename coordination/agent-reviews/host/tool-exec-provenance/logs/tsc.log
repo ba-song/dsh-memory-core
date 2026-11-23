@@ -1,0 +1,4 @@
+$ node -v; pnpm -v; ./node_modules/.bin/tsc -b packages/core/tools packages/core/agent-loop
+v24.19.0
+11.28.5
+TSC_EXIT=0
