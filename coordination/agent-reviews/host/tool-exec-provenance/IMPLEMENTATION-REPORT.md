@@ -26,12 +26,13 @@
 |---|---|
 | 代码仓库 | `ba-song/dsh-harness-host-provenance`（**private**，上游只读，无法直推） |
 | 分支 | `fix/host-tool-exec-provenance` |
-| 基线 ref | `refs/tags/dsh-v0.2.1-rc.2` → `687f282e8625c6b8d11ff58211a90524be2e4317`（分支父提交即该 commit） |
-| 分支 HEAD | `a6e438fa`（完整 SHA 见 GitHub） |
-| 提交历史 | `5b9ade93` fix(tools) → `c05bd550` fix(agent-loop) → `63b7749e` test → `7d87d659` chore(catalog) → `a6e438fa` test(provenance): strict types |
-| patch | `evidence/host-tool-exec-provenance.patch`（`687f282e..HEAD` 全量 diff） |
+| 基线 ref | `refs/tags/base-upstream-tree` → `2b96ab8b82e3486f2bb01cc579acfa2cb8cb08b7` |
+| 基线等价性 | 上游 tag `dsh-v0.2.1-rc.2` = `687f282e8625c6b8d11ff58211a90524be2e4317`，tree `f127f0f96a815eac4dea336a2ae0d9cd0f2aa82d`。镜像基线 `2b96ab8b` 的 tree 与上游 **只差 `.github/**` 的删除**（58 个文件、9367 行；OAuth token 无 `workflow` scope，无法推送 workflow 文件），其余 blob 字节级相同（镜像 tree `2293c0579881b3c26c4e734fbdaa4b5da15d5d40`）；本地证明见 `evidence/mirror-base-delta-vs-upstream.txt` |
+| 分支 HEAD | `98f0b832`（完整 SHA 见 GitHub） |
+| 提交历史 | `30d4cafa` fix(tools) → `68f3d24b` fix(agent-loop) → `2d183195` test → `07bbf2e1` chore(catalog) → `98f0b832` test(provenance): strict types |
+| patch | `evidence/host-tool-exec-provenance.patch`（`2b96ab8b..98f0b832` 全量 diff） |
 
-> 说明：因为不能向 `deepseek-ai/deepseek-harness` 推送，代码提交到一个 **private** 镜像仓库；基线 tag 一并推送，`git diff 687f282e..HEAD` 即本任务全部改动，父提交与上游完全一致。
+> 说明：因为不能向 `deepseek-ai/deepseek-harness` 推送，代码提交到一个 **private** 镜像仓库。上游 tag 的 commit 对象依赖完整 ancestry，浅克隆无法推送，因此镜像基线用快照 commit `2b96ab8b` 表示：其 tree 与上游 tree 只差 `.github/**`（token 无 `workflow` scope），其余字节级相同；`git diff 2b96ab8b..98f0b832` 即本任务全部改动。上游差异清单见 `evidence/mirror-base-delta-vs-upstream.txt`。
 
 ---
 
@@ -275,7 +276,7 @@ NODE_OPTIONS=--max-old-space-size=4096 ./node_modules/.bin/tsx scripts/gen-cordi
 
 ## 12. 附件
 
-- `evidence/host-tool-exec-provenance.patch`：`687f282e..a6e438fa` 全量 diff
+- `evidence/host-tool-exec-provenance.patch`：`2b96ab8b..98f0b832` 全量 diff（即本任务全部改动）
 - `evidence/REACHABILITY.md`：插件可达性/伪造通道实测（499 行，含命令、退出码、原始输出）
 - `evidence/COMPOSITION.md`：组合根、加载顺序、合法执行入口、cordis 隔离调查（517 行）
 - `evidence/BUILD-NOTES.md`：构建/测试环境、安装包 vs tag 差异、41 个基线失败根因（283 行）
