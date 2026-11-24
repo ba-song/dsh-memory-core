@@ -4172,8 +4172,8 @@ A–E 合计为 P4 基线之上 30 个提交；每一段均为纯前进，没有
 
 ### 78.4 看板更新
 
-- `coordination/DELIVERY-BOARD.md` 更新至 BOARD-0003。
-- 最新看板提交：`145d824b4700187f9a37cff77a37bdfed4c2b75b`。
+- `coordination/DELIVERY-BOARD.md` 更新至 BOARD-0004。
+- 最新看板提交：`c89492f196d27a04fe256eff9787c95966432b7f`。
 - 看板明确六条常驻专业线、最新基线、当前状态、历史证据与当前 HEAD 的区别、并行依赖和授权门禁。
 - 六个智能体是否实时在线/后台运行无法由 GitHub 证明；看板不虚构其运行状态。
 
