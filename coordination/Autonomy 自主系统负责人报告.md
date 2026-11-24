@@ -3,7 +3,7 @@
 > 会话：Autonomy 自主系统负责人
 > 覆盖任务：`AUTO-ARCH-AUDIT-01`、`AUTONOMY-RECOVERY-SEMANTICS-DESIGN-01/02/03/04`
 > 迭代规则：本文件覆盖式更新、版本号递增，不新增同类文件
-> 最近更新：2026-11-22 09:15 (Asia/Shanghai) · v7（新增 §19 DSH 重启后验证）
+> 最近更新：2026-11-24 13:40 (Asia/Shanghai) · v8（新增 §20 第一轮实机测试准备审计）
 > 性质：只读设计修订。未改任何源码/DB/profile/配置；未创建实现分支；未启动 scheduler/executor/staging；未部署/重启；未改 `HANDOFF.md`/`REPORT.md`；未修改 Android 报告
 
 ## 版本历史
@@ -18,6 +18,7 @@
 | v5 | 2026-11-22 00:50 | 新增 §17 `AUTONOMY-PROFILE-READONLY-01`：设备实际 profile、22 个字段真实值、运行状态、6 条执行路径启用条件、冲突与 UNKNOWN |
 | v6 | 2026-11-22 01:35 | §18 `AUTONOMY-DISABLE-SCREEN-TRIGGER-01`：生产 profile 关闭 `triggers.device.enabled`、插件重载、运行态验证；发现遗留定时器，结论 **BLOCKED**（需 DSH 进程重启） |
 | v7 | 2026-11-22 09:15 | §19 `AUTONOMY-DISABLE-SCREEN-TRIGGER-02`：负责人已完成 DSH web 重启；只读验证无新 poll、Home/dice 正常、notification 未改、其他模块无异常 → **PASS** |
+| v8 | 2026-11-24 13:40 | §20 `AUTONOMY-LIFE-ROUND1-PREP-01`：版本/部署/宿主、tick/home/触发/执行器/暂停/dry-run、测试期隔离与冻结清单 → **READY WITH CONDITIONS** |
 
 ---
 
@@ -693,3 +694,142 @@ P4  以上全部失败 → 不发布，保留 tmp + 写 .pending 标记 + 事件
 ### 19.7 边界声明
 
 本轮只读验证：未重启任何进程；未改配置/代码/DB/记忆/日记/权限；未执行外发；未改 `HANDOFF.md`/`REPORT.md`。重启动作由负责人完成，本文只记录并验证其结果。
+
+
+---
+
+## 20. AUTONOMY-LIFE-ROUND1-PREP-01 · 第一轮实机测试准备审计
+
+> 执行：Autonomy 自主系统负责人｜时间：2026-11-24 13:22–13:45 (+08)
+> 性质：只读审计。未启用任何自动行动；未触发主动联系；未发送 QQ/邮件/抖音；未改目标/驱动力/行动权限；未部署/重启
+> 结论：**READY WITH CONDITIONS**（若条件 C1–C3 不满足，则第一轮测试无法满足“无自动行动/无外部操作”，应改判 BLOCKED）
+
+### 20.1 版本、部署与宿主接入
+
+| 项 | 值 |
+|---|---|
+| `ba-song/dsh-autonomy` main | `6c4a4753b4737060211955b1f022cab2f1d39521`（v0.4.0） |
+| 生产安装 | `/root/.dsh/plugin-src/dsh-autonomy`（软链），**无 .git**；`lib/index.js` mtime 2026-11-15；与 GitHub HEAD 有 10 个文件差异（缺 `home-archive-maintenance.js` 等） |
+| 宿主 | DSH `0.2.1-rc.2`，profile `web`，PID 30172（2026-11-22 09:06:37 启动，已运行 ~52h） |
+| 接入 | cordis 插件 `dsh-autonomy`；`inject: ['tools','timer','dyPersona','dyMemory']`；provide `dyAutonomy`/`dyHome`/`dyMail` |
+| 服务就绪 | persona=true、memory=true；stage=`offline-mock-only` |
+
+> 注意：`coordination/DELIVERY-BOARD.md` 记 Autonomy 为“默认 disabled/dryRun，真实 profile 未核实；不得启动 Home”。**实际生产 Home 已在运行**（见 20.2），看板该条应更新。
+
+### 20.2 运行状态（真实调用链证据）
+
+| 对象 | 实际状态 | 证据 |
+|---|---|---|
+| enabled / dryRun | true / **false**（`dryRunReason=off`） | `dy_life_status` 13:22 |
+| tick | **关闭**：`tickEnabled=false`；无定时器；最后 tick `2026-11-16 01:11:28`（PAUSED_KIND）；tick_runs 495 条 | status；DB `last_tick_at` |
+| 执行器 | 6 个全部 `mock:true`；真实注册需 `tick.realSafe=true`（当前 false） | status.executors |
+| 行动 | actions 238 条，最近一条 **2026-11-15 23:02**；此后无新 action | DB |
+| Home | **运行中**：会话 `e755af98…`；24h 内 **14 次 AWAKENED**；最近 `2026-11-24 13:10:16`（dice hit，chance 0.70） | autonomy.log；DB meta |
+| Home 工具使用 | 累计 801 条：`dy_say` 564、`bash` 97、`dy_life_diary_append` 7、`dy_memory_fact_add` 4、`dy_douyin_open` 9、`edit` 6、`dy_send_image` 8…；24h 内 23 条 | `home_activities` |
+| 主动联系实证 | 13:10:16 唤醒 → **13:10:25 发出 QQ**（早于首条 user 13:10:36、早于 bridge 入站 13:10:35/39；上次入站 10:57:26）→ 13:10:42–13:11:06 继续发送 | `home_activities` + `channel_events` + `raw_meta` |
+| 目的引擎 | 运行中：`purpose_hypotheses` 13:08 刷新（seenCount 960） | status/DB |
+| 触发 | triggers.enabled=true；**device=false**（11-22 起无 poll）；notification=true 但 3091 不可达；files=[] | status；`device-trigger.log` mtime 2026-11-22 09:06，最后 poll 11-21 17:52 |
+| 邮件 | 60s 轮询中（13:28）；最近入站 11-17；最近发送 11-07；最近错误 11-22（connection reset） | status.mail；DB meta |
+| 抖音 inbox | enabled/started/subscribed；stats.events=1（owner，11-23 17:20），replies sent=0；**replies.enabled=true**；`dmReplyWindowMs=0`、`dmDailyLimit=0` | status.douyinInbox |
+| 通知触发 | 每 5s `fetch failed`（3091 http=000/exit7），日志持续增长 | 日志 |
+
+### 20.3 行动入口清单
+
+| # | 入口 | 当前 | 能否产生真实副作用 | 说明 |
+|---|---|---|---|---|
+| 1 | tick 定时器 | 关 | 否 | 无定时器；`index.js:530-535` |
+| 2 | Home 唤醒循环 | **开** | **是** | dice/定时 → `home.awake` → LLM 回合 → 工具（含 dy_say） |
+| 3 | device 屏幕触发 | 关 | 否 | `index.js:211` 条件不成立；无 poll 52h |
+| 4 | notification 触发 | 开但不可达 | 否（当前） | 3091 未监听；若修复会唤醒 Home |
+| 5 | file 触发 | 开，files=[] | 否 | 无文件 |
+| 6 | mail 轮询 | 开 | 条件性 | 入站 → `home.deliver` → Home 回合/回复 |
+| 7 | douyin inbox | 开 | **是** | owner→home；其他人→独立会话 + 回合末自动回复（当前 0 次） |
+| 8 | 手动工具（any session） | 全局注册 | **是** | `dy_say` 无 owner 门禁；`dy_life_*`/memory/douyin 工具 owner/home 门禁 |
+| 9 | channel bridge | mode=**send** | **是** | outSent 3238；dy_say→WS 真发 |
+| 10 | purpose 定时器 | 开 | 否（仅 DB） | 每小时写 `purpose_hypotheses` |
+
+### 20.4 暂停/白名单/dry-run/人工确认
+
+| 机制 | 实际证据 | 覆盖范围与缺口 |
+|---|---|---|
+| 全局暂停 `pause.all` | 当前 false；`home gate` 检查（`home.js:200-208`）；douyin owner gate 检查；tick 门 2 检查 | 可冻结 Home/tick/douyin owner；**不阻止全局 dy_say/bash**；写入 DB，需 owner 授权 |
+| 按 kind 暂停 | 6 个 kind 全 false | 只影响 tick 候选过滤，不影响 Home |
+| 行动白名单 | `allowedKinds` 6 类；tick 只选这些 | Home 会话不受白名单限制 |
+| dry-run | 当前 false；tick 在 dry-run 下不调 executor（`tick.js:301`；隔离测试 F21 PASS）；**home.respectDryRun=false**（profile L142） → dry-run **不能**停止 Home 唤醒 | 不能作为测试期总闸 |
+| 真实执行器门 | `realSafe=false` 阻止注册；高风险还要求 `dryRun=false && sendEnabled=true`（二者已满足） | 若有人把 tick.enabled+realSafe 同时打开，真实 send_qq/write_diary 会注册 |
+| 人工确认 | autonomy 工具 owner 上下文校验（`tools.js:22-39`）；dy_say 无 confirm，直接发送；douyin 写工具另有 confirm 门 | 测试期无统一确认层 |
+| 隔离测试证据 | `node --test tests/tick.test.mjs`（HEAD 6c4a475，/tmp 隔离）：18 tests / 18 pass，含 F4 暂停、F5 暂停持久化、F21 dry-run、F6 熔断 | 代码级证据；非生产实跑 |
+
+### 20.5 独立 session 隔离评估
+
+**能做，但只覆盖“生活记录/人格注入”，不覆盖全局工具副作用。**
+
+| 层 | 是否隔离 | 证据 |
+|---|---|---|
+| persona 注入/情绪 ingest | **是**（cwd 不在 `inject.sessionDirs` → `resolveScope` 返回 not-allowlisted） | `persona-core/lib/scope.js:111-125`；profile sessionDirs=home/渠道/douyin |
+| memory 原话/episode | **是**（`RawArchive.onEvent` 先 `isUnderPrefix(cwd, archivePrefixes)`；测试 cwd 不在前缀） | `memory-core/lib/ingest/archive.js:104,373-378`；真实 `raw_meta` cwd 仅 home/渠道/douyin/email，工作区 session 无归档行 |
+| autonomy 唤醒 | **是**（只唤醒 home session） | `home_sessions` 仅 e755af98 |
+| autonomy dy_life_* 工具 | **是**（owner 上下文校验；测试 session 拒绝） | `autonomy/lib/tools.js:22-39` |
+| douyin 工具 | **是**（owner/home/douyin 会话，其他 E_PERMISSION，实测工作会话被拒） | 本轮 `dy_life_home_status`/`dy_douyin_status` E_PERMISSION |
+| **全局 dy_say / bash / edit** | **否**（插件工具全局注册；dy_say 无 owner 门禁；bash/edit 为 danger-full-access） | 本工作会话即可见 dy_say；bridge `mode=send` |
+
+结论：独立 session（cwd 如 `/sdcard/DSHA/测试/autonomy-round1`，**不要**放在 `渠道/`、`生活/数据/home`、`douyin/` 及其前缀下）可避免测试事件进入汐的记忆/人格/情绪；但不能阻止测试会话调用 dy_say 发 QQ/邮件或用 bash 写文件。
+
+### 20.6 第一轮测试期建议（不执行，仅清单）
+
+**必须条件（否则 BLOCKED）**
+
+- **C1 独立 session**：新建独立 DSH session，cwd 放 `/sdcard/DSHA/测试/...`（非 allowlist 前缀），**不要使用 Home session**；避免目录名以 `渠道`/`home` 开头（persona 的 `cwdInDir` 有宽松前缀兼容）。
+- **C2 不触发真实渠道**：测试期间不向她的 QQ/邮箱/抖音发消息；不要求她回复；不跑真实发送用例。
+- **C3 外部发送闸**：因 dy_say 全局可用且 bridge=send，测试前二选一：① owner 授权把 channel-bridge `mode` 临时改为 `observe`/`deliver`（拒绝真发）；② 测试 harness 明确禁止 dy_say/bash 写操作并全程监控出站。二者都不做 → 无法保证“无外部操作”。
+
+**建议冻结/监控**
+
+| 入口 | 建议 | 代价/备注 |
+|---|---|---|
+| Home 唤醒 | 若要求测试窗口零自主行为：owner 执行 `dy_life_pause scope=all`（写 meta）；否则接受她继续生活（14 次/24h）并监控 | 会同时停 Home/tick/douyin owner 路由；恢复需 `on=false` |
+| tick | 保持 `enabled=false`、`realSafe=false`，不改 allowedKinds | 不要为测试打开 |
+| device 触发 | 保持 false | 已无 poll 52h |
+| notification 触发 | 保持现状（3091 不可达）；如要减日志可关，但不改优先级 | 修复 3091 会新增唤醒源 |
+| douyin inbox | 测试期不使用抖音；如需用，先关自动回复/停 watcher（owner 授权） | `dmReplyWindowMs/dmDailyLimit=0` 表示不限 |
+| mail | 测试期不发邮件到她；如需可临时关 poll | 入站会进 Home |
+| channel bridge | 见 C3 | mode=send 是最大外发面 |
+| purpose | 可保留（仅 DB 写） | 无外部副作用 |
+
+**监控项（测试期间 + 结束后）**
+
+- `home_activities` 是否新增 dy_say/diary/edit/bash；
+- `channel_events` 出站是否新增（方向 out）；
+- `autonomy.log` 是否新增 `wake code=AWAKENED`；
+- `notification-trigger.log`/`device-trigger.log` 是否新增；
+- `raw_meta` 是否出现测试 cwd（应为 0）；
+- douyin `replies.sent`、mail `lastSent` 是否变化。
+
+### 20.7 Host / Bridge / Android 依赖
+
+| 依赖 | 现状 | 影响 |
+|---|---|---|
+| Host：dyPersona/dyMemory/timer/tools | 全部就绪 | 缺失会强制 dry_run/降级 |
+| Bridge 3090（设备触发） | 可用但触发已关 | 无当前依赖 |
+| Bridge 3091（通知） | **不可达**（http=000） | 通知触发空转，日志增长 |
+| Channel Bridge WS/NapCat | mode=send，health=OK；reconnects 188/hardResets 92 | dy_say 真发通道；不稳定但可用 |
+| Douyin CDP/SSH | source.running/subscribed | 私信/通知 watcher |
+| Mail IMAP | 轮询中，偶发连接错误 | 入站→Home |
+| Android | proot/共享存储/后台；无前台服务 | 进程冻结会暂停定时器；恢复后不补跑 |
+
+### 20.8 风险与阻断
+
+- **R1 高**：Home 唤醒可自主发 QQ（已实证 13:10:25 早于任何 user 入站）；测试期无法排除“主动联系”。
+- **R2 高**：测试 session 仍可用全局 dy_say/bash（无 owner 门禁）；若不改 bridge mode/不限制工具，测试可产生外部消息或文件写。
+- **R3 中**：douyin 非主人私信自动回复开启且窗口/条数不限；测试若使用抖音账号会真发。
+- **R4 中**：QQ/邮件/抖音 owner 入站会进 Home 并写 raw/情绪，测试消息会变成“真实经历”。
+- **R5 中**：dry-run 不覆盖 Home（respectDryRun=false），不能当测试总闸。
+- **R6 低**：通知触发 dead 但 enabled，日志持续增长；若 3091 恢复会新增唤醒源。
+- **R7 低**：tick 虽关，但 `dryRun=false`+`sendEnabled=true` 已满足高风险注册前提，仅剩 tick.enabled/realSafe 两个开关。
+- **R8 信息**：看板“Autonomy 默认 disabled/dryRun、真实 profile 未核实”与现状不符，应更新。
+
+**无技术 BLOCKED 项**，但 C1–C3 是测试准入条件；不满足则第一轮测试应判 BLOCKED。
+
+### 20.9 边界声明
+
+本轮只读：未启用自动行动；未触发主动联系；未发送任何消息/邮件/抖音；未写记忆/日记/DB；未改目标/驱动力/权限；未部署/重启；未改 `HANDOFF.md`/`REPORT.md`。
