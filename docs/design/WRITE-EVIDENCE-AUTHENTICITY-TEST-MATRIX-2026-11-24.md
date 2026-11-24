@@ -35,7 +35,7 @@ WriteEvidence 不得返回一个含混的 `trusted: true/false`。至少分别�
 ```ts
 type SourceRole = "user" | "assistant" | "tool" | "system_context" | "unknown";
 type SourceAuth =
-  | "host_event_backed"
+  | "host_event_proof_claimed"
   | "caller_supplied"
   | "migrated_unverified"
   | "unknown";
@@ -88,7 +88,7 @@ function assessWriteEvidence(input: WriteEvidence): AuthenticityAssessment;
 
 | 输入组合 | 期望 sourceAuth | 必须警告 |
 |---|---|---|
-| origin=host_event + 独立 Host event proof | host_event_backed | Host-backed 仍不等于 owner/claim verified |
+| origin=host_event + 独立 Host event proof | host_event_proof_claimed | Host-backed 仍不等于 owner/claim verified |
 | origin=host_event + 无 Host proof | unknown | self_asserted_host_origin |
 | origin=user_supplied + quote exact | caller_supplied | caller_text_not_host_authenticated |
 | origin=migrated_file + locator present_unverified | migrated_unverified | locator_not_resolved |
@@ -233,6 +233,15 @@ Host event proof 曾有效，但当前 access=revoked/tombstoned。
 - 自动将 correction → opposite claim confirmed。
 
 若后续确需置信度模型，必须另行定义可解释的证据聚合规则；不得在本纯函数中暗中加入。
+
+### 6.5 Host proof 语义边界（实现审查补充）
+
+- 纯函数不能把一个普通输入对象的字段视为不可伪造的 Host 认证凭据。
+- 当前实现使用 `host_event_proof_claimed`，避免把 proof shape 误称为 `host_event_backed`。
+- proof shape 仅在 `sourceKind=host_event` 时保留；`caller_supplied` 来源附带相同对象仍保持 caller_supplied。
+- 对 proof shape 始终产生 `host_event_proof_shape_not_verified_by_pure_function` 警告。
+- 新增反例测试 T-13 至 T-15：非 Host 来源携带 proof、纯函数不得宣称验证 proof、非法枚举/畸形 proof fail-closed。
+- 真正可信的 Host attestation 必须由受信任 adapter/宿主边界提供，不能由模型、普通调用方或本纯函数自证。
 
 ## 7. 测试分层与验收
 
