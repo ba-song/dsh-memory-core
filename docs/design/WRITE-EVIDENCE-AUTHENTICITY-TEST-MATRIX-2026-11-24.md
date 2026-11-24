@@ -18,6 +18,7 @@ WriteEvidence 不得返回一个含混的 `trusted: true/false`。至少分别�
 6. **命题确认状态**：unconfirmed、user_confirmed、disputed、withdrawn、not_applicable。
 7. **独立性/谱系**：多个副本是否来自同一原始事件。
 8. **访问授权状态**：是否允许当前用途读取；授权不证明内容真实，内容真实也不自动允许披露。
+9. **内容确定性/模糊性**：来源内容本身是否明确带有“可能、好像、记不清”等不确定标记；来源真实不代表内容确定。该维度只保留明确提供的不确定性，不能由纯函数推断内容客观确定。
 
 这八项不得互相推导。尤其：
 - exact quote ≠ authenticated source；
@@ -130,7 +131,18 @@ function assessWriteEvidence(input: WriteEvidence): AuthenticityAssessment;
 
 纯函数只评估给定状态，不调用 resolver；resolver 结果由 adapter 提供并需有可审计证据。
 
-### 4.5 谱系与独立性
+### 4.5 内容确定性/模糊性
+
+| 输入 | 期望 |
+|---|---|
+| 明确标记 uncertain | contentCertainty=uncertain；保留不确定性警告 |
+| 明确标记 not_assessed | contentCertainty=not_assessed；不推断确定 |
+| 缺少内容确定性信息 | contentCertainty=unknown；不得默认 certain |
+| 来源认证成功但内容 uncertain | sourceAuth 可为 host_event_backed，同时 contentCertainty 仍为 uncertain |
+
+该维度不判断命题客观真假，只防止来源认证或引文匹配抹去用户原话中的模糊性。
+
+### 4.6 谱系与独立性
 
 | 输入 | 期望 |
 |---|---|
@@ -195,7 +207,7 @@ Host event proof 曾有效，但当前 access=revoked/tombstoned。
 ### T-11 — 不完整/模糊经历
 
 来源为用户真实表达，但原话包含“好像”“可能”“记不清”。
-期望：来源真实性可以 host_event_backed；命题 certainty 仍保留 uncertainty；不能因来源真实而消除内容本身的模糊性。
+期望：来源真实性可以 host_event_backed；contentCertainty=uncertain；不能因来源真实而消除内容本身的模糊性。
 
 ### T-12 — 多源互相矛盾
 
@@ -225,6 +237,7 @@ Host event proof 曾有效，但当前 access=revoked/tombstoned。
 
 ### Layer 1 — 单元纯函数
 - 所有 T-01 至 T-12 均为确定性输入输出测试。
+- T-11 必须断言 contentCertainty=uncertain；缺失字段默认 unknown，不能默认为确定。
 - 无文件、DB、Host、网络 mock；如需 mock，说明纯函数边界已被破坏。
 - 对每个 enum 做合法值与未知值测试。
 - 对字段缺失、null、空字符串、非法类型做 fail-closed 测试。
@@ -247,6 +260,6 @@ Host event proof 曾有效，但当前 access=revoked/tombstoned。
 
 ## 8. 本轮结论
 
-真实性必须拆成“来源从哪里来、谁说的、内容是否匹配、命题是否确认、来源是否独立、当前是否允许访问”多个可审计维度。任何单一字段或分数都不能代替完整证据链。
+真实性必须拆成“来源从哪里来、谁说的、内容是否匹配、命题是否确认、来源是否独立、当前是否允许访问、内容本身是否模糊”等多个可审计维度。任何单一字段或分数都不能代替完整证据链。
 
 建议下一步先将 T-01 至 T-12 与 P0 不变量映射到现有测试框架，确认纯函数位置和输入类型；在用户另行同意前不改生产行为、schema、召回或恢复路径。
