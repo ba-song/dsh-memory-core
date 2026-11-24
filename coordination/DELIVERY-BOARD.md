@@ -10,10 +10,10 @@
 
 | 智能体/工作线 | 权威仓库 | 最新可核实基线 | 当前状态 | 正在推进 / 下一交付 |
 |---|---|---|---|---|
-| Memory | ba-song/dsh-memory-core | main `752cd086`；P0-1 分支 `8481d9f` | **IN_PROGRESS；P0-1 archive scope 修复 CI PASS** | 继续可信只读来源适配器；后续再接主动恢复；跨分支 schema/历史栈仍隔离 |
+| Memory | ba-song/dsh-memory-core | main `752cd086`；P0-1 分支 `85c419b1` | **IN_PROGRESS；P0-1 archive scope + recovery adapter 隔离 CI PASS** | 继续可信只读来源适配器；后续再接主动恢复；跨分支 schema/历史栈仍隔离 |
 | Persona / EI | ba-song/dsh-persona-core | main `a84c7bad`；EI-1 验收目标 `3a137618` | **EI-1 代码隔离 PASS；设备复验 NOT RUN；EI-2A BLOCKED** | 统一 EI-2 设计与报告 blob；准备 EI-1 设备复验材料；不启动未授权迁移 |
-| Channel Bridge | ba-song/dsh-channel-bridge | main `bffcabc3` | **WAITING EXACT-HEAD TEST** | 精确 main HEAD 复跑测试；审查群消息身份链及 group-turn 写入失败后的重放可靠性；fake transport |
-| Douyin | ba-song/dsh-douyin | main `da799dd4` | **WAITING EXACT-HEAD TEST** | 精确 main HEAD 运行 check/test；审查 watcher 与 Autonomy 重复通知、dmSend 自动确认语义；fake transport |
+| Channel Bridge | ba-song/dsh-channel-bridge | main `bffcabc3` | **EXACT-HEAD CI PASS（隔离分支）** | 562 tests / 560 pass / 0 fail / 2 skipped；fake transport；group-turn 重放审查待做 |
+| Douyin | ba-song/dsh-douyin | main `da799dd4` | **CHECK PASS；TEST BLOCKED/RETRYING** | check 已通过；测试目前被宿主路径 Playwright 依赖阻塞，已修 CI 安装路径，等待新 run |
 | Autonomy / Life | ba-song/dsh-autonomy | main `6c4a4753` | **DESIGN/STATIC REVIEW；REAL EXECUTION BLOCKED** | 只做静态与 fake 测试；核对 realSafe/自动回复调用链；不得启动 tick、Home、执行器或真实发送 |
 | Android | DSH-APP/DSHA | main `36d89b72`（build357） | **DEVICE VALIDATION NOT RUN** | 同步 60 秒观察窗文档状态；准备只读设备基线与验收步骤；kill/reboot/权限变更/安装需另行授权 |
 
@@ -26,7 +26,7 @@
 - 仓库：`ba-song/dsh-memory-core`
 - 分支：`fix/p0-1-trusted-handoff-continuity`
 - PR：[#3](https://github.com/ba-song/dsh-memory-core/pull/3)，Draft / open / not merged
-- 当前 HEAD：`8481d9f881c7614bab49f61105802a86826ac745`
+- 当前 HEAD：`85c419b1ae6328b48c3edec6f6ea47c5b170f149`
 
 提交：
 - `475c813d28278c05ae1df0827137248908d57f2e`：语义向量命中回查增加 cwd 范围限制；上下文窗口命中行与邻近行均限制同 cwd 并排除 tombstone。
@@ -38,7 +38,7 @@
 - 两份原始 job log 均显示：147 tests / 146 pass / 0 fail / 1 skipped。
 - 此结果只证明 GitHub 隔离 CI；DSHA 本地/真机验证仍未完成。
 
-## 3. 历史成果与当前不可混淆的状态
+### Channel Bridge / Douyin 精确 HEAD CI 工作线\n\n- Channel Bridge：Draft PR [#2](https://github.com/ba-song/dsh-channel-bridge/pull/2)，分支 `ci/exact-head-tests-20261124`，workflow commit `2db5480`，基于 main `bffcabc3`；CI 成功，562 tests / 560 pass / 0 fail / 2 skipped。只执行 fake/local tests。\n- Douyin：Draft PR [#1](https://github.com/ba-song/dsh-douyin/pull/1)，分支 `ci/exact-head-tests-20261124`，最新 workflow commit `bb288a8`，基于 main `da799dd4`；`npm run check` 已通过。此前测试运行确认 299 项中 298 pass、1 fail，失败为测试辅助桥依赖固定路径 `/persistent/pw/node_modules/playwright` 未准备；CI 已加入 host-compatible 安装步骤，最新 run 等待结果。\n\n## 3. 历史成果与当前不可混淆的状态
 
 | 工作项 | 最近可用证据 | 当前结论 |
 |---|---|---|
