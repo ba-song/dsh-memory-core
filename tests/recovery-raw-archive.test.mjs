@@ -22,7 +22,7 @@ function fixture() {
   }
   add(1, '/owner/home', '那天我们一起在海边散步，风很舒服。', 0, '2026-11-24/s-abcdef12.md')
   add(4, '/owner/home', '同一会话继续聊到海边散步时拍的照片。', 0, '2026-11-25/s-abcdef12.md')
-  add(5, '/owner/home', '另一个会话也提到海边散步。', 0, '2026-11-24/s-fedcba98.md')
+  add(5, '/owner/home', '昨天还聊到海边散步的细节。', 0, '2026-11-24/s-fedcba98.md')
   add(2, '/owner/other', '另一个会话里的海边散步记录。')
   add(3, '/owner/home', '已撤回的海边散步记录。', 1)
   db.prepare('INSERT INTO raw_vectors(raw_id,dim,vec,model,updated_at) VALUES(?,2,?,?,?)')
@@ -47,7 +47,7 @@ test('recovery adapter only returns evidence from the exact trusted owner cwd', 
   liveSessions.observe(exec.agent.session)
   const result = adapter.search(exec, { question: '海边散步', queryEmbed: [1, 0] })
   assert.equal(result.ok, true)
-  assert.equal(result.evidence.length, 1)
+  assert.equal(result.evidence.length, 3)
   assert.equal(result.evidence.find((x) => x.locator.endsWith('#1')).locator, '2026-11-24/s-abcdef12.md#1')
   const sameSession = result.evidence.filter((x) => x.locator.includes('s-abcdef12.md'))
   assert.equal(sameSession.length, 2)
@@ -69,7 +69,7 @@ test('recovery adapter does not trust model-supplied scope or cwd arguments', ()
     question: '海边散步', cwd: '/owner/other', scope: 'all', access: 'allowed',
   })
   assert.equal(result.ok, true)
-  assert.equal(result.evidence.length, 1)
+  assert.equal(result.evidence.length, 3)
   assert.equal(result.evidence.find((x) => x.locator.endsWith('#1')).locator, '2026-11-24/s-abcdef12.md#1')
 })
 
