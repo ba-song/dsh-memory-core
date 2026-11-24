@@ -77,3 +77,14 @@ Implement the Q149 recovery direction as an evidence-first workflow. A recovery 
 Unit tests should cover: inaccessible source vs missing source; expired archive source; diary discovery without mutation; independent vs copied evidence; supporting and contradicting evidence; ambiguous experience preservation; empty evidence; malformed provenance; scope denial; revision conflict; and proof that dry-run leaves database/files byte-for-byte unchanged.
 
 Integration tests should simulate: source utterance -> derived memory -> retrieval miss -> authorized evidence discovery -> dry-run proposal -> user-confirmation boundary -> separately authorized repair. Device-level behavior remains unverified until tested on the actual DSHA installation.
+
+
+## First read-only prototype (2026-11-24)
+
+Implemented in `lib/recovery/plan.js` with scenario tests in `tests/recovery-plan.test.mjs`.
+
+- The planner accepts evidence records only after an upstream adapter has made an access decision; it does not open files, query SQLite, or authenticate a caller.
+- It separates readable from denied/missing/expired evidence, compares supporting and contradicting items, and counts original evidence lineages rather than copied summaries as independent corroboration.
+- It emits an outcome, failure classification, questions for the user, and a proposed operation label. The proposed operation is descriptive only; no write adapter exists.
+- Tests cover supported, contradictory, denied, expired, copied evidence, ambiguous experience, empty evidence, and recall miss.
+- This is not yet connected to RawArchive, diary discovery, memory rows, or the host authorization layer. It is not a production recovery feature.
