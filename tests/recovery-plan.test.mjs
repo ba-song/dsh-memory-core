@@ -100,3 +100,18 @@ assert.equal(dryRun.readOnly, true)
 assert.equal(dryRun.writesPerformed, false)
 
 console.log('recovery-plan: 10 scenarios passed')
+
+
+const hostileTimestamp = planMemoryRecovery({
+  claim: '时间字段不可信时仍应保留证据',
+  evidence: [
+    { id: 'symbol-time', access: 'allowed', relation: 'supports', at: Symbol('not-a-time') },
+    { id: 'infinite-time', access: 'allowed', relation: 'context', at: Infinity },
+    { id: 'valid-time', access: 'allowed', relation: 'context', at: '1763942400000' },
+  ],
+})
+assert.equal(hostileTimestamp.outcome, 'supported')
+assert.equal(hostileTimestamp.evidence[0].at, null)
+assert.equal(hostileTimestamp.evidence[1].at, null)
+assert.equal(hostileTimestamp.evidence[2].at, 1763942400000)
+assert.equal(hostileTimestamp.writesPerformed, false)
