@@ -117,3 +117,61 @@
 ## 5. 本轮范围与未做事项
 
 本轮仅复核当前分支可见源码与现有矩阵，并记录测试缺口。没有运行本地测试，没有扫描真实用户数据库，没有读取或修改 DSHA 设备数据，没有写入真实记忆，没有改动运行时配置，也没有合并或部署 PR。
+
+
+## 6. 召回、排序与维护路径复核（2026-11-24 追加）
+
+### 6.1 召回与排序
+
+代码：`lib/recall/recall.js`、`lib/recall/score.js`
+
+- 关键词、语义、图谱三路候选经过 RRF 融合；候选需通过关键词/语义阈值或直接图谱命中。
+- 最终排序附加项为 `importance * 0.0015 + fresh * 0.001`，其中 fresh 按创建时间以 14 天指数衰减计算。
+- 召回 SQL 过滤 `status='active'`，并按 scope、可选 as-of 时间窗过滤；没有读取 `meta.provenance` 或 quote 证据等级。
+- 因此当前 `verified`、`derived`、`no-overlap`、`no-source`、`legacy-unknown` 等来源等级不会直接改变候选资格或排序权重。只要其他条件相同，弱证据记录可能与强证据记录一样被召回。
+- 命中回写 access_count / last_access_epoch；这也没有按 provenance 区分。
+
+复核判断：写入时的证据标签目前是诊断元数据，不是召回策略。不能对外描述成系统已经“按证据强弱谨慎使用记忆”。
+
+### 6.2 注入展示
+
+代码：`lib/inject/hits.js` 与 `lib/index.js` 的 agent/pre-step 路径
+
+- `buildHitsBlock` 按相关度阈值、稳定块去重、条数和字符预算筛选。
+- 输出格式包含 kind 和记忆正文，不包含 provenance、quoteEvidence 或置信等级。
+- owner 会话可能额外生成原话块和出处上下文块，但它们是独立展示路径，不能据此推断所有普通记忆正文都携带证据等级。
+
+复核判断：即使召回命中记录带有 `no-overlap`，普通记忆注入块也不会显式提示这一等级。使用者/模型可能只看到陈述句，而看不到其证据缺口。
+
+### 6.3 恢复规划器
+
+代码：`lib/recovery/plan.js`
+
+- planner 接收调用方提供的 evidence、relation、access、independenceKey/copiedFrom 等字段；不读取 memories 数据库，也不自行解析目标记忆的 provenance。
+- 单条 allowed 且 relation=supports 的独立谱系即可得到 outcome=supported；supportLevel 会标为 single_asserted_lineage。
+- 多条复制摘要不会增加独立谱系数；但 independenceKey/copiedFrom 是上游断言，planner 本身不认证。
+- 当前 planner 没有把目标记忆的 `no-overlap` / `legacy-unknown` 等标签作为证据缺口自动带入，也不能据此判断原记忆是否可信。
+- planner 只产生 dry-run proposal，不执行恢复写入。
+
+复核判断：恢复规划的“supported”是证据关系输入层面的判断，不等于原记忆已证实。接入层必须显式携带目标记忆来源等级与原始来源证据，不能把单条派生记忆自身作为独立佐证。
+
+### 6.4 清晰度与遗忘维护
+
+代码：`lib/clarity.js` 与 `lib/index.js` 的 clarity 定时路径
+
+- `targetClarity` 依据 pinned、firstMet、ownerProtected、importance、scope、创建年龄计算目标清晰度。
+- 该路径不读取 provenance、quote 或证据独立性。
+- 正式应用计划时，forgotten 会先尝试写全量归档，再把状态改为 archived、清晰度改为 trace；其他情况只更新 clarity。
+- 定时器是否运行由本地配置决定，源码默认/当前分支不能证明 Android 设备实际配置。
+
+复核判断：现有遗忘维护也没有证据等级维度。不能在本次只读审计中自行改变淡化或归档策略；应先形成可审查的策略提案，并明确用户授权边界。
+
+### 6.5 本次结论与后续任务
+
+当前可确认的缺口：
+1. provenance 标签没有参与普通召回候选过滤或排序。
+2. 普通记忆注入块不展示证据等级。
+3. recovery planner 不自动读取目标记忆的 provenance，也不验证输入 evidence 的来源真实性。
+4. clarity/遗忘维护不考虑来源证据等级。
+
+建议后续先做只读诊断输出与 fixture 测试，比较不同 provenance 记录在召回、注入、恢复规划中的实际表现；再提交“证据等级如何影响使用方式”的策略提案。任何改变召回、排序、注入、淡化、归档或自动恢复行为的实现，均先向项目所有者请示，不在本轮直接修改。
