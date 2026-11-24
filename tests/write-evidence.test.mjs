@@ -6,6 +6,7 @@ const assess = (input) => assessWriteEvidence(input)
 // T-01 caller cannot self-assert Host origin.
 {
   const r = assess({ origin: { kind: 'host_event' }, sourceRole: 'user', quoteState: 'exact' })
+  assert.equal(r.sourceKind, 'host_event')
   assert.equal(r.sourceAuth, 'unknown')
   assert.ok(r.warnings.includes('self_asserted_host_origin'))
 }
@@ -29,6 +30,7 @@ const assess = (input) => assessWriteEvidence(input)
 // T-04 tool output is not a user statement.
 {
   const r = assess({ origin: { kind: 'tool_output' }, sourceRole: 'tool', quoteState: 'exact' })
+  assert.equal(r.sourceKind, 'tool_output')
   assert.equal(r.sourceAuth, 'unknown')
   assert.ok(r.warnings.includes('tool_output_not_user_statement'))
 }
@@ -97,6 +99,7 @@ const assess = (input) => assessWriteEvidence(input)
 // Fail-closed defaults and orthogonality properties.
 {
   const empty = assess(null)
+  assert.equal(empty.sourceKind, 'unknown')
   assert.equal(empty.sourceAuth, 'unknown')
   assert.equal(empty.sourceRole, 'unknown')
   assert.equal(empty.locator, 'missing')
@@ -112,6 +115,7 @@ const assess = (input) => assessWriteEvidence(input)
   const uncertainSource = assess({ origin: { kind: 'host_event' }, hostEventProof: { verified: true, issuer: 'trusted_host_adapter' }, contentCertainty: 'uncertain' })
   const unmarkedSource = assess({ origin: { kind: 'host_event' }, hostEventProof: { verified: true, issuer: 'trusted_host_adapter' } })
   assert.equal(uncertainSource.sourceAuth, unmarkedSource.sourceAuth)
+  assert.equal(uncertainSource.sourceKind, unmarkedSource.sourceKind)
   assert.equal(uncertainSource.contentCertainty, 'uncertain')
   assert.equal(unmarkedSource.contentCertainty, 'unknown')
 
