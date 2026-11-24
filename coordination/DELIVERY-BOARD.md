@@ -1,7 +1,7 @@
 # DSHA「汐」统一交付看板
 
-- 版本：BOARD-0007
-- 更新时间：2026-11-24 11:20（Asia/Shanghai）
+- 版本：BOARD-0008
+- 更新时间：2026-11-24 11:28（Asia/Shanghai）
 - 负责人：现任项目负责人（GPT）
 - 权威原则：代码状态以精确仓库/分支/commit 为准；自动化测试以绑定该 commit 的 CI/原始日志为准；设备状态以 DSH 实机证据为准。
 - 本看板区分“历史专项报告结论”和“本轮重新核实结论”，不把历史 PASS 自动延续到新 HEAD。
@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | Memory | ba-song/dsh-memory-core | main `752cd086`；P0-1 分支 `61ea91ef` | **IN_PROGRESS；RawArchive adapter CI PASS，planner 输入防御测试 CI PASS** | 独立审查 adapter 的 scope/lineage；补 planner lineage 测试；adapter 暂不接入运行时；跨分支 schema/历史栈仍隔离 |
 | Persona / EI | ba-song/dsh-persona-core | main `a84c7bad`；EI-1 验收目标 `3a137618` | **EI-1 代码隔离 PASS；设备复验 NOT RUN；EI-2A BLOCKED** | EI-2 设计与报告 blob 已同步（55cd080）；独立复核设计边界；准备 EI-1 设备复验材料；EI-2A 仍不启动 |
-| Channel Bridge | ba-song/dsh-channel-bridge | main `bffcabc3` | **MAIN 基线 CI PASS；群记忆重试修复 PR CI PASS** | main `bffcabc3`：562/560/0/2；修复分支 PR #3 最新 HEAD `296388f`：565/563/0/2；增加 flush in-flight 新回复二次调度测试，fake-only |
+| Channel Bridge | ba-song/dsh-channel-bridge | main `bffcabc3` | **MAIN 基线 CI PASS；群记忆重试修复 PR CI PASS** | main `bffcabc3`：562/560/0/2；修复分支 PR #3 最新 HEAD `4f74b4d`：566/564/0/2；增加写入结果不确定时保持稳定幂等轮次 ID 的回归测试，fake-only |
 | Douyin | ba-song/dsh-douyin | main `da799dd4` | **EXACT-HEAD CI PASS（隔离分支）** | check PASS；310 tests / 310 pass / 0 fail / 0 skipped；fake/local tests |
 | Autonomy / Life | ba-song/dsh-autonomy | main `6c4a4753` | **DESIGN/STATIC REVIEW；REAL EXECUTION BLOCKED** | 只做静态与 fake 测试；核对 realSafe/自动回复调用链；不得启动 tick、Home、执行器或真实发送 |
 | Android | DSH-APP/DSHA | main `36d89b72`（build357） | **DEVICE VALIDATION NOT RUN** | 同步 60 秒观察窗文档状态；准备只读设备基线与验收步骤；kill/reboot/权限变更/安装需另行授权 |
@@ -59,7 +59,7 @@
 | Memory A–E validity stack | `4bf92aad` | 历史隔离测试 PASS；约 300 commits / 117 files 相对 main，禁止整栈直接合并 |
 | EI-1 | `3a137618` | 定向 21/21、全量 324/324 的历史代码隔离 PASS；设备 NOT RUN |
 | EI-2 / EI-2A | 设计文件已同步至 blob `670e5a34`（commit `5fc6d70`）；报告追加同步记录（`55cd080`） | 文档基线一致；EI-2A 仍 NOT RUN / 未获授权，不实施 |
-| Channel Bridge | main 基线 PR #2 CI `562/560/0/2`；群记忆修复 PR #3 最新 CI `565/563/0/2` | 修复分支通过隔离 CI；仍需 code review 和 fake failure replay 扩展，未合并 |
+| Channel Bridge | main 基线 PR #2 CI `562/560/0/2`；群记忆修复 PR #3 最新 CI `566/564/0/2` | 修复分支通过隔离 CI；仍需 code review 和 fake failure replay 扩展，未合并 |
 | Douyin | 历史审计未运行；本轮 Draft PR #1 CI `310/310/0/0` | 当前 main 基线 check/test 隔离 CI PASS；自动回复/重复通知审查未完成 |
 | Autonomy | 历史 main CI 有成功记录；默认 disabled/dryRun | 不代表设备 profile 状态；真实执行路径不启动 |
 | Android | main build357 源码/文档可读 | 无本轮真机证据；恢复协议设计对齐不等于运行验收 |
