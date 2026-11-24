@@ -213,3 +213,12 @@ PR #5：<https://github.com/ba-song/dsh-memory-core/pull/5>
 - 已补强 T-11 和 fail-closed/正交性断言。该变更仍与 `insertMemory`、schema、recall、recovery、Host、设备和生产数据完全解耦。
 - 最新代码提交及 CI 状态需在 PR #7 当前 head 上复核；尚未宣称测试通过。
 - 本轮未合并 PR #6/#7、未部署、未连接 DSH、未触碰真实设备或生产数据。
+
+
+### 第 17 节技术复核更正（同日追加）
+
+- 进一步逐项对照矩阵后发现：矩阵第 1 项“载体来源类型”与第 4 项“来源认证状态”是两个独立字段；旧实现只输出 sourceAuth，没有独立返回 sourceKind。此前仅指出 contentCertainty 缺失并不足以完整描述差距。
+- PR #7 现已补充独立 `sourceKind` 输出，保留 host_event/caller_supplied/migrated_file/tool_output/unknown 声明；sourceAuth 继续单独表示认证状态。并增加对应反例断言。
+- 内容确定性字段作为 T-11 要求单独保留：`uncertain` / `not_assessed` / `unknown`；缺失时保持 unknown。
+- 因此当前实现目标是覆盖矩阵八项独立属性，并额外保留 T-11 明确要求的内容模糊性标记；不得把 sourceKind 与 sourceAuth 合并，也不得将 contentCertainty 推断为客观真假。
+- 新提交后的 CI 必须针对最新 PR #7 head 重新核验；此前 run #45361740359 只对应较早 head，不能作为后续提交的验证证据。
