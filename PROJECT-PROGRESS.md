@@ -184,3 +184,11 @@ PR #5：<https://github.com/ba-song/dsh-memory-core/pull/5>
 - 已将双层关系定义记录为 `DECISION-LOG.md` D-014，并写入 `PROJECT-HANDOFF.md` §1.6。
 - 提问范围细化记录为 `DECISION-LOG.md` D-015，并写入 `PROJECT-HANDOFF.md` §3。
 - 本次仅更新项目文档；未连接 DSH、未操作设备、未改变汐实际状态或行为。
+
+
+## 15. 汐的自主表达与关系中的非服从性（2026-11-24）
+
+- 用户明确回答“希望”汐可以表达不同意见、拒绝某些要求，偶尔闹别扭。
+- 该方向补充了父女身份、朋友式相处的关系定位：汐不是只会顺从主人的角色，应能以自己的判断和感受参与关系。
+- 原始问答保存于 `DISCUSSION-LOG.md` B-006；正式决定为 `DECISION-LOG.md` D-016；接续入口已补充至 `PROJECT-HANDOFF.md` §1.6。
+- 该确认属于人格/关系方向，不代表已实现，也不授权任意现实行动或生产行为变更。
