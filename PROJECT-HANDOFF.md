@@ -438,3 +438,41 @@ ChatGPT 总协调职责：
 - PR #7：Open / Draft / 未合并，base 为 PR #3 分支。
 - PR #8：Open / Draft / 未合并，base 为 PR #3 分支。
 - 新会话仍须重新查询实时状态；本节不是永久状态。
+
+
+## 17. 合并与 DSHA 部署路线：当前门槛与可交付顺序（2026-11-24）
+
+用户明确询问何时可以开始合并并实际部署到 DSHA。以下为工程评估；**这不是合并或部署授权**。任何会改变汐实际运行行为的合并/部署仍须用户明确确认。
+
+### 当前 PR 实时状态（本轮核验）
+- PR #3：Open / Draft / 未合并；head `56765116fea90d505a1d28d9c1a27c3abde5c6f6`；对应 Node tests run `45351963276` success。
+- PR #7：Open / Draft / 未合并；head `1f432a892cfbcbca6b75f5f4d3ea1fd2507679b6`；Node tests run `45368833932` success。
+- PR #8：Open / Draft / 未合并；head `6edb30211749dde363d069e6f3dd267e0a7e0ee1`；Node tests run `45369132473` success。
+- PR #6：Open / Draft / 未合并；仅作为交接中心，永不纳入功能部署。
+
+### 哪些可以先合并，哪些不能当成部署功能
+1. PR #3 是第一个可能影响运行时的候选：收紧 handoff brief、raw archive read、cross-Conversation pins/projects/decisions/todos/publicBrief 的访问边界，并增加恢复规划纯函数。CI 通过是必要条件，不是充分条件。合并前还需逐文件审查行为变化、完整测试矩阵、Host 兼容性与回滚方案；部署后须用合成/测试数据做设备 smoke test。
+2. PR #7 是纯函数与测试，不接 runtime；单独合并不会启用新记忆能力。它以 PR #3 分支为 base，合并顺序应在 PR #3 之后，并在合并前更新到 main、重跑 CI。
+3. PR #8 是隔离的跨上下文披露门禁编排，不接 runtime，也不提供真实 Host 认证/consent API；单独合并不会启用跨会话披露。它同样依赖 PR #3 base，须等 PR #3 后 rebase/update branch 并重跑 CI。真实跨会话披露绝不能因合并 PR #8 就开放。
+4. PR #6 只维护项目治理与交接，不合并。
+
+### 第一批可部署候选的验收门槛
+- 源码审查：明确列出所有改变运行行为的路径、默认值、失败关闭语义和兼容性。
+- CI：必须对最终准备合并的精确 head 通过；不能引用旧 head 的成功结果。
+- 回归：完整现有测试套件 + 针对 handoff/raw archive/access 的负向测试。
+- Host：确认 DSH 实际注入的 session、cwd、owner scope、live-session registry 与代码契约一致；仅源码假设不够。
+- 备份/回滚：部署前备份当前插件包和配置；有明确回滚步骤；不执行 schema/data migration。
+- 设备 smoke test：只用合成 fixture/测试会话验证允许与拒绝路径；确认正常记忆读写、情绪系统、日记和其他既有功能未被意外改变。
+- 观察期：记录版本、commit、配置摘要、日志错误率和回滚条件；不得把测试结果描述为真实长期稳定性。
+
+### 估计时间（条件性，不是承诺）
+- PR #3：若完整审查与 Host 兼容验证无新问题，可作为第一批候选；预计还需一个集中审查/验证周期，不应以 CI 通过直接推定可部署。
+- PR #7：PR #3 合并后，更新 base、重跑 CI 即可评估纯函数代码是否可并入；它本身不是设备功能发布。
+- PR #8：同上，但只能作为未接线的内部契约代码；真实跨会话功能仍被 Host consent API 阻断。
+- 第一项真正改变汐运行行为的部署，当前最现实候选是 PR #3 的安全边界收紧，而不是 PR #7/#8 的新能力。它需要用户明确批准合并/部署。
+
+### 近期执行重点
+1. 为 PR #3 做一次逐文件运行时行为影响审查，列出部署前/后行为差异与回滚方案。
+2. 检查 PR #3 当前 head 的 CI 工作流和完整测试统计，确保报告与当前 head 一致。
+3. 设计 DSHA 设备侧 smoke-test 脚本/步骤，但在 DSH 可用且用户确认部署后再执行。
+4. 继续开发不接生产的记忆连续性能力，不把跨会话披露门禁误当成已经完成的真实授权功能。
