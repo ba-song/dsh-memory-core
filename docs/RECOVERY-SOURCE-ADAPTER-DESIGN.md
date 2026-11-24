@@ -134,3 +134,26 @@ A diary entry and a raw utterance are not automatically independent: if one was 
 ## 8. Implementation gate
 
 Do not implement a read adapter until the host's live-session evidence and owner authorization can be passed into it without accepting caller-supplied trust fields. The RawArchive semantic-scope gap must be fixed before semantic recovery search is allowed. Diary discovery must remain a separate module and read-only. No runtime registration, cross-Conversation access, data migration, memory write, or production deployment is authorized by this design.
+
+
+## 9. Implementation status update (2026-11-24)
+
+A dedicated read-only RawArchive adapter now exists in `lib/recovery/raw-archive.js`; it does not wrap or call the ordinary `searchArchive` helper.
+
+- It derives the live session from the host execution context and requires an exact match in the host-observed session registry.
+- It derives owner access from the injected host-side `isOwnerCwd` check and `scopeForSession`; caller-supplied cwd, scope, access, and lineage fields are ignored.
+- Both keyword candidates and semantic-vector candidates are filtered by exact authorized cwd and non-tombstoned rows before source text is read. The final row fetch repeats cwd, tombstone, and role predicates.
+- It returns bounded excerpts only; it does not perform context-window expansion.
+- Session archive files named `s-<short-session-id>.md` are grouped into one asserted evidence lineage across date directories. The short session token is a locator-derived grouping key, not host authentication; the planner continues to label independence as asserted by the upstream adapter, not independently verified.
+- Focused tests cover unobserved-session denial, exact owner-cwd scoping, semantic candidates from another cwd, tombstone exclusion, and ignoring caller-supplied scope overrides.
+
+This closes the specific semantic-vector cwd escape in the **new recovery adapter**. It does not claim that the ordinary `lib/archive/tools.js` `searchArchive` helper has been hardened for every caller, and it does not add context expansion.
+
+Still not implemented:
+- no diary discovery/read adapter;
+- no runtime registration or end-to-end host authorization wiring;
+- no cross-Conversation consent flow;
+- no memory-row provenance lookup or automatic claim-to-evidence relation classifier;
+- no recovery write/apply operation.
+
+The adapter remains read-only and is not a production recovery feature. Its focused tests are included in the full Node test workflow; the latest tested branch head at this update is recorded separately in the PR/Actions history.
