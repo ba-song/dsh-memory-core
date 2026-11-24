@@ -126,7 +126,7 @@ const assess = (input) => assessWriteEvidence(input)
   assert.ok(withProof.warnings.includes('host_event_proof_shape_not_verified_by_pure_function'))
 }
 
-console.log(JSON.stringify({ ok: true, test: 'write-evidence', cases: 12 }))
+console.log(JSON.stringify({ ok: true, test: 'write-evidence', cases: 15 }))
 
 
 // T-13 proof-shaped caller input cannot authenticate a non-Host origin.
