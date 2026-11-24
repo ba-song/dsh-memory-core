@@ -77,7 +77,7 @@ const rows = () => db.prepare('SELECT * FROM memories ORDER BY id').all()
   resetLlmStats()
   const fake = makeCtx(JSON.stringify({
     kind: 'fact',
-    text: '主人已经练习吉他三个月',
+    text: '主人在学吉他',
     quote: '已经练了三个月',
     confidence: 0.8,
   }))
