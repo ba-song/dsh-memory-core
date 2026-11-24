@@ -4257,3 +4257,51 @@ A–E 合计为 P4 基线之上 30 个提交；每一段均为纯前进，没有
 ### 80.5 看板
 
 - 看板更新至 BOARD-0006，提交 `e5024b706f23431661a75535a07c6ca0aaf62898`。
+
+
+---
+
+## 2026-11-24 11:20 +0800 · Channel Bridge 并发补强与 Memory 证据归一化防御 · HANDOFF-0081
+
+### 81.1 Channel Bridge 二级并发缺口
+
+独立复核 PR #3 时发现：若新回复在 flushOnce() 尚未结束时进入 pending，其 idle timer 可能在旧 flush 仍 in-flight 时触发。旧实现的单飞保护会返回已有 Promise，但 timer 已消耗；新 pending 因而可能没有下一次自动 flush。
+
+修复：
+- 新增 flushAgain 标记。
+- 同群 flush 正在执行时，如仍有 pending，则记录一次 follow-up 请求。
+- 原 flush 结束后为剩余 pending 重新安排 idle timer，不在同一调用栈内立即重试，避免限流时形成紧密重试循环。
+- 新增测试：延迟第一轮写入，第二轮消息/回复在其间到达；第一轮结束后第二轮仍被自动持久化。
+
+交付：
+- 分支：fix/group-turn-memory-retry
+- 最新 HEAD：296388f0c5f6db05722a4ac65ef6076a700dd65c
+- 新增代码提交：a29e32c177f1d78dfaf4a5eba42f825e6ba254c3
+- 新增测试提交：296388f0c5f6db05722a4ac65ef6076a700dd65c
+- Push CI run 45317781456 SUCCESS，原始日志：**565 tests / 563 pass / 0 fail / 2 skipped**。
+- 同一分支另一次 workflow run 45317762193 SUCCESS，针对中间 HEAD a29e32c。
+- PR #3 仍 Draft / open / not merged。
+
+### 81.2 Memory planner 输入防御
+
+复核 lib/recovery/plan.js 的 evidence normalization 时发现 Number(Symbol()) 会抛异常；证据时间戳来自上游 adapter，归一化不应因单个异常时间字段导致整个 dry-run 规划失败。
+
+修复：
+- 增加 safeNumber()，捕获转换异常并把非有限值规范为 null。
+- 新增 Symbol、Infinity、数字字符串三类测试。
+- 修改仅影响纯规划器的输入归一化；不接入运行时、不读取或写入真实记忆。
+
+交付：
+- 分支：fix/p0-1-trusted-handoff-continuity
+- 最新提交：61ea91efadc9cdefe05debb0c5e81c9e456626ed
+- Memory CI run 45317824146 在本记录生成时仍 in progress；不得提前宣称通过。其他并发 workflow 运行也需以精确 HEAD 的最终结果为准。
+
+### 81.3 剩余风险
+
+- Channel Bridge 目前以 msg.at 时间戳作为游标，没有稳定的入站消息 ID。相同毫秒时间戳、进程重启后的游标恢复和服务端“写入成功但响应丢失”的幂等语义仍需审查；本次不能声称全部重复/丢失风险已闭合。
+- RawArchive adapter 仍未注册运行时；证据 relation 仍为 unclear，planner 仅消费已授权 evidence，不执行修复。
+- 不合并、不部署、不触碰真实群聊/真实记忆数据。
+
+### 81.4 看板
+
+- 看板更新至 BOARD-0007，提交 dee74ba210fcdb438f64594f640edc019a9ee4c1。
