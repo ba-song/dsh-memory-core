@@ -4089,8 +4089,8 @@ A–E 合计为 P4 基线之上 30 个提交；每一段均为纯前进，没有
 
 ### 77.2 当前看板
 
-- 新增 `coordination/DELIVERY-BOARD.md`，BOARD-0003。
-- 提交：`46b95a3ad5059ac9854825e6d25a937dca4fbcdd`。
+- 新增 `coordination/DELIVERY-BOARD.md`，BOARD-0005。
+- 提交：`7180c94f87fc7ef955ebe0a80dbbea500c0292c3`。
 - 该看板将历史专项 PASS 与当前精确 HEAD 验证分开，并列出六条工作线状态、并行任务、依赖、阻塞和授权门禁。
 - 看板位于 `coordination/project-handoff` 分支；不是 main 产品代码，不构成产品运行变更。
 
@@ -4172,8 +4172,8 @@ A–E 合计为 P4 基线之上 30 个提交；每一段均为纯前进，没有
 
 ### 78.4 看板更新
 
-- `coordination/DELIVERY-BOARD.md` 更新至 BOARD-0004。
-- 最新看板提交：`c89492f196d27a04fe256eff9787c95966432b7f`。
+- `coordination/DELIVERY-BOARD.md` 更新至 BOARD-0005。
+- 最新看板提交：`7180c94f87fc7ef955ebe0a80dbbea500c0292c3`。
 - 看板明确六条常驻专业线、最新基线、当前状态、历史证据与当前 HEAD 的区别、并行依赖和授权门禁。
 - 六个智能体是否实时在线/后台运行无法由 GitHub 证明；看板不虚构其运行状态。
 
