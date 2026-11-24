@@ -4,7 +4,7 @@
 - 类型：设计验证规格；仅测试纯函数，不访问设备、Host、数据库、文件系统或网络。
 - 关联设计：`docs/design/WRITE-EVIDENCE-DTO-AND-Q149-RECOVERY-ADAPTER-2026-11-24.md`
 - 用户确认的优先级：**真实性优先**（2026-11-24 当前会话）。
-- 当前状态：测试规格，尚未实现代码或执行测试。
+- 当前状态：纯函数与测试已在 PR #7 实现；PR #7 CI 按当前 head 核验。矩阵继续作为设计验收规格。
 
 ## 1. 本轮裁决：真实性是多维属性，不是单一可信分数
 
@@ -145,7 +145,7 @@ function assessWriteEvidence(input: WriteEvidence): AuthenticityAssessment;
 | 明确标记 uncertain | contentCertainty=uncertain；保留不确定性警告 |
 | 明确标记 not_assessed | contentCertainty=not_assessed；不推断确定 |
 | 缺少内容确定性信息 | contentCertainty=unknown；不得默认 certain |
-| 来源认证成功但内容 uncertain | sourceAuth 可为 host_event_backed，同时 contentCertainty 仍为 uncertain |
+| 来源认证成功但内容 uncertain | sourceAuth 可为 host_event_proof_claimed，同时 contentCertainty 仍为 uncertain |
 
 该维度不判断命题客观真假，只防止来源认证或引文匹配抹去用户原话中的模糊性。
 
@@ -173,12 +173,12 @@ function assessWriteEvidence(input: WriteEvidence): AuthenticityAssessment;
 ### T-01 — 伪装成 Host event 的 caller-supplied
 
 输入声称 `origin.kind=host_event`，但 proof 缺失，sourceText 由 caller 提供，quote exact。
-期望：sourceAuth=unknown（或 caller_supplied，若来源字段明确 caller），不得 host_event_backed；warning 包含 self_asserted_host_origin。
+期望：sourceAuth=unknown（或 caller_supplied，若来源字段明确 caller），不得 host_event_proof_claimed；warning 包含 self_asserted_host_origin。
 
 ### T-02 — 精确引用但命题错误
 
 一条真实 Host 消息精确写着“会议在周六举行”，但该消息只是用户转述/猜测。
-期望：sourceAuth=host_event_backed，quote=exact，claimConfirmation=unconfirmed；不得输出 objectively_verified。
+期望：sourceAuth=host_event_proof_claimed，quote=exact，claimConfirmation=unconfirmed；不得输出 objectively_verified。
 
 ### T-03 — 精确引用来自 assistant
 
@@ -223,7 +223,7 @@ Host event proof 曾有效，但当前 access=revoked/tombstoned。
 ### T-11 — 不完整/模糊经历
 
 来源为用户真实表达，但原话包含“好像”“可能”“记不清”。
-期望：来源真实性可以 host_event_backed；contentCertainty=uncertain；不能因来源真实而消除内容本身的模糊性。
+期望：输入 proof 形状可标记为 host_event_proof_claimed；contentCertainty=uncertain；不能因来源真实而消除内容本身的模糊性。
 
 ### T-12 — 多源互相矛盾
 
@@ -268,7 +268,7 @@ Host event proof 曾有效，但当前 access=revoked/tombstoned。
 - 对字段缺失、null、空字符串、非法类型做 fail-closed 测试。
 
 ### Layer 2 — 属性测试
-- 任意 caller-supplied input 改写 `origin.kind` 字符串不能单独产生 host_event_backed。
+- 任意 caller-supplied input 改写 `origin.kind` 字符串不能单独产生 host_event_proof_claimed。
 - 删除 Host proof 不得提高 sourceAuth。
 - 将 quote 从 exact 改为 mismatch 不得提高确认状态。
 - 增加相同 lineage 的副本不得增加独立来源数。
@@ -293,4 +293,4 @@ Host event proof 曾有效，但当前 access=revoked/tombstoned。
 
 真实性必须拆成“来源从哪里来（sourceKind）、来源是否认证（sourceAuth）、谁说的、内容是否匹配、命题是否确认、来源是否独立、当前是否允许访问、内容本身是否模糊”等多个可审计维度。任何单一字段或分数都不能代替完整证据链。
 
-建议下一步先将 T-01 至 T-12 与 P0 不变量映射到现有测试框架，确认纯函数位置和输入类型；在用户另行同意前不改生产行为、schema、召回或恢复路径。
+T-01 至 T-24 已映射到 PR #7 的隔离纯函数测试。下一步转向 adapter 契约层验证；在用户另行同意前不改生产行为、schema、召回或恢复路径。
