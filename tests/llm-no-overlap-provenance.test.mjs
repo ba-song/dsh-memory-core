@@ -10,7 +10,7 @@ const { db } = openDb(dir)
 
 const answer = JSON.stringify({
   kind: 'fact',
-  text: '主人最近开始系统学习吉他',
+  text: '主人会弹吉他',
   confidence: 0.8,
 })
 const ctx = {
