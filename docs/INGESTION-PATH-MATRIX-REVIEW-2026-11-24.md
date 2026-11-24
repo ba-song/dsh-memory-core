@@ -191,3 +191,18 @@
 - 该模块目前是纯函数库，不接入运行时工具、定时任务、召回或注入；尚未生成任何真实数据库统计。
 - 它不会证明 `verified` 命题为真，只复用既有标签并做保守计数。
 - 测试文件已提交，但本环境没有仓库 checkout 可直接运行 `npm test`；当前提交尚无 GitHub Actions workflow run 或 combined status 记录。因此测试状态为“未执行/未验证”，不是通过。
+
+
+## 8. CI 首轮反馈与测试夹具修正（2026-11-24 追加）
+
+GitHub Actions Run #162（Node tests）已完成，结果 **failure**：155 项测试中 152 pass、2 fail、1 skipped。
+
+失败均来自本分支新增的 LLM provenance 测试夹具，不是诊断汇总模块：
+- `tests/llm-no-overlap-provenance.test.mjs`：候选“主人最近开始系统学习吉他”未通过现有 `judgeCandidate` 谓词质量闸，实际 action=`none`，测试错误预期 `insert`。
+- `tests/llm-quote-gate.test.mjs`：候选“主人已经练习吉他三个月”同样未通过现有谓词质量闸，实际 action=`none`，测试错误预期 `insert`。
+
+已只修改测试候选文本，使其符合当前质量闸：
+- no-overlap fixture 改为“主人会弹吉他”，与原文只共享不足 4 字的“吉他”，并含质量闸认可的谓词“会”。
+- exact-quote fixture 改为“主人在学吉他”，含质量闸认可的谓词“在”；引文仍是原文中的“已经练了三个月”，用于验证显式原文引文可以与候选正文不重合。
+
+上述仅修改测试夹具，没有放宽或更改生产质量闸、写入逻辑或记忆策略。修正后的提交 SHA：`6b13184`、`e5f6158`。截至本次文档提交前，修正提交尚未发现新的 workflow run；必须等待下一轮 CI 才能判断是否修复。
