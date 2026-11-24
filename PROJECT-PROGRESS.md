@@ -134,3 +134,31 @@ PR #5：<https://github.com/ba-song/dsh-memory-core/pull/5>
 - 当前性质：仅设计规格；没有实现 `assessWriteEvidence`，没有运行代码测试，没有修改 schema/召回/恢复逻辑，也没有连接 Host、设备或生产数据。
 - 真实性原则：exact quote 不等于来源认证；来源认证不等于命题客观为真；user confirmation 不等于独立交叉印证；Host observed 不等于 owner authentication/consent；副本不等于独立来源。
 - 下一步建议：检查现有 Memory 代码中的 provenance/quote gate/insertMemory 结构，定位纯函数与测试框架；只读审查，不更改生产行为。随后形成代码级测试映射和缺口报告。
+
+
+## 12. 工程推进方式更新与 WriteEvidence 代码实现启动（2026-11-24）
+
+### 用户明确要求
+
+- 用户明确要求：不要只做审查；在既有授权边界内，能安全实现的代码应先写出来。
+- 已将该要求写入 `PROJECT-HANDOFF.md` 第 2.1 节，作为所有后续会话的长期工程规则。
+- DSH 当前仍暂不工作。本阶段仅做 ChatGPT/GitHub 侧代码、纯函数、测试和文档工作；不连接 DSH，不触碰生产 DB、真实设备或汐的运行状态。
+
+### 当前代码基线核对
+
+- PR #3 当前实时状态：Draft / Open / 未合并。
+- PR #3 head：`56765116fea90d505a1d28d9c1a27c3abde5c6f6`，分支 `fix/p0-1-trusted-handoff-continuity`。
+- PR #6 当前实时状态：Draft / Open / 未合并；仍作为独立交接中心，不合并。
+- 已检查 PR #3 的 `lib/ingest/provenance.js`、`lib/ingest/p4.js`、`lib/store/memories.js`、`lib/ingest/explicit.js`、`lib/ingest/provenance-audit.js` 及相关测试。
+- 现有 `assessMemoryProvenance` 是只读诊断，不等同于矩阵要求的 `assessWriteEvidence` 多维状态判定器。
+- `insertMemory` 仅在调用方传入 `provenanceMode` 时执行 quote gate；quote 的 exact/derived 结果不能认证 source origin、author role、claim confirmation、lineage 或 access grant。
+- `ingestCandidate` 会先对候选做质量门控，再执行 quote resolution；quote mismatch 会在 embedding/写入前拒绝，但这仍不构成来源认证。
+- 当前尚未实现 `assessWriteEvidence`；本节记录的是实现启动前的代码基线，不代表功能已完成。
+
+### 实施策略
+
+- 先实现纯函数和确定性 fixtures，覆盖真实性矩阵八个维度、A-01 至 A-12 不变量及 T-01 至 T-12 反例。
+- 纯函数不得访问 DB、文件系统、Host、网络或设备；不得返回单一可信分数或 isTrue/objectivelyVerified。
+- 保持与现有写入、召回、遗忘和 schema 完全解耦；第一阶段只提供可测试的证据评估结果，不改变任何生产行为。
+- 之后补充单元测试与属性测试，运行隔离测试并记录实际结果。
+- 任何将判定结果接入真实写入、召回、恢复或跨会话读取的工作，另行评估并在触及真实行为前征求用户授权。
