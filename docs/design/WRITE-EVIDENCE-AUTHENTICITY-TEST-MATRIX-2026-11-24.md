@@ -19,6 +19,7 @@ WriteEvidence 不得返回一个含混的 `trusted: true/false`。至少分别�
 7. **独立性/谱系**：多个副本是否来自同一原始事件。
 8. **访问授权状态**：是否允许当前用途读取；授权不证明内容真实，内容真实也不自动允许披露。
 9. **内容确定性/模糊性**：来源内容本身是否明确带有“可能、好像、记不清”等不确定标记；来源真实不代表内容确定。该维度只保留明确提供的不确定性，不能由纯函数推断内容客观确定。
+10. **跨上下文披露同意（disclosure consent）**：是否有针对目标上下文/用途的明确披露授权；必须与当前访问状态分开记录。owner/authentication 或 access=allowed 均不自动构成披露同意。
 
 这八项不得互相推导。尤其：
 - exact quote ≠ authenticated source；
@@ -26,6 +27,7 @@ WriteEvidence 不得返回一个含混的 `trusted: true/false`。至少分别�
 - user-confirmed ≠ independently corroborated;
 - Host-observed session ≠ authenticated owner；
 - authenticated owner ≠ cross-session disclosure consent；
+- access=allowed ≠ disclosureConsent=granted；
 - three copies ≠ three independent witnesses。
 
 ## 2. 建议纯函数接口与结果
@@ -81,6 +83,7 @@ function assessWriteEvidence(input: WriteEvidence): AuthenticityAssessment;
 | A-10 | 访问拒绝优先于读取 | 通过诊断流程泄露私密原文 |
 | A-11 | tombstone/withdrawn 不可当作可读来源 | 删除后仍被恢复使用 |
 | A-12 | 来源真实性与访问授权独立 | “真实”被误用为“可披露” |
+| A-13 | access=allowed 不自动代表跨上下文 disclosure consent=granted | 把一般可访问权限当作跨会话披露授权 |
 
 ## 4. 纯函数状态组合矩阵
 
@@ -143,7 +146,16 @@ function assessWriteEvidence(input: WriteEvidence): AuthenticityAssessment;
 
 该维度不判断命题客观真假，只防止来源认证或引文匹配抹去用户原话中的模糊性。
 
-### 4.6 谱系与独立性
+### 4.6 访问状态 × 跨上下文披露同意
+
+| access | disclosureConsent | 期望 |
+|---|---|---|
+| allowed | missing/unknown | 不得推断已获跨上下文披露授权；保留 consent gap |
+| allowed | revoked/denied/expired | 明确拒绝跨上下文披露 |
+| denied/revoked/expired/tombstoned | granted | 访问拒绝仍优先，不得读取 |
+| allowed | granted | 仅表示输入声明已授权；真实授权仍须由可信 Host adapter 认证 |
+
+### 4.7 谱系与独立性
 
 | 输入 | 期望 |
 |---|---|
@@ -246,7 +258,7 @@ Host event proof 曾有效，但当前 access=revoked/tombstoned。
 ## 7. 测试分层与验收
 
 ### Layer 1 — 单元纯函数
-- 所有 T-01 至 T-12 均为确定性输入输出测试。
+- 所有 T-01 至 T-18 均为确定性输入输出测试。
 - T-11 必须断言 contentCertainty=uncertain；缺失字段默认 unknown，不能默认为确定。
 - 无文件、DB、Host、网络 mock；如需 mock，说明纯函数边界已被破坏。
 - 对每个 enum 做合法值与未知值测试。
