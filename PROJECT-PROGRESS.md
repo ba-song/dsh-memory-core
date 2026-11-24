@@ -254,3 +254,12 @@ PR #5：<https://github.com/ba-song/dsh-memory-core/pull/5>
 - 报告归档不授权任何生产代码、配置、数据库、设备状态修改。
 - 新会话对接 DSH 时，应读取六类报告的最新版本，并核对各自 commit/分支及当前代码、PR、CI 状态；历史报告只代表其证据时间点，不能直接当作实时状态。
 - 本条记录的是用户提供的归档治理要求，不代表本轮已经生成或归档六份新的 readiness 报告。
+
+
+## 20. 原始路线图图片跨会话存储尝试（2026-11-24）
+
+- 已确认原始上传图片文件为 `DSHA-汐-总体项目计划图-2026-11-24.png`（420,958 bytes）。
+- 已将原始图片上传到用户个人 Library：`/DSHA/汐/DSHA-汐-总体项目计划图-2026-11-24.png`；上传返回 succeeded。
+- 随后通过 Files Library 目录列表重新查到同名文件、正确路径、MIME `image/png` 和大小，验证文件已持久保存，不再只依赖当前会话的 `/mnt/data`。
+- 该方式提供跨会话 Library 检索入口，但不是 Git 仓库二进制资产，也不是 Project-backed file。当前工具未提供将其附加到 ChatGPT Project 文件区的能力；独立新会话的端到端读取尚未验证。
+- 新会话读取指引已写入 `PROJECT-HANDOFF.md` §11；继续以 `docs/PROJECT-ROADMAP-USER-PLAN-2026-11-24.md` 作为 GitHub 正式文字版路线图。
