@@ -14,13 +14,15 @@ function fixture() {
   db.exec(`CREATE TABLE raw_vectors (
     raw_id INTEGER PRIMARY KEY, dim INTEGER NOT NULL, vec BLOB NOT NULL,
     model TEXT, updated_at INTEGER NOT NULL)`)
-  const add = (id, cwd, text, tombstone = 0) => {
+  const add = (id, cwd, text, tombstone = 0, file = '2026-11-24/s-abcdef12.md') => {
     db.prepare(`INSERT INTO raw_meta(id,file,line_no,day,at,role,raw_text,cwd,tombstone)
-      VALUES(?, 'shared.md', ?, '2026-11-24', ?, 'user', ?, ?, ?)`)
-      .run(id, id, Date.now(), text, cwd, tombstone)
+      VALUES(?, ?, ?, '2026-11-24', ?, 'user', ?, ?, ?)`)
+      .run(id, file, id, Date.now(), text, cwd, tombstone)
     db.prepare('INSERT INTO raw_fts(rowid,text) VALUES(?,?)').run(id, bigrams(text))
   }
-  add(1, '/owner/home', '那天我们一起在海边散步，风很舒服。')
+  add(1, '/owner/home', '那天我们一起在海边散步，风很舒服。', 0, '2026-11-24/s-abcdef12.md')
+  add(4, '/owner/home', '同一会话继续聊到海边散步时拍的照片。', 0, '2026-11-25/s-abcdef12.md')
+  add(5, '/owner/home', '另一个会话也提到海边散步。', 0, '2026-11-24/s-fedcba98.md')
   add(2, '/owner/other', '另一个会话里的海边散步记录。')
   add(3, '/owner/home', '已撤回的海边散步记录。', 1)
   db.prepare('INSERT INTO raw_vectors(raw_id,dim,vec,model,updated_at) VALUES(?,2,?,?,?)')
@@ -46,7 +48,13 @@ test('recovery adapter only returns evidence from the exact trusted owner cwd', 
   const result = adapter.search(exec, { question: '海边散步', queryEmbed: [1, 0] })
   assert.equal(result.ok, true)
   assert.equal(result.evidence.length, 1)
-  assert.equal(result.evidence[0].locator, 'shared.md#1')
+  assert.equal(result.evidence.find((x) => x.locator.endsWith('#1')).locator, '2026-11-24/s-abcdef12.md#1')
+  const sameSession = result.evidence.filter((x) => x.locator.includes('s-abcdef12.md'))
+  assert.equal(sameSession.length, 2)
+  assert.equal(sameSession[0].independenceKey, sameSession[1].independenceKey)
+  const otherSession = result.evidence.find((x) => x.locator.includes('s-fedcba98.md'))
+  assert.ok(otherSession)
+  assert.notEqual(sameSession[0].independenceKey, otherSession.independenceKey)
   assert.match(result.evidence[0].excerpt, /一起在海边散步/)
   assert.equal(result.evidence[0].access, 'allowed')
   assert.equal(result.evidence[0].relation, 'unclear')
@@ -62,7 +70,7 @@ test('recovery adapter does not trust model-supplied scope or cwd arguments', ()
   })
   assert.equal(result.ok, true)
   assert.equal(result.evidence.length, 1)
-  assert.equal(result.evidence[0].locator, 'shared.md#1')
+  assert.equal(result.evidence.find((x) => x.locator.endsWith('#1')).locator, '2026-11-24/s-abcdef12.md#1')
 })
 
 test('recovery adapter denies an observed but non-owner session', () => {
