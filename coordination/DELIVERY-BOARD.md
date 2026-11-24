@@ -1,7 +1,7 @@
 # DSHA「汐」统一交付看板
 
 - 版本：BOARD-0003
-- 更新时间：2026-11-24 10:51（Asia/Shanghai）
+- 更新时间：2026-11-24 11:00（Asia/Shanghai）
 - 负责人：现任项目负责人（GPT）
 - 权威原则：代码状态以精确仓库/分支/commit 为准；自动化测试以绑定该 commit 的 CI/原始日志为准；设备状态以 DSH 实机证据为准。
 - 本看板区分“历史专项报告结论”和“本轮重新核实结论”，不把历史 PASS 自动延续到新 HEAD。
@@ -10,7 +10,7 @@
 
 | 智能体/工作线 | 权威仓库 | 最新可核实基线 | 当前状态 | 正在推进 / 下一交付 |
 |---|---|---|---|---|
-| Memory | ba-song/dsh-memory-core | main `752cd086`；P0-1 分支 `85c419b1` | **IN_PROGRESS；P0-1 archive scope + recovery adapter 隔离 CI PASS** | 继续可信只读来源适配器；后续再接主动恢复；跨分支 schema/历史栈仍隔离 |
+| Memory | ba-song/dsh-memory-core | main `752cd086`；P0-1 分支 `85c419b1` | **IN_PROGRESS；P0-1 archive scope + recovery adapter 隔离 CI PASS** | 独立审查 adapter 的 scope/lineage；补 planner normalization 测试；adapter 暂不接入运行时；跨分支 schema/历史栈仍隔离 |
 | Persona / EI | ba-song/dsh-persona-core | main `a84c7bad`；EI-1 验收目标 `3a137618` | **EI-1 代码隔离 PASS；设备复验 NOT RUN；EI-2A BLOCKED** | 统一 EI-2 设计与报告 blob；准备 EI-1 设备复验材料；不启动未授权迁移 |
 | Channel Bridge | ba-song/dsh-channel-bridge | main `bffcabc3` | **EXACT-HEAD CI PASS（隔离分支）** | 562 tests / 560 pass / 0 fail / 2 skipped；fake transport；group-turn 重放审查待做 |
 | Douyin | ba-song/dsh-douyin | main `da799dd4` | **EXACT-HEAD CI PASS（隔离分支）** | check PASS；310 tests / 310 pass / 0 fail / 0 skipped；fake/local tests |
@@ -35,10 +35,15 @@
 验证：
 - Push CI：run [45315021052](https://github.com/ba-song/dsh-memory-core/actions/runs/45315021052) — SUCCESS
 - PR CI：run [45315015204](https://github.com/ba-song/dsh-memory-core/actions/runs/45315015204) — SUCCESS
-- 两份原始 job log 均显示：147 tests / 146 pass / 0 fail / 1 skipped。
+- RawArchive scope 修复 HEAD `8481d9f` 的两份原始 job log：147 tests / 146 pass / 0 fail / 1 skipped。\n- Recovery adapter 最终 HEAD `85c419b` 的两份原始 job log：151 tests / 150 pass / 0 fail / 1 skipped。
 - 此结果只证明 GitHub 隔离 CI；DSHA 本地/真机验证仍未完成。
 
-### Channel Bridge / Douyin 精确 HEAD CI 工作线\n\n- Channel Bridge：Draft PR [#2](https://github.com/ba-song/dsh-channel-bridge/pull/2)，分支 `ci/exact-head-tests-20261124`，workflow commit `2db5480`，基于 main `bffcabc3`；CI 成功，562 tests / 560 pass / 0 fail / 2 skipped。只执行 fake/local tests。\n- Douyin：Draft PR [#1](https://github.com/ba-song/dsh-douyin/pull/1)，分支 `ci/exact-head-tests-20261124`，最新 workflow commit `bb288a8`，基于 main `da799dd4`；`npm run check` PASS；两份原始 job log 均为 310 tests / 310 pass / 0 fail / 0 skipped。测试只用 fake/local transport。\n\n## 3. 历史成果与当前不可混淆的状态
+### Channel Bridge / Douyin 精确 HEAD CI 工作线
+
+- Channel Bridge：Draft PR [#2](https://github.com/ba-song/dsh-channel-bridge/pull/2)，分支 `ci/exact-head-tests-20261124`，workflow commit `2db5480`，基于 main `bffcabc3`；CI 成功，562 tests / 560 pass / 0 fail / 2 skipped。只执行 fake/local tests。
+- Douyin：Draft PR [#1](https://github.com/ba-song/dsh-douyin/pull/1)，分支 `ci/exact-head-tests-20261124`，最新 workflow commit `bb288a8`，基于 main `da799dd4`；`npm run check` PASS；两份原始 job log 均为 310 tests / 310 pass / 0 fail / 0 skipped。测试只用 fake/local transport。
+
+## 3. 历史成果与当前不可混淆的状态
 
 | 工作项 | 最近可用证据 | 当前结论 |
 |---|---|---|
@@ -82,7 +87,7 @@
 
 ## 6. 本负责人下一轮交付顺序
 
-1. 完成 RawArchive adapter 所需的只读访问上下文与 API 设计，直接实现可独立测试的代码，不触碰真实记忆数据。
+1. 对已实现的 RawArchive adapter 做独立安全审查，补 planner-normalization/lineage 测试；保持未注册、只读、不触碰真实记忆数据。
 2. 对 Channel Bridge 与 Douyin 当前精确 main HEAD 启动 fake-only 的 check/test，并把历史测试报告与当前结果分开。
 3. 核对 Persona EI-1/EI-2 当前分支与报告的 blob 对齐，提交可验证修复。
 4. 对 Autonomy 做静态/fake contract 检查，找出可在不运行真实执行器情况下闭合的缺口。
