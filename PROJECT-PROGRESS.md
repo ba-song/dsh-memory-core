@@ -162,3 +162,15 @@ PR #5：<https://github.com/ba-song/dsh-memory-core/pull/5>
 - 保持与现有写入、召回、遗忘和 schema 完全解耦；第一阶段只提供可测试的证据评估结果，不改变任何生产行为。
 - 之后补充单元测试与属性测试，运行隔离测试并记录实际结果。
 - 任何将判定结果接入真实写入、召回、恢复或跨会话读取的工作，另行评估并在触及真实行为前征求用户授权。
+
+
+## 13. WriteEvidence 纯函数首轮实现（2026-11-24）
+
+- 用户确认第一版 `assessWriteEvidence` 只评估并返回证据状态，不直接拦截或改变 `insertMemory` 写入行为。
+- 已在独立分支 `feat/write-evidence-assessment-pure` 实现纯函数 `lib/ingest/write-evidence.js`，输出来源认证、作者角色、定位、引文、命题确认、谱系、访问授权七个独立状态维度，以及 gaps、warnings、conflicts。
+- 新增 `tests/write-evidence.test.mjs`，覆盖 T-01 至 T-12 及 fail-closed 默认值/状态正交性检查。
+- 该模块无 DB、文件系统、网络、Host 或设备 I/O；未接入 `insertMemory`、recall、schema、恢复或生产流程。
+- PR #7：`https://github.com/ba-song/dsh-memory-core/pull/7`，Draft / Open / 未合并；base 为 PR #3 分支 `fix/p0-1-trusted-handoff-continuity`，head 为 `8523942b19cf54a5bd1746a96f4196e6b48dfa39`。
+- GitHub Actions run #45358676068（head `8523942b19cf54a5bd1746a96f4196e6b48dfa39`）测试 job conclusion=success。
+- 测试通过仅证明当前隔离实现通过仓库 CI；不证明 Host proof 在生产环境可信，也不代表已具备生产写入保护或实机能力。
+- 未合并、未部署、未修改真实记忆行为或生产数据。
