@@ -427,3 +427,14 @@ ChatGPT 总协调职责：
 - Q149 raw archive adapter 先检查 Host execution session、liveSessions、owner cwd/scope，再执行 cwd/tombstone/role 限定读取；它是当前 Owner session recovery，不是跨 Conversation disclosure consent。
 - 既有 `tests/ingest-provenance-paths.test.mjs` 使用临时 DB 覆盖 explicit、P4、migration、manual 四类路径。
 - 风险：quote gate opt-in 是潜在旁路，但强制默认拒绝会改变现有写入行为；当前只记录提案，不改变生产行为。
+
+
+## 16. 本轮最终 CI 与 PR 状态核验（2026-11-24）
+
+- PR #7 head `1f432a892cfbcbca6b75f5f4d3ea1fd2507679b6`：Node tests run `45368833932` completed / success。
+- PR #8 head `6edb30211749dde363d069e6f3dd267e0a7e0ee1`：Node tests run `45369132473` completed / success。首轮失败原因和修正已记录在 PR #8 描述及 G-09/G-10 测试。
+- PR #3：Open / Draft / 未合并，head `56765116fea90d505a1d28d9c1a27c3abde5c6f6`。
+- PR #6：Open / Draft / 未合并，当前交接中心分支。
+- PR #7：Open / Draft / 未合并，base 为 PR #3 分支。
+- PR #8：Open / Draft / 未合并，base 为 PR #3 分支。
+- 新会话仍须重新查询实时状态；本节不是永久状态。
