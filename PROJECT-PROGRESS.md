@@ -283,3 +283,14 @@ PR #5：<https://github.com/ba-song/dsh-memory-core/pull/5>
 - 新增 T-13 至 T-15：非 Host 来源携带 proof、纯函数不宣称验证 proof、畸形 proof 和非法枚举 fail-closed。
 - PR #7 代码与测试已更新；等待最新 head 的 CI 结果。未接入 runtime、未触碰生产记忆、配置或设备。
 - 同步更新 WriteEvidence 测试矩阵，明确该 proof 语义边界。
+
+
+## 23. WriteEvidence proof 语义修正与 CI 验证（2026-11-24）
+
+- 本轮实时核验：PR #3 Open/Draft，head `56765116fea90d505a1d28d9c1a27c3abde5c6f6`，CI run `45351963276` success；PR #7 Open/Draft，head `a30b67e5e2c855da90b91559ed6d990a0ee875ec`，CI run `45366722220` success；PR #6 Open/Draft/未合并。
+- PR #7 修复了纯函数把 caller 提供的 proof-shaped 对象误报为 Host-authenticated 的语义问题。
+- 输出从 `host_event_backed` 改为 `host_event_proof_claimed`，并显式警告纯函数没有验证 proof issuer；非 Host 来源携带 proof 不再升级来源认证。
+- 新增 T-13 至 T-15，覆盖伪造/错用 proof 与非法输入 fail-closed。
+- 最新 PR #7 CI 在 head `a30b67e5e2c855da90b91559ed6d990a0ee875ec` 上通过（run `45366722220`）。
+- 当前改动仍是隔离纯函数与测试，没有 runtime 接入、真实记忆写入、数据库迁移、配置变更或设备操作。
+- 下一工程检查：逐项核对证据维度和 P0 不变量，特别确认跨会话 disclosure consent 与 access 状态分离；增加枚举/属性测试；继续梳理可信 Host adapter 契约。
