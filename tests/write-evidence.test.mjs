@@ -14,7 +14,7 @@ const assess = (input) => assessWriteEvidence(input)
 // T-02 exact quote does not establish claim truth/confirmation.
 {
   const r = assess({ origin: { kind: 'host_event' }, hostEventProof: { verified: true, issuer: 'trusted_host_adapter' }, sourceRole: 'user', quoteState: 'exact' })
-  assert.equal(r.sourceAuth, 'host_event_backed')
+  assert.equal(r.sourceAuth, 'host_event_proof_claimed')
   assert.equal(r.claimConfirmation, 'unconfirmed')
   assert.ok(r.warnings.includes('exact_quote_does_not_confirm_claim'))
   assert.equal('objectivelyVerified' in r, false)
@@ -68,7 +68,7 @@ const assess = (input) => assessWriteEvidence(input)
 // T-09 authentic source with revoked access remains inaccessible.
 {
   const r = assess({ origin: { kind: 'host_event' }, hostEventProof: { verified: true, issuer: 'trusted_host_adapter' }, access: 'revoked', quoteState: 'exact' })
-  assert.equal(r.sourceAuth, 'host_event_backed')
+  assert.equal(r.sourceAuth, 'host_event_proof_claimed')
   assert.equal(r.access, 'revoked')
   assert.ok(r.warnings.includes('current_access_not_allowed'))
 }
@@ -83,7 +83,7 @@ const assess = (input) => assessWriteEvidence(input)
 // T-11 uncertainty in the content is not erased by source authenticity.
 {
   const r = assess({ origin: { kind: 'host_event' }, hostEventProof: { verified: true, issuer: 'trusted_host_adapter' }, sourceRole: 'user', quoteState: 'exact', contentCertainty: 'uncertain' })
-  assert.equal(r.sourceAuth, 'host_event_backed')
+  assert.equal(r.sourceAuth, 'host_event_proof_claimed')
   assert.equal(r.claimConfirmation, 'unconfirmed')
   assert.equal(r.contentCertainty, 'uncertain')
   assert.ok(r.warnings.includes('content_uncertainty_preserved'))
@@ -122,7 +122,47 @@ const assess = (input) => assessWriteEvidence(input)
   const withoutProof = assess({ origin: { kind: 'host_event' } })
   const withProof = assess({ origin: { kind: 'host_event' }, hostEventProof: { verified: true, issuer: 'trusted_host_adapter' } })
   assert.equal(withoutProof.sourceAuth, 'unknown')
-  assert.equal(withProof.sourceAuth, 'host_event_backed')
+  assert.equal(withProof.sourceAuth, 'host_event_proof_claimed')
+  assert.ok(withProof.warnings.includes('host_event_proof_shape_not_verified_by_pure_function'))
 }
 
 console.log(JSON.stringify({ ok: true, test: 'write-evidence', cases: 12 }))
+
+
+// T-13 proof-shaped caller input cannot authenticate a non-Host origin.
+{
+  const r = assess({
+    origin: { kind: 'caller_supplied' },
+    hostEventProof: { verified: true, issuer: 'trusted_host_adapter' },
+  })
+  assert.equal(r.sourceKind, 'caller_supplied')
+  assert.equal(r.sourceAuth, 'caller_supplied')
+  assert.ok(r.warnings.includes('host_event_proof_ignored_for_non_host_origin'))
+}
+
+// T-14 the pure evaluator never claims to verify the adapter proof itself.
+{
+  const r = assess({
+    origin: { kind: 'host_event' },
+    hostEventProof: { verified: true, issuer: 'trusted_host_adapter' },
+  })
+  assert.equal(r.sourceAuth, 'host_event_proof_claimed')
+  assert.ok(r.warnings.includes('host_event_proof_shape_not_verified_by_pure_function'))
+}
+
+// T-15 malformed proof and invalid enum values fail closed.
+{
+  const r = assess({
+    origin: { kind: 'host_event' },
+    hostEventProof: ['verified', 'trusted_host_adapter'],
+    sourceRole: 'administrator',
+    quoteState: 'perfect',
+    access: 'granted',
+    contentCertainty: 'certain',
+  })
+  assert.equal(r.sourceAuth, 'unknown')
+  assert.equal(r.sourceRole, 'unknown')
+  assert.equal(r.quote, 'not_checked')
+  assert.equal(r.access, 'unknown')
+  assert.equal(r.contentCertainty, 'unknown')
+}
