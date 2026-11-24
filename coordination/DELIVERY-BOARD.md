@@ -1,7 +1,7 @@
 # DSHA「汐」统一交付看板
 
-- 版本：BOARD-0006
-- 更新时间：2026-11-24 11:12（Asia/Shanghai）
+- 版本：BOARD-0007
+- 更新时间：2026-11-24 11:20（Asia/Shanghai）
 - 负责人：现任项目负责人（GPT）
 - 权威原则：代码状态以精确仓库/分支/commit 为准；自动化测试以绑定该 commit 的 CI/原始日志为准；设备状态以 DSH 实机证据为准。
 - 本看板区分“历史专项报告结论”和“本轮重新核实结论”，不把历史 PASS 自动延续到新 HEAD。
@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | Memory | ba-song/dsh-memory-core | main `752cd086`；P0-1 分支 `85c419b1` | **IN_PROGRESS；P0-1 archive scope + recovery adapter 隔离 CI PASS** | 独立审查 adapter 的 scope/lineage；补 planner normalization 测试；adapter 暂不接入运行时；跨分支 schema/历史栈仍隔离 |
 | Persona / EI | ba-song/dsh-persona-core | main `a84c7bad`；EI-1 验收目标 `3a137618` | **EI-1 代码隔离 PASS；设备复验 NOT RUN；EI-2A BLOCKED** | EI-2 设计与报告 blob 已同步（55cd080）；独立复核设计边界；准备 EI-1 设备复验材料；EI-2A 仍不启动 |
-| Channel Bridge | ba-song/dsh-channel-bridge | main `bffcabc3` | **MAIN 基线 CI PASS；群记忆重试修复 PR CI PASS** | main `bffcabc3`：562/560/0/2；修复分支 PR #3：564/562/0/2；修复限流/异常后丢失群轮次与提前推进游标；fake-only |
+| Channel Bridge | ba-song/dsh-channel-bridge | main `bffcabc3` | **MAIN 基线 CI PASS；群记忆重试修复 PR CI PASS** | main `bffcabc3`：562/560/0/2；修复分支 PR #3 最新 HEAD `296388f`：565/563/0/2；增加 flush in-flight 新回复二次调度测试，fake-only |
 | Douyin | ba-song/dsh-douyin | main `da799dd4` | **EXACT-HEAD CI PASS（隔离分支）** | check PASS；310 tests / 310 pass / 0 fail / 0 skipped；fake/local tests |
 | Autonomy / Life | ba-song/dsh-autonomy | main `6c4a4753` | **DESIGN/STATIC REVIEW；REAL EXECUTION BLOCKED** | 只做静态与 fake 测试；核对 realSafe/自动回复调用链；不得启动 tick、Home、执行器或真实发送 |
 | Android | DSH-APP/DSHA | main `36d89b72`（build357） | **DEVICE VALIDATION NOT RUN** | 同步 60 秒观察窗文档状态；准备只读设备基线与验收步骤；kill/reboot/权限变更/安装需另行授权 |
@@ -67,7 +67,7 @@
 ## 4. 并行安排与依赖
 
 1. **Memory（主线）**：由项目负责人推进 P0-1 只读 adapter 与安全测试；先完成可信 session → owner/scope → source adapter 的只读链路，不写真实记忆。
-2. **Channel Bridge（可并行）**：群记忆失败/限流重试修复已完成隔离 CI；下一步做独立审查及失败后新消息并发边界测试，只 fake transport。
+2. **Channel Bridge（可并行）**：群记忆失败/限流重试与 in-flight 新回复二次调度修复已完成隔离 CI；下一步独立审查幂等和时间戳边界，只 fake transport。
 3. **Douyin（可并行）**：精确 main check/test 与 watcher 契约专项；只 fake transport。Autonomy 联合评审通知去重，不启动真实自动回复。
 4. **Persona/EI（可并行）**：只同步 EI-2 设计基线和 EI-1 验收材料；不实施 EI-2A，不改 Memory 仓库。
 5. **Autonomy（可并行）**：静态审查 realSafe/自动回复门禁与 fake contract tests；不得启动真实执行器。
@@ -90,7 +90,7 @@
 
 ## 6. 本负责人下一轮交付顺序
 
-1. 对已实现的 RawArchive adapter 做独立安全审查，补 planner-normalization/lineage 测试；保持未注册、只读、不触碰真实记忆数据。
+1. 对已实现的 RawArchive adapter 做独立安全审查，补 planner-normalization 防御测试；保持未注册、只读、不触碰真实记忆数据。
 2. Channel Bridge 审查 PR #3 并补并发边界测试；Douyin/Autonomy 审查 watcher 双投递和自动 dmSend 门禁，均只做 fake/static。
 3. 独立复核 Persona 已同步的 EI-2 设计，保持 EI-2A BLOCKED；准备 EI-1 设备复验资料。
 4. 对 Autonomy 做静态/fake contract 检查，找出可在不运行真实执行器情况下闭合的缺口。
