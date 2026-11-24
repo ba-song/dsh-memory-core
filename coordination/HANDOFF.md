@@ -4312,3 +4312,37 @@ A–E 合计为 P4 基线之上 30 个提交；每一段均为纯前进，没有
 - Memory planner hardening HEAD `61ea91efadc9cdefe05debb0c5e81c9e456626ed` 对应 Push CI run `45317824146` 已完成 SUCCESS，原始 job log：**151 tests / 150 pass / 0 fail / 1 skipped**。
 - Channel Bridge 最新 HEAD `296388f0c5f6db05722a4ac65ef6076a700dd65c` 对应 Push CI run `45317781456` SUCCESS，原始 job log：**565 tests / 563 pass / 0 fail / 2 skipped**。
 - 看板后续更新至 BOARD-0007；看板提交 `af69840214e4c6369ab8e521889ab694d8eaf99a`。
+
+
+---
+
+## 2026-11-24 11:28 +0800 · Channel Bridge uncertain-commit 幂等补强 · HANDOFF-0082
+
+### 82.1 新发现
+
+Memory `lib/group/turn.js` 的去重键由 `groupId + at` 生成（`group-turn:<groupId>:<at>`）。Channel Bridge 原先每次 flush retry 都重新生成 `at`。如果服务端已写入、但调用方在收到成功响应前遇到异常，重试可能使用新 key，形成重复记忆。
+
+### 82.2 修复
+
+- 失败批次在 pending entry 中保留原始 `turnAt`。
+- 限流、错误返回、异常路径合并 pending 时保留最初 `turnAt`；重试沿用相同 group-turn source key。
+- 新增模拟“服务端先持久化、随后响应丢失”的测试：重试使用相同 at，服务端返回 duplicate，持久化条目仍只有一条。
+- 与此前 in-flight 新回复二次调度修复一起保留。
+
+交付：
+- Channel Bridge 分支 `fix/group-turn-memory-retry`
+- 最新 HEAD `4f74b4d217f98d742675d1763c13941433cb8646`
+- 代码提交 `46672bdc5269f37b9d7ac09a94ad1f077e6b6da6`
+- 测试提交 `4f74b4d217f98d742675d1763c13941433cb8646`
+- Push CI run `45318139638` SUCCESS；原始 job log：**566 tests / 564 pass / 0 fail / 2 skipped**。
+- PR #3 仍 Draft / open / not merged；未连接真实 QQ/OneBot。
+
+### 82.3 仍未闭合
+
+- Bridge 游标仍基于 `msg.at`，bucket 只保存 speaker/text/at，没有稳定 inbound message ID。相同毫秒时间戳、进程重启后的 cursor 恢复仍需单独设计与测试。
+- 记忆服务的 group-turn 去重键稳定性已由 bridge retry 保持，但这不解决跨进程的消息消费游标持久化。
+- 不合并、不部署、不写生产数据库。
+
+### 82.4 看板
+
+- 看板更新至 BOARD-0008，提交 `a4be56fc6b74967b0c5253c989a16ee81a2b1c26`。
