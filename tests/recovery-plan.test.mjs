@@ -48,6 +48,15 @@ const copied = planMemoryRecovery({
 assert.equal(copied.evidenceCounts.independentSupportingLineages, 1)
 assert.equal(copied.outcome, 'supported')
 
+const copiedOnly = planMemoryRecovery({
+  claim: '只有转述摘要',
+  evidence: [
+    { id: 'copy', access: 'allowed', relation: 'supports', independenceKey: 'origin', copiedFrom: 'source' },
+  ],
+})
+assert.equal(copiedOnly.evidenceCounts.independentSupportingLineages, 0)
+assert.equal(copiedOnly.outcome, 'insufficient_evidence')
+
 const vague = planMemoryRecovery({
   claim: '那次经历',
   evidence: [{ id: 'v', access: 'allowed', relation: 'unclear', excerpt: '好像是夏天' }],
