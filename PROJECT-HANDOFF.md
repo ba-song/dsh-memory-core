@@ -325,3 +325,41 @@ ChatGPT 总协调职责：
 ### 跨会话可发现性强调（用户补充）
 
 用户明确表示存储位置不重要，关键是其他会话能正常找到并读取；因此本节是给未来会话的主动操作指令，不只是位置备注。接手时应先按上述 Library 步骤查找，不能假设图片会自动出现在新会话附件区。若成功读取，才将原图视觉信息作为已检查来源；若无法访问，必须如实报告并继续使用 GitHub 文字版，不得虚报。
+
+
+## 12. 2026-11-24 工程接续快照（每次接手须重新核验）
+
+以下是本次工作轮次的已核验快照，不可当作永久实时状态；新会话必须重新读取 PR、分支和 CI。
+
+### PR #3 — P0-1 trusted handoff continuity
+- URL：`https://github.com/ba-song/dsh-memory-core/pull/3`
+- 状态：Open / Draft / 未合并
+- 分支：`fix/p0-1-trusted-handoff-continuity`
+- 本轮核验 head：`56765116fea90d505a1d28d9c1a27c3abde5c6f6`
+- 对应 CI：run `45351963276`，Node tests，completed / success。
+- 仍未实机验证；跨 Conversation pins/projects/decisions/todos 交接保持关闭，`publicBrief` fail-closed。
+
+### PR #7 — isolated WriteEvidence assessment
+- URL：`https://github.com/ba-song/dsh-memory-core/pull/7`
+- 状态：Open / Draft / 未合并
+- 分支：`feat/write-evidence-assessment-pure`，base 为 PR #3 分支。
+- 本轮核验 head：`a30b67e5e2c855da90b91559ed6d990a0ee875ec`
+- 对应 CI：run `45366722220`，Node tests，completed / success。
+- 纯函数输出分别保留来源类型、proof 声明、作者角色、locator、quote、claim confirmation、lineage、access、content certainty，以及 gaps/warnings/conflicts。
+- 重要限制：`host_event_proof_claimed` 只描述输入 proof 的形状声明；纯函数不认证 proof issuer，不等于真实 Host 身份认证或生产授权。
+- 新增 T-13 至 T-15，覆盖非 Host 来源携带 proof 不得升级、纯函数不得宣称认证 proof、畸形 proof/非法枚举 fail-closed。
+- 仍未接入 runtime、memory write 或真实数据库；不得合并/部署。
+
+### PR #6 — project continuity center
+- URL：`https://github.com/ba-song/dsh-memory-core/pull/6`
+- 状态：Open / Draft / 未合并；专用交接中心，不合并。
+- 分支：`docs/project-continuity-center-20261124`
+- 本轮继续更新项目治理、路线图、访谈决策、DSH 报告归档和图片跨会话读取说明。
+- 新会话必须以 GitHub 实时 PR/CI 状态覆盖本节快照。
+
+### 下一步安全工程任务
+1. 对照 WriteEvidence 矩阵逐项核对全部证据维度与 P0 不变量，尤其检查 disclosure consent 是否与一般 access 状态明确分离。
+2. 增加枚举全覆盖、缺失/null/非法类型、属性不变量测试；测试必须保持纯函数、无 I/O。
+3. 继续梳理真实 Host adapter 的可信 proof 来源与授权 API；在 Host 无法提供可认证身份/同意事件时保持 fail-closed。
+4. 对现有 provenance 写入入口建立字段路径矩阵；不回填真实数据。
+5. 继续更新 PR #7 与本交接中心，保持 PR #3/#7 Draft，不合并、不部署，除非用户明确授权。
