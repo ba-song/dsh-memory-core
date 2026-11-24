@@ -294,3 +294,13 @@ PR #5：<https://github.com/ba-song/dsh-memory-core/pull/5>
 - 最新 PR #7 CI 在 head `a30b67e5e2c855da90b91559ed6d990a0ee875ec` 上通过（run `45366722220`）。
 - 当前改动仍是隔离纯函数与测试，没有 runtime 接入、真实记忆写入、数据库迁移、配置变更或设备操作。
 - 下一工程检查：逐项核对证据维度和 P0 不变量，特别确认跨会话 disclosure consent 与 access 状态分离；增加枚举/属性测试；继续梳理可信 Host adapter 契约。
+
+
+## 24. WriteEvidence 补齐跨上下文披露同意维度（2026-11-24）
+
+- 对照原始测试矩阵 A-05/A-12 发现：`assessWriteEvidence` 原有 `access` 字段不能表达独立的跨上下文披露同意。
+- 已在 PR #7 纯函数新增 `disclosureConsent`，默认 unknown；枚举覆盖 granted/denied/revoked/expired/missing/not_required/unknown。
+- access=allowed 不会自动推断 consent=granted；consent denied/revoked/expired 会产生拒绝披露警告；consent granted 也不能覆盖 access denied。
+- 新增 T-16 至 T-18，覆盖上述三种关键组合；测试和 CI 正在针对新 head 执行，完成前不宣称通过。
+- 同步更新矩阵：增加 A-13、独立维度定义、状态组合及测试要求。
+- 仍为隔离纯函数，无 I/O、无 runtime 接入、无真实数据写入；跨会话披露保持 fail-closed。
