@@ -377,3 +377,11 @@ ChatGPT 总协调职责：
 - 同步更新 WriteEvidence 矩阵，增加 A-13 和访问状态/披露同意正交组合。
 
 本项属于 P0 证据模型补齐；仍未接入 runtime、archive/DB 读取或 memory write。生产授权仍 fail-closed。
+
+
+### 最新工程快照追加：披露同意维度（2026-11-24）
+
+- PR #7 最新 head：`d05e09b9746f45385ca5160e01f114104ff818cf`；CI run `45367578575`（Node tests）completed / success。
+- PR #7 新增 `disclosureConsent` 独立维度和 T-16–T-18；access 与 consent 不互相推导。
+- PR #7 仍 Open / Draft / 未合并，base 仍为 PR #3 分支。
+- 注意：以上 CI 只证实当前自动化测试环境通过；不证明 Host 授权 API、真实跨会话披露或 DSHA 实机安全。
