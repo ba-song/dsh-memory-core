@@ -175,3 +175,19 @@
 4. clarity/遗忘维护不考虑来源证据等级。
 
 建议后续先做只读诊断输出与 fixture 测试，比较不同 provenance 记录在召回、注入、恢复规划中的实际表现；再提交“证据等级如何影响使用方式”的策略提案。任何改变召回、排序、注入、淡化、归档或自动恢复行为的实现，均先向项目所有者请示，不在本轮直接修改。
+
+
+## 7. 只读证据汇总诊断（2026-11-24 追加）
+
+新增模块：`lib/ingest/provenance-report.js`，导出 `summarizeMemoryProvenance(rows)`。
+
+- 复用既有 `assessMemoryProvenance`，按 provenance、status、quoteEvidence、gaps 聚合计数。
+- 仅输出汇总，不输出记忆正文、quote 内容、source_msg_id 或 source_file。
+- 明确标记 `mode=read-only-aggregate`、`readOnly=true`、`textExposed=false`。
+- 函数不访问数据库、不写文件、不改变行对象；调用方负责通过既有授权边界读取需要审计的行。
+- 新增 `tests/provenance-report.test.mjs` 覆盖分类、缺口计数、输入不变及报告不泄露正文/来源定位符。
+
+边界说明：
+- 该模块目前是纯函数库，不接入运行时工具、定时任务、召回或注入；尚未生成任何真实数据库统计。
+- 它不会证明 `verified` 命题为真，只复用既有标签并做保守计数。
+- 测试文件已提交，但本环境没有仓库 checkout 可直接运行 `npm test`；当前提交尚无 GitHub Actions workflow run 或 combined status 记录。因此测试状态为“未执行/未验证”，不是通过。
