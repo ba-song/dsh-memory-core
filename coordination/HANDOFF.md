@@ -4073,3 +4073,59 @@ A–E 合计为 P4 基线之上 30 个提交；每一段均为纯前进，没有
 ### 76.4 授权声明
 
 本次未授权 EI-2A、生产记忆写入、自动回复、QQ 外发、真实 tick、Home 自动唤醒、profile 修改、Android 权限扩大、kill/reboot、staging、部署、重启或生产 DB 操作。
+
+
+---
+
+## 2026-11-24 10:51 +0800 · 新负责人接管与交付模式切换 · HANDOFF-0077
+
+### 77.1 负责人接任与基线
+
+- 当前负责人：GPT；接管项目统筹、技术决策、跨仓库协调、GitHub 侧开发和独立验收。
+- 六条常驻专业线以既有交接记录为准：Memory、Persona/EI、Channel Bridge、Douyin、Autonomy/Life、Android。
+- Host Runtime 是临时工程工作线，不计入六条常驻业务线。
+- 六个智能体的实际在线/后台运行状态不可由 GitHub 证明；看板只记录仓库、报告和可验证交付状态，不声称智能体正在后台运行。
+- 本次接管读取需求基线、P0-1 阶段报告、跨会话授权报告、共享 HANDOFF/REPORT、六条专业线的历史报告和仓库当前 main/目标分支 HEAD。
+
+### 77.2 当前看板
+
+- 新增 `coordination/DELIVERY-BOARD.md`，BOARD-0003。
+- 提交：`46b95a3ad5059ac9854825e6d25a937dca4fbcdd`。
+- 该看板将历史专项 PASS 与当前精确 HEAD 验证分开，并列出六条工作线状态、并行任务、依赖、阻塞和授权门禁。
+- 看板位于 `coordination/project-handoff` 分支；不是 main 产品代码，不构成产品运行变更。
+
+### 77.3 Memory 本轮代码交付与 CI
+
+- 仓库：`ba-song/dsh-memory-core`。
+- 分支：`fix/p0-1-trusted-handoff-continuity`。
+- PR #3 仍 Draft / open / not merged。
+- HEAD：`8481d9f881c7614bab49f61105802a86826ac745`。
+- `475c813d28278c05ae1df0827137248908d57f2e`：修复 RawArchive 语义向量命中回查缺少 cwd 约束的问题；上下文扩展限制为同 cwd，并排除 tombstone。
+- `8481d9f881c7614bab49f61105802a86826ac745`：增加语义跨 cwd 拒绝、上下文不跨 cwd、tombstone 上下文排除三组回归测试。
+- Push CI run `45315021052` SUCCESS；PR CI run `45315015204` SUCCESS。
+- 两份 job 原始日志均显示 147 tests / 146 pass / 0 fail / 1 skipped。
+- 此为 GitHub 隔离 CI；DSH 本地/Android 真机验证 NOT RUN。
+
+### 77.4 六条专业工作线状态（接管快照）
+
+| 工作线 | 最新可核对状态 | 下一交付 |
+|---|---|---|
+| Memory | P0-1 新提交已 CI PASS；其他历史分支仍有 schema 分叉和大栈集成风险 | 推进只读 adapter；不接真实记忆写入 |
+| Persona/EI | EI-1 历史代码隔离 PASS，设备 NOT RUN；EI-2A 未授权；EI-2 报告/设计 blob 曾不一致 | 对齐设计/报告精确 blob；准备 EI-1 设备验收 |
+| Channel Bridge | main HEAD `bffcabc306a21e3cbdb7549ab3bfca8e2ec43f13`；旧 550/550 未绑定此 HEAD | 当前 HEAD fake-only 全量测试；group-turn 失败重放审查 |
+| Douyin | main HEAD `da799dd4492ad5093aa0c5cd9376d68919a6ebd3`；旧审计未运行测试 | 当前 HEAD check/test；watcher/Autonomy 去重审查 |
+| Autonomy/Life | main HEAD `6c4a4753b4737060211955b1f022cab2f1d39521`；历史默认 dryRun/disabled，真实 profile 未核实 | 静态/fake 检查；禁止启动真实 executor/tick |
+| Android | main HEAD `36d89b72294348d0482d509109cf8e76d51fc1cb`；设备恢复验证未完成 | 只读设备基线准备；故障注入另行授权 |
+
+### 77.5 新的执行顺序
+
+1. Memory：继续 P0-1 可信只读 adapter，修复和测试均限定在开发分支，不写真实数据。
+2. Channel Bridge 与 Douyin：并行完成精确 main HEAD fake-only 测试，避免旧测试数字冒充当前结果。
+3. Persona/EI：同步 EI-2 设计和报告基线，不开展 EI-2A。
+4. Autonomy：静态/fake 审查 realSafe 与自动回复门禁，不启动真实执行。
+5. Android：准备只读验收清单，等待 DSH/Owner 实机参与。
+6. 每轮优先交付代码和测试；只维护看板与必要交接记录。
+
+### 77.6 授权边界
+
+本次接任不扩大既有权限。未合并 PR、未部署、未重启、未改生产配置/profile、未访问或写入生产数据库、未连接设备、未发送真实渠道消息、未启动真实 tick/Home/自动回复。任何会改变汐实际记忆、情绪、人格、自主行为或真实行动的高影响变更仍须先向 Owner 说明并取得批准。
