@@ -10,7 +10,7 @@
 
 | 智能体/工作线 | 权威仓库 | 最新可核实基线 | 当前状态 | 正在推进 / 下一交付 |
 |---|---|---|---|---|
-| Memory | ba-song/dsh-memory-core | main `752cd086`；P0-1 分支 `85c419b1` | **IN_PROGRESS；P0-1 archive scope + recovery adapter 隔离 CI PASS** | 独立审查 adapter 的 scope/lineage；补 planner normalization 测试；adapter 暂不接入运行时；跨分支 schema/历史栈仍隔离 |
+| Memory | ba-song/dsh-memory-core | main `752cd086`；P0-1 分支 `61ea91ef` | **IN_PROGRESS；RawArchive adapter CI PASS，planner 输入防御测试 CI PASS** | 独立审查 adapter 的 scope/lineage；补 planner lineage 测试；adapter 暂不接入运行时；跨分支 schema/历史栈仍隔离 |
 | Persona / EI | ba-song/dsh-persona-core | main `a84c7bad`；EI-1 验收目标 `3a137618` | **EI-1 代码隔离 PASS；设备复验 NOT RUN；EI-2A BLOCKED** | EI-2 设计与报告 blob 已同步（55cd080）；独立复核设计边界；准备 EI-1 设备复验材料；EI-2A 仍不启动 |
 | Channel Bridge | ba-song/dsh-channel-bridge | main `bffcabc3` | **MAIN 基线 CI PASS；群记忆重试修复 PR CI PASS** | main `bffcabc3`：562/560/0/2；修复分支 PR #3 最新 HEAD `296388f`：565/563/0/2；增加 flush in-flight 新回复二次调度测试，fake-only |
 | Douyin | ba-song/dsh-douyin | main `da799dd4` | **EXACT-HEAD CI PASS（隔离分支）** | check PASS；310 tests / 310 pass / 0 fail / 0 skipped；fake/local tests |
@@ -21,12 +21,12 @@
 
 ## 2. 本轮新交付（2026-11-24）
 
-### Memory / P0-1 RawArchive 范围修复
+### Memory / P0-1 RawArchive 范围修复与 planner normalization
 
 - 仓库：`ba-song/dsh-memory-core`
 - 分支：`fix/p0-1-trusted-handoff-continuity`
 - PR：[#3](https://github.com/ba-song/dsh-memory-core/pull/3)，Draft / open / not merged
-- 当前 HEAD：`85c419b1ae6328b48c3edec6f6ea47c5b170f149`
+- RawArchive adapter HEAD：`85c419b1ae6328b48c3edec6f6ea47c5b170f149`；planner hardening HEAD：`61ea91efadc9cdefe05debb0c5e81c9e456626ed`
 
 提交：
 - `475c813d28278c05ae1df0827137248908d57f2e`：语义向量命中回查增加 cwd 范围限制；上下文窗口命中行与邻近行均限制同 cwd 并排除 tombstone。
@@ -39,11 +39,11 @@
 - PR CI：run [45315015204](https://github.com/ba-song/dsh-memory-core/actions/runs/45315015204) — SUCCESS
 - RawArchive scope 修复 HEAD `8481d9f` 的两份原始 job log：147 tests / 146 pass / 0 fail / 1 skipped。
 - Recovery adapter 最终 HEAD `85c419b` 的两份原始 job log：151 tests / 150 pass / 0 fail / 1 skipped。
-- Adapter 尚未注册到运行时，也未连接 planner；因此不代表汐已获得主动恢复功能。此结果只证明 GitHub 隔离 CI；DSHA 本地/真机验证仍未完成。
+- Planner hardening Push CI：run [45317824146](https://github.com/ba-song/dsh-memory-core/actions/runs/45317824146) — SUCCESS，151 tests / 150 pass / 0 fail / 1 skipped，绑定 HEAD `61ea91e`。\n- Adapter 尚未注册到运行时，也未连接 planner；因此不代表汐已获得主动恢复功能。此结果只证明 GitHub 隔离 CI；DSHA 本地/真机验证仍未完成。
 
 ### Channel Bridge / Douyin 精确 HEAD CI 工作线
 
-- Channel Bridge：Draft PR [#2](https://github.com/ba-song/dsh-channel-bridge/pull/2)，分支 `ci/exact-head-tests-20261124`，workflow commit `2db5480`，基于 main `bffcabc3`；CI 成功，562 tests / 560 pass / 0 fail / 2 skipped。只执行 fake/local tests。\n- Channel Bridge 群记忆可靠性修复：Draft PR [#3](https://github.com/ba-song/dsh-channel-bridge/pull/3)，分支 `fix/group-turn-memory-retry`，HEAD `7a30c34ded5c7dd09ef3cc1e354311a526b6562d`；新增失败保留/成功后游标提交/每群单飞，Push CI run `45317155429` 和 PR CI run `45317162736` 均 SUCCESS，原始日志均为 **564 tests / 562 pass / 0 fail / 2 skipped**。
+- Channel Bridge：Draft PR [#2](https://github.com/ba-song/dsh-channel-bridge/pull/2)，分支 `ci/exact-head-tests-20261124`，workflow commit `2db5480`，基于 main `bffcabc3`；CI 成功，562 tests / 560 pass / 0 fail / 2 skipped。只执行 fake/local tests。\n- Channel Bridge 群记忆可靠性修复：Draft PR [#3](https://github.com/ba-song/dsh-channel-bridge/pull/3)，分支 `fix/group-turn-memory-retry`，HEAD `7a30c34ded5c7dd09ef3cc1e354311a526b6562d`；新增失败保留/成功后游标提交/每群单飞，Push CI run `45317155429` 和 PR CI run `45317162736` 均 SUCCESS，原始日志：中间 HEAD `7a30c34` 为 564/562/0/2；最新 HEAD `296388f` Push CI run `45317781456` SUCCESS，**565/563/0/2**。
 - Douyin：Draft PR [#1](https://github.com/ba-song/dsh-douyin/pull/1)，分支 `ci/exact-head-tests-20261124`，最新 workflow commit `bb288a8`，基于 main `da799dd4`；`npm run check` PASS；两份原始 job log 均为 310 tests / 310 pass / 0 fail / 0 skipped。测试只用 fake/local transport。
 
 ## 3. 历史成果与当前不可混淆的状态
@@ -59,7 +59,7 @@
 | Memory A–E validity stack | `4bf92aad` | 历史隔离测试 PASS；约 300 commits / 117 files 相对 main，禁止整栈直接合并 |
 | EI-1 | `3a137618` | 定向 21/21、全量 324/324 的历史代码隔离 PASS；设备 NOT RUN |
 | EI-2 / EI-2A | 设计文件已同步至 blob `670e5a34`（commit `5fc6d70`）；报告追加同步记录（`55cd080`） | 文档基线一致；EI-2A 仍 NOT RUN / 未获授权，不实施 |
-| Channel Bridge | main 基线 PR #2 CI `562/560/0/2`；群记忆修复 PR #3 CI `564/562/0/2` | 修复分支通过隔离 CI；仍需 code review 和 fake failure replay 扩展，未合并 |
+| Channel Bridge | main 基线 PR #2 CI `562/560/0/2`；群记忆修复 PR #3 最新 CI `565/563/0/2` | 修复分支通过隔离 CI；仍需 code review 和 fake failure replay 扩展，未合并 |
 | Douyin | 历史审计未运行；本轮 Draft PR #1 CI `310/310/0/0` | 当前 main 基线 check/test 隔离 CI PASS；自动回复/重复通知审查未完成 |
 | Autonomy | 历史 main CI 有成功记录；默认 disabled/dryRun | 不代表设备 profile 状态；真实执行路径不启动 |
 | Android | main build357 源码/文档可读 | 无本轮真机证据；恢复协议设计对齐不等于运行验收 |
