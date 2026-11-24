@@ -4212,3 +4212,48 @@ A–E 合计为 P4 基线之上 30 个提交；每一段均为纯前进，没有
 
 - 看板更新至 BOARD-0005，记录 EI-2 设计/报告 blob 已同步。
 - 本次不改变 EI-1 设备复验 NOT RUN 的状态。
+
+
+---
+
+## 2026-11-24 11:12 +0800 · Channel Bridge 群轮次记忆失败重试修复 · HANDOFF-0080
+
+### 80.1 发现的实际缺陷
+
+- 仓库：`ba-song/dsh-channel-bridge`，main 基线 `bffcabc306a21e3cbdb7549ab3bfca8e2ec43f13`。
+- 文件：`lib/group-turn-memory.js`。
+- 原实现先执行 `lastAt.set(gid, at)` 再调用 `saveGroupTurn()`；若记忆服务限流、返回失败或抛异常，下一轮过滤会跳过这批旧入站消息。同时 pending reply 已被删除，可能造成群聊共同经历丢失。
+- 这是对“记忆连续性”有直接影响的真实代码缺陷，不是单纯文档或设计问题。
+
+### 80.2 修复交付
+
+- 分支：`fix/group-turn-memory-retry`
+- Draft PR [#3](https://github.com/ba-song/dsh-channel-bridge/pull/3)
+- 当前 HEAD：`7a30c34ded5c7dd09ef3cc1e354311a526b6562d`
+- 产品代码提交：`0e4b681963e6604ad0e9112861995f380030be83`
+- 回归测试提交：`fe554c27eb3d2289d39cdc2a721bcc305ce336f5`
+- CI workflow 提交：`7a30c34ded5c7dd09ef3cc1e354311a526b6562d`
+
+变更：
+1. 仅在 `saveGroupTurn` 返回成功或 duplicate 确认时推进 per-group cursor。
+2. 限流、失败和异常时保留原批次 reply 文本，供后续 flush 重试。
+3. 同一 group 的 flush 单飞，避免并发重复写。
+4. 增加限流后重试、异常后重试、并发 flush 单飞三项回归覆盖（测试文件中为两项新增 test，覆盖三个情形）。
+
+### 80.3 验证
+
+- Push CI run `45317155429` SUCCESS。
+- PR CI run `45317162736` SUCCESS。
+- 两份原始 job log：**564 tests / 562 pass / 0 fail / 2 skipped**。
+- 仅 GitHub 隔离 CI + fake/local tests；未连接 QQ/OneBot，未触及真实群聊、生产数据库或设备。
+- PR #3 仍 Draft / open / not merged；没有部署或改变汐实际行为。
+
+### 80.4 验收边界与后续
+
+- 代码级修复和回归测试已完成；独立 code review、真实设备/渠道验证尚未完成。
+- 下一步重点审查：写入返回未知失败但服务端已持久化时的幂等语义；flush 期间新消息进入 pending 的并发边界；限流后的重试触发策略。
+- 未经 Owner 批准不启用生产配置、不合并、不部署。该修复改善群记忆写入可靠性，但不能声称已修复所有群聊记忆丢失情形。
+
+### 80.5 看板
+
+- 看板更新至 BOARD-0006，提交 `e5024b706f23431661a75535a07c6ca0aaf62898`。
