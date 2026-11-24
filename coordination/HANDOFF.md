@@ -4129,3 +4129,62 @@ A–E 合计为 P4 基线之上 30 个提交；每一段均为纯前进，没有
 ### 77.6 授权边界
 
 本次接任不扩大既有权限。未合并 PR、未部署、未重启、未改生产配置/profile、未访问或写入生产数据库、未连接设备、未发送真实渠道消息、未启动真实 tick/Home/自动回复。任何会改变汐实际记忆、情绪、人格、自主行为或真实行动的高影响变更仍须先向 Owner 说明并取得批准。
+
+
+---
+
+## 2026-11-24 10:59 +0800 · 六工作线接管后的首轮并行交付 · HANDOFF-0078
+
+### 78.1 Memory：RawArchive 只读恢复 adapter 已实现并通过隔离 CI
+
+- 仓库：`ba-song/dsh-memory-core`
+- 分支：`fix/p0-1-trusted-handoff-continuity`
+- PR #3：Draft / open / not merged；当前 HEAD `85c419b1ae6328b48c3edec6f6ea47c5b170f149`。
+- 新增 `lib/recovery/raw-archive.js`（commit `485af1fb7955515e5ace1b2e3c3a4c351825f628`）。
+- 新增 `tests/recovery-raw-archive.test.mjs`（commit `cffd82192802891aee9f2fbd3032ae33b3d299a9`）；修正 host cwd 精确匹配（`85c419b1ae6328b48c3edec6f6ea47c5b170f149`）。
+- Adapter 从宿主执行上下文取得 session，要求 liveSessions 精确匹配 ID/cwd，并由 `isOwnerCwd` 验证 owner-private；scope/purpose 由内部代码派生，不接受 caller 的 cwd/scope/access/lineage。
+- keyword 和 semantic SQL 均在读取前限制精确 cwd；follow-up row read 再次检查 cwd 与 tombstone；仅返回最小 evidence metadata/excerpt；relation 默认为 unclear。
+- 测试覆盖未观察 session 拒绝、owner 当前 cwd 范围、忽略模型伪造 scope/cwd、非 owner 拒绝，以及 tombstone/跨 cwd 不泄漏。
+- Push CI run `45315938182` SUCCESS；PR CI run `45315930744` SUCCESS；两份原始日志均为 **151 tests / 150 pass / 0 fail / 1 skipped**。
+- Adapter **尚未接入运行时工具/恢复流程**，不改变汐现有记忆行为，不代表主动恢复功能已经可用。下一步先独立代码审查与 source lineage 设计，再决定是否继续实现 planner 连接；仍只读、不写真实记忆。
+
+### 78.2 Channel Bridge：精确 main 基线测试首次获得可复核 CI
+
+- 仓库：`ba-song/dsh-channel-bridge`
+- 基线 main：`bffcabc306a21e3cbdb7549ab3bfca8e2ec43f13`。
+- 隔离 CI 分支：`ci/exact-head-tests-20261124`；Draft PR [#2](https://github.com/ba-song/dsh-channel-bridge/pull/2)。
+- workflow commit：`2db5480b41843cbd19a7f7eff5e4a066d55399a1`。
+- 先后修复 CI 环境缺少 lockfile cache 和 host-only `@deepseek-ai/schemastery`/yaml 依赖的问题；未修改产品源码。
+- Push CI run `45316147830` SUCCESS；PR CI run `45316142721` SUCCESS；原始日志：**562 tests / 560 pass / 0 fail / 2 skipped**。
+- 该结果绑定隔离 CI branch 的 workflow commit，其产品代码基于当前 main；只 fake/local tests，不连接真实 QQ/OneBot。
+- 后续仍需 group-turn 保存失败重放审查和真实渠道隔离验证；CI PASS 不代表这两项完成。
+
+### 78.3 Douyin：精确 main 基线测试首次获得可复核 CI
+
+- 仓库：`ba-song/dsh-douyin`
+- 基线 main：`da799dd4492ad5093aa0c5cd9376d68919a6ebd3`。
+- 隔离 CI 分支：`ci/exact-head-tests-20261124`；Draft PR [#1](https://github.com/ba-song/dsh-douyin/pull/1)。
+- workflow commit：`bb288a89edd4faa7a15255e640bfd1d6f140fd85`。
+- `npm run check` PASS；CI 环境按测试现有硬编码路径准备 Playwright；未连接真实账号或触发写操作。
+- Push CI run `45316274062` SUCCESS；PR CI run `45316270462` SUCCESS；两份原始日志均为 **310 tests / 310 pass / 0 fail / 0 skipped**。
+- 此前 CI 失败均为测试环境依赖未准备（schema dependency、Playwright 固定路径），修复只改 workflow，不改产品代码。
+- 后续仍需与 Autonomy 联合审查 watcher 重复通知与自动 dmSend 授权语义；不得因此启用自动回复。
+
+### 78.4 看板更新
+
+- `coordination/DELIVERY-BOARD.md` 更新至 BOARD-0003。
+- 最新看板提交：`145d824b4700187f9a37cff77a37bdfed4c2b75b`。
+- 看板明确六条常驻专业线、最新基线、当前状态、历史证据与当前 HEAD 的区别、并行依赖和授权门禁。
+- 六个智能体是否实时在线/后台运行无法由 GitHub 证明；看板不虚构其运行状态。
+
+### 78.5 下一轮优先级
+
+1. Memory：独立复核 raw-archive adapter 的安全边界和证据 lineage；adapter 保持未注册，先补最小 planner-normalization 单测，不扩大权限。
+2. Channel Bridge：对 group-turn 失败后 lastAt 提前推进导致不重放的风险做最小修复方案和 fake 回归测试。
+3. Douyin + Autonomy：并行审查 watcher 双投递与自动私信回复门禁，只做静态/fake，不启用真实动作。
+4. Persona/EI：核对 EI-1 设计/报告 blob 一致性，形成可验收材料；EI-2A 继续 BLOCKED。
+5. Android：准备只读设备基线清单，等 Owner/DSH 实机参与；不执行 kill/reboot/安装/权限变更。
+
+### 78.6 授权边界
+
+以上变更只新增隔离 CI 工作流、开发分支代码和测试、协调看板/交接记录。未合并 PR、未部署、未重启、未连接设备、未改生产 profile/config、未访问或写入生产数据库、未发送真实渠道消息、未启动 Autonomy executor/Home/tick/自动回复。任何改变汐实际记忆、人格、情绪、自主行为或现实行动的高影响变更仍须先向 Owner 说明并取得批准。
