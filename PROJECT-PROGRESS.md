@@ -242,3 +242,15 @@ PR #5：<https://github.com/ba-song/dsh-memory-core/pull/5>
 - 用户明确：该图是总体项目计划，应作为 PR #6 正式路线图依据；不能把规划阶段误写为已实现。
 - 新增 B-009 / D-019：分歧后汐可以主动表达和好意愿，也可以主动聊天分享、重新拉近距离，但不强求立即和好。
 - 用户进一步澄清：前述“和好后恢复亲近”只是提问例子，访谈范围不局限于该例子。方向访谈应保持开放、围绕项目整体方向灵活提出问题，不把例子固化为固定主题。
+
+
+## 19. DSH 报告归档与跨会话进度对接规则（2026-11-24）
+
+- 用户提供 DSH 报告归档要求，已将长期规则写入 `PROJECT-HANDOFF.md` §10。
+- 六模块报告统一归档到 `ba-song/dsh-memory-core/docs/audit/`，文件名分别为 `MEMORY-READINESS-AUDIT-YYYY-MM-DD.md`、`PERSONA-READINESS-AUDIT-YYYY-MM-DD.md`、`LIFE-READINESS-AUDIT-YYYY-MM-DD.md`、`BRIDGE-READINESS-AUDIT-YYYY-MM-DD.md`、`HOST-READINESS-AUDIT-YYYY-MM-DD.md`、`ANDROID-READINESS-AUDIT-YYYY-MM-DD.md`。
+- 报告必须有证据、测试结果、风险、阻断项、未验证项；严格标注源码证实、测试证实、设备证实和推断。
+- 每次 GitHub 归档回执必须包含仓库、分支、完整路径、commit SHA、blob SHA 和文件链接；不能提交时必须向统筹者报告失败原因，不得仅保存在设备本地。
+- 每轮使用新日期文件，不覆盖既有报告；同日修订也要保留版本关系。
+- 报告归档不授权任何生产代码、配置、数据库、设备状态修改。
+- 新会话对接 DSH 时，应读取六类报告的最新版本，并核对各自 commit/分支及当前代码、PR、CI 状态；历史报告只代表其证据时间点，不能直接当作实时状态。
+- 本条记录的是用户提供的归档治理要求，不代表本轮已经生成或归档六份新的 readiness 报告。
