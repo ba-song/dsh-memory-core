@@ -30,7 +30,9 @@
 
 提交：
 - `475c813d28278c05ae1df0827137248908d57f2e`：语义向量命中回查增加 cwd 范围限制；上下文窗口命中行与邻近行均限制同 cwd 并排除 tombstone。
-- `8481d9f881c7614bab49f61105802a86826ac745`：新增 3 组语义检索/上下文范围回归测试。\n- `485af1fb7955515e5ace1b2e3c3a4c351825f628`：新增 host-authorized、owner-private、精确 cwd 限制的只读 recovery adapter。\n- `cffd82192802891aee9f2fbd3032ae33b3d299a9` / `85c419b1ae6328b48c3edec6f6ea47c5b170f149`：adapter 测试和 host cwd 精确匹配修正。
+- `8481d9f881c7614bab49f61105802a86826ac745`：新增 3 组语义检索/上下文范围回归测试。
+- `485af1fb7955515e5ace1b2e3c3a4c351825f628`：新增 host-authorized、owner-private、精确 cwd 限制的只读 recovery adapter。
+- `cffd82192802891aee9f2fbd3032ae33b3d299a9` / `85c419b1ae6328b48c3edec6f6ea47c5b170f149`：adapter 测试和 host cwd 精确匹配修正。
 
 验证：
 - Push CI：run [45315021052](https://github.com/ba-song/dsh-memory-core/actions/runs/45315021052) — SUCCESS
