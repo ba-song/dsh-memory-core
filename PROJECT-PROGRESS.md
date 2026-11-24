@@ -304,3 +304,14 @@ PR #5：<https://github.com/ba-song/dsh-memory-core/pull/5>
 - 新增 T-16 至 T-18，覆盖上述三种关键组合；测试和 CI 正在针对新 head 执行，完成前不宣称通过。
 - 同步更新矩阵：增加 A-13、独立维度定义、状态组合及测试要求。
 - 仍为隔离纯函数，无 I/O、无 runtime 接入、无真实数据写入；跨会话披露保持 fail-closed。
+
+
+## 25. 批量推进：披露同意属性测试与跨上下文读取门禁（2026-11-24）
+
+- PR #7 新增 T-19 至 T-24，扩展到 24 项证据评估测试；最新 head `1f432a892cfbcbca6b75f5f4d3ea1fd2507679b6` 的 Node tests run `45368833932` completed / success。
+- 修订 WriteEvidence 矩阵，纠正旧的 `host_event_backed` 表述、旧的“未实现”状态及旧测试数量，统一为 `host_event_proof_claimed` 与 T-01 至 T-24。
+- 新建 PR #8：`feat/cross-context-read-gate-contract`，新增隔离门禁 orchestrator 与 G-01 至 G-10 测试。
+- 门禁要求 authorizeAndConsume 在 read 前执行；拒绝和 scope mismatch 不读取；audit 失败不返回内容；source 与 target cwd 各自绑定且允许不同。
+- PR #8 首轮 CI run `45368759577` 失败，原因是 G-09 错误断言 source/target cwd 必须相同；这是测试假设错误，不是代码行为故障。已修复测试并新增 G-10，最新 head `6edb30211749dde363d069e6f3dd267e0a7e0ee1` 的 CI run `45369132473` 正在执行。
+- PR #8 未接 runtime；真实 Host adapter、身份/consent 认证、原子消费和审计存储仍未实现；跨会话披露保持 fail-closed。
+- 本轮未读取或写入真实用户记忆、未更改生产配置、未操作 DSHA 设备。
