@@ -324,3 +324,12 @@ PR #5：<https://github.com/ba-song/dsh-memory-core/pull/5>
 - diary/raw archive 分属独立存储，不应与 memories provenance 混淆；raw archive recovery 当前只证明当前 Host-observed Owner cwd 的 scoped read，不代表跨会话 consent。
 - 已确认现有 `tests/ingest-provenance-paths.test.mjs` 在临时 DB 下覆盖 explicit、P4、migration、manual 路径；没有真实数据访问。
 - 未强制更改 insertMemory 默认行为，避免未经批准改变现有写入语义。
+
+
+## 27. 本轮最终核验（2026-11-24）
+
+- PR #7 的 24 项 WriteEvidence 测试在 head `1f432a892cfbcbca6b75f5f4d3ea1fd2507679b6` 上 CI run `45368833932` 成功。
+- PR #8 的 10 项 cross-context read gate 测试在 head `6edb30211749dde363d069e6f3dd267e0a7e0ee1` 上 CI run `45369132473` 成功。
+- PR #8 首轮失败是测试错误假设 source/target cwd 必须相等；已改为两个 cwd 分别绑定和校验，修正后 CI 通过。
+- PR #3/#6/#7/#8 均为 Open / Draft / 未合并。
+- 本轮交付包括：披露同意属性测试、隔离读取门禁代码、G-01 至 G-10、写入来源路径审计矩阵；没有生产 runtime 接入、真实记忆数据访问/写入、部署或设备操作。
