@@ -105,6 +105,8 @@ const assess = (input) => assessWriteEvidence(input)
   assert.equal(empty.locator, 'missing')
   assert.equal(empty.quote, 'not_checked')
   assert.equal(empty.access, 'unknown')
+  assert.equal(empty.disclosureConsent, 'unknown')
+  assert.ok(empty.gaps.includes('disclosure_consent_missing_or_unknown'))
   assert.equal(empty.contentCertainty, 'unknown')
   assert.ok(empty.gaps.includes('content_certainty_unknown'))
 
@@ -126,7 +128,7 @@ const assess = (input) => assessWriteEvidence(input)
   assert.ok(withProof.warnings.includes('host_event_proof_shape_not_verified_by_pure_function'))
 }
 
-console.log(JSON.stringify({ ok: true, test: 'write-evidence', cases: 15 }))
+console.log(JSON.stringify({ ok: true, test: 'write-evidence', cases: 18 }))
 
 
 // T-13 proof-shaped caller input cannot authenticate a non-Host origin.
@@ -165,4 +167,30 @@ console.log(JSON.stringify({ ok: true, test: 'write-evidence', cases: 15 }))
   assert.equal(r.quote, 'not_checked')
   assert.equal(r.access, 'unknown')
   assert.equal(r.contentCertainty, 'unknown')
+}
+
+
+// T-16 owner/access allowance does not imply cross-context disclosure consent.
+{
+  const r = assess({ access: 'allowed' })
+  assert.equal(r.access, 'allowed')
+  assert.equal(r.disclosureConsent, 'unknown')
+  assert.ok(r.gaps.includes('disclosure_consent_missing_or_unknown'))
+  assert.ok(!r.warnings.includes('cross_context_disclosure_not_authorized'))
+}
+
+// T-17 explicit revoked disclosure consent remains revoked even if access is allowed.
+{
+  const r = assess({ access: 'allowed', disclosureConsent: 'revoked' })
+  assert.equal(r.access, 'allowed')
+  assert.equal(r.disclosureConsent, 'revoked')
+  assert.ok(r.warnings.includes('cross_context_disclosure_not_authorized'))
+}
+
+// T-18 disclosure consent cannot override denied source access.
+{
+  const r = assess({ access: 'denied', disclosureConsent: 'granted' })
+  assert.equal(r.access, 'denied')
+  assert.equal(r.disclosureConsent, 'granted')
+  assert.ok(r.warnings.includes('current_access_not_allowed'))
 }
