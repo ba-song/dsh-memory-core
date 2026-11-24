@@ -4188,3 +4188,27 @@ A–E 合计为 P4 基线之上 30 个提交；每一段均为纯前进，没有
 ### 78.6 授权边界
 
 以上变更只新增隔离 CI 工作流、开发分支代码和测试、协调看板/交接记录。未合并 PR、未部署、未重启、未连接设备、未改生产 profile/config、未访问或写入生产数据库、未发送真实渠道消息、未启动 Autonomy executor/Home/tick/自动回复。任何改变汐实际记忆、人格、情绪、自主行为或现实行动的高影响变更仍须先向 Owner 说明并取得批准。
+
+
+---
+
+## 2026-11-24 11:05 +0800 · Persona/EI 设计基线同步 · HANDOFF-0079
+
+### 79.1 发现与修复
+
+- 仓库：`ba-song/dsh-persona-core`。
+- 发现 EI-2 设计修订分支 `fix/ei1-source-ref-experiencer-contract` 的 `EI-2-PERSISTENCE-DESIGN-01.md` blob 为 `670e5a34a1916a8b104ebfd1004b525236677d4c`，而报告分支 `ei/pre-ei2a-review-01` 的同名文件旧 blob 为 `d79bd124167dec45968fc5aece7060017fc75057`。
+- 已将报告分支的设计文件同步为修订 blob `670e5a34a1916a8b104ebfd1004b525236677d4c`。
+- 同步提交：`5fc6d70a5565d41a842609a406ca1c8345d4d87d`。
+- 更新 `EI-REPORT-0009.md`，追加准确的设计 blob、同步提交和状态边界记录；提交 `55cd080f9a124a94e0cc24da3b3cac0881afd6dd`。
+
+### 79.2 影响与验证边界
+
+- 本次仅同步设计文档与报告，不修改 Persona 源码、schema、迁移、运行配置或情绪行为。
+- EI-REPORT-0009 原有代码审查和测试结论仍绑定其记载的 EI-1 HEAD `8ccb8a922a789d8d15157b9d99f9de0c20c8807b`；本轮没有重新运行 Persona 测试。
+- 设计 blob 一致性问题已闭合；EI-2A 仍 NOT RUN / 未获 Owner 授权，不得据此开始 schema/migration。
+
+### 79.3 看板
+
+- 看板更新至 BOARD-0005，记录 EI-2 设计/报告 blob 已同步。
+- 本次不改变 EI-1 设备复验 NOT RUN 的状态。
