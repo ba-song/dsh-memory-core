@@ -119,7 +119,6 @@ const grant = { allowed: true, authorizationId: 'auth-1', fields: ['stable_facts
     { fields: ['stable_facts', 'stable_facts'] },
     { fields: ['*'] },
     { purpose: 'anything' },
-    { targetCwd: '/different/path' },
   ]) {
     let called = false
     const result = await runAuthorizedDisclosure({
@@ -133,4 +132,18 @@ const grant = { allowed: true, authorizationId: 'auth-1', fields: ['stable_facts
   }
 }
 
-console.log(JSON.stringify({ ok: true, test: 'cross-context-read-gate', cases: 9 }))
+
+// G-10 source and target sessions may have distinct cwd values; the Host adapter validates each exact binding.
+{
+  let called = false
+  const result = await runAuthorizedDisclosure({
+    request: { ...request, targetCwd: '/owner/other-project' },
+    authorizeAndConsume: async () => { called = true; return grant },
+    read: async () => [],
+    audit: async () => {},
+  })
+  assert.equal(called, true)
+  assert.equal(result.ok, true)
+}
+
+console.log(JSON.stringify({ ok: true, test: 'cross-context-read-gate', cases: 10 }))
