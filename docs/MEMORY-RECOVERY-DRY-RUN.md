@@ -78,7 +78,6 @@ Unit tests should cover: inaccessible source vs missing source; expired archive 
 
 Integration tests should simulate: source utterance -> derived memory -> retrieval miss -> authorized evidence discovery -> dry-run proposal -> user-confirmation boundary -> separately authorized repair. Device-level behavior remains unverified until tested on the actual DSHA installation.
 
-
 ## First read-only prototype (2026-11-24)
 
 Implemented in `lib/recovery/plan.js` with scenario tests in `tests/recovery-plan.test.mjs`.
@@ -88,3 +87,10 @@ Implemented in `lib/recovery/plan.js` with scenario tests in `tests/recovery-pla
 - It emits an outcome, failure classification, questions for the user, and a proposed operation label. The proposed operation is descriptive only; no write adapter exists.
 - Tests cover supported, contradictory, denied, expired, copied evidence, ambiguous experience, empty evidence, and recall miss.
 - This is not yet connected to RawArchive, diary discovery, memory rows, or the host authorization layer. It is not a production recovery feature.
+
+## Q149 prototype hardening (2026-11-24)
+
+- The planner now reports `supportLevel`: `single_asserted_lineage`, `multiple_asserted_lineages`, or `none`. A `supported` outcome may be based on only one available lineage and must not be described as multi-source corroboration.
+- It explicitly reports `independenceAssessment=asserted_by_upstream_not_verified_by_planner`. `independenceKey` and `copiedFrom` are trusted-adapter assertions; the pure planner cannot authenticate sources or prove independence.
+- Added tests for single-lineage support, the unverified-independence boundary, copied-only evidence, and frozen-input immutability.
+- The GitHub Actions run for commit `bfe5daf1934ce51f0ef7a28d229cb5aae1455b4e` completed successfully (run `45313823984`). The follow-up hardening commits require their own CI run; no test result is inferred from the earlier run.
