@@ -363,3 +363,17 @@ ChatGPT 总协调职责：
 3. 继续梳理真实 Host adapter 的可信 proof 来源与授权 API；在 Host 无法提供可认证身份/同意事件时保持 fail-closed。
 4. 对现有 provenance 写入入口建立字段路径矩阵；不回填真实数据。
 5. 继续更新 PR #7 与本交接中心，保持 PR #3/#7 Draft，不合并、不部署，除非用户明确授权。
+
+
+## 13. WriteEvidence 跨上下文披露同意独立维度（2026-11-24）
+
+最新工程核对确认：需求矩阵 A-05/A-12 明确规定 owner authentication 不等于 disclosure consent，来源真实性与访问授权也必须独立；当前纯函数此前只有 `access`，没有单独的披露同意状态。已在 PR #7 的隔离纯函数中新增 `disclosureConsent`：
+- 枚举：`granted`、`denied`、`revoked`、`expired`、`missing`、`not_required`、`unknown`。
+- 缺省为 `unknown`，产生 consent gap；access=allowed 不会自动填充 consent。
+- denied/revoked/expired 产生 `cross_context_disclosure_not_authorized` 警告。
+- disclosureConsent=granted 也不能覆盖 access denied/revoked/expired/tombstoned。
+- 该字段目前只是纯函数对输入声明的评估，不是宿主授权认证，不会启用跨会话披露。
+- 新增 T-16 至 T-18，覆盖 access allowed 但 consent missing、consent revoked、consent granted 但 access denied。
+- 同步更新 WriteEvidence 矩阵，增加 A-13 和访问状态/披露同意正交组合。
+
+本项属于 P0 证据模型补齐；仍未接入 runtime、archive/DB 读取或 memory write。生产授权仍 fail-closed。
