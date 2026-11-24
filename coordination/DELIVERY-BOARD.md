@@ -1,7 +1,7 @@
 # DSHA「汐」统一交付看板
 
-- 版本：BOARD-0003
-- 更新时间：2026-11-24 11:00（Asia/Shanghai）
+- 版本：BOARD-0004
+- 更新时间：2026-11-24 11:02（Asia/Shanghai）
 - 负责人：现任项目负责人（GPT）
 - 权威原则：代码状态以精确仓库/分支/commit 为准；自动化测试以绑定该 commit 的 CI/原始日志为准；设备状态以 DSH 实机证据为准。
 - 本看板区分“历史专项报告结论”和“本轮重新核实结论”，不把历史 PASS 自动延续到新 HEAD。
@@ -30,14 +30,14 @@
 
 提交：
 - `475c813d28278c05ae1df0827137248908d57f2e`：语义向量命中回查增加 cwd 范围限制；上下文窗口命中行与邻近行均限制同 cwd 并排除 tombstone。
-- `8481d9f881c7614bab49f61105802a86826ac745`：新增 3 组语义检索/上下文范围回归测试。
+- `8481d9f881c7614bab49f61105802a86826ac745`：新增 3 组语义检索/上下文范围回归测试。\n- `485af1fb7955515e5ace1b2e3c3a4c351825f628`：新增 host-authorized、owner-private、精确 cwd 限制的只读 recovery adapter。\n- `cffd82192802891aee9f2fbd3032ae33b3d299a9` / `85c419b1ae6328b48c3edec6f6ea47c5b170f149`：adapter 测试和 host cwd 精确匹配修正。
 
 验证：
 - Push CI：run [45315021052](https://github.com/ba-song/dsh-memory-core/actions/runs/45315021052) — SUCCESS
 - PR CI：run [45315015204](https://github.com/ba-song/dsh-memory-core/actions/runs/45315015204) — SUCCESS
 - RawArchive scope 修复 HEAD `8481d9f` 的两份原始 job log：147 tests / 146 pass / 0 fail / 1 skipped。
 - Recovery adapter 最终 HEAD `85c419b` 的两份原始 job log：151 tests / 150 pass / 0 fail / 1 skipped。
-- 此结果只证明 GitHub 隔离 CI；DSHA 本地/真机验证仍未完成。
+- Adapter 尚未注册到运行时，也未连接 planner；因此不代表汐已获得主动恢复功能。此结果只证明 GitHub 隔离 CI；DSHA 本地/真机验证仍未完成。
 
 ### Channel Bridge / Douyin 精确 HEAD CI 工作线
 
@@ -57,8 +57,8 @@
 | Memory A–E validity stack | `4bf92aad` | 历史隔离测试 PASS；约 300 commits / 117 files 相对 main，禁止整栈直接合并 |
 | EI-1 | `3a137618` | 定向 21/21、全量 324/324 的历史代码隔离 PASS；设备 NOT RUN |
 | EI-2 / EI-2A | 设计分支与报告分支曾有 blob 不一致 | EI-2 设计需统一；EI-2A 未获授权，不实施 |
-| Channel Bridge | 历史 `550/550` 报告未绑定当前 main SHA | 不能标当前 HEAD PASS；须精确 HEAD 复跑 |
-| Douyin | 历史审计记录 17 个测试文件，未运行 | 须精确 HEAD 运行 check/test |
+| Channel Bridge | 历史 `550/550` 未绑定 main；本轮 Draft PR #2 CI `562/560/0/2` | 当前 main 基线的隔离 CI PASS；group-turn 重放审查未完成 |
+| Douyin | 历史审计未运行；本轮 Draft PR #1 CI `310/310/0/0` | 当前 main 基线 check/test 隔离 CI PASS；自动回复/重复通知审查未完成 |
 | Autonomy | 历史 main CI 有成功记录；默认 disabled/dryRun | 不代表设备 profile 状态；真实执行路径不启动 |
 | Android | main build357 源码/文档可读 | 无本轮真机证据；恢复协议设计对齐不等于运行验收 |
 
@@ -89,7 +89,7 @@
 ## 6. 本负责人下一轮交付顺序
 
 1. 对已实现的 RawArchive adapter 做独立安全审查，补 planner-normalization/lineage 测试；保持未注册、只读、不触碰真实记忆数据。
-2. 对 Channel Bridge 与 Douyin 当前精确 main HEAD 启动 fake-only 的 check/test，并把历史测试报告与当前结果分开。
+2. Channel Bridge 审查 group-turn 失败重放；Douyin/Autonomy 审查 watcher 双投递和自动 dmSend 门禁，均只做 fake/static。
 3. 核对 Persona EI-1/EI-2 当前分支与报告的 blob 对齐，提交可验证修复。
 4. 对 Autonomy 做静态/fake contract 检查，找出可在不运行真实执行器情况下闭合的缺口。
 5. 准备 Android 只读验收包，等待用户参与设备验证。
