@@ -272,3 +272,14 @@ PR #5：<https://github.com/ba-song/dsh-memory-core/pull/5>
 - 增加验收标准：只有新会话实际从 Library 找到并打开图片，才能声称已读取原图；仅看 PR 说明或文字转录不算。
 - 如果新会话无法访问 Library，必须如实说明并继续使用 GitHub 文字版，不得虚报或让用户无谓重复上传。
 - 本次更新是明确未来会话的发现/读取指令；Library 文件本身未移动。
+
+
+## 22. WriteEvidence 纯函数 Host proof 语义收紧（2026-11-24）
+
+- 核验 PR #7 发现：旧实现仅凭输入对象 `{verified:true, issuer:"trusted_host_adapter"}` 就输出 `host_event_backed`；纯函数自身无法验证该对象确由可信 Host adapter 产生。
+- 还发现：旧实现即使 `origin.kind=caller_supplied`，只要附带同样 proof 对象，也会升级为 `host_event_backed`，违反 caller 不能自证 Host 来源的不变量。
+- 已在 PR #7 修改为 `host_event_proof_claimed`，仅表达 proof 形状声明；同时输出 `host_event_proof_shape_not_verified_by_pure_function`，明确纯函数未完成认证。
+- 对 caller_supplied 来源附带 proof 的情况，仍保持 `caller_supplied`，并输出 `host_event_proof_ignored_for_non_host_origin`。
+- 新增 T-13 至 T-15：非 Host 来源携带 proof、纯函数不宣称验证 proof、畸形 proof 和非法枚举 fail-closed。
+- PR #7 代码与测试已更新；等待最新 head 的 CI 结果。未接入 runtime、未触碰生产记忆、配置或设备。
+- 同步更新 WriteEvidence 测试矩阵，明确该 proof 语义边界。
