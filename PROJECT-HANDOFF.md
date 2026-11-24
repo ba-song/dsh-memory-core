@@ -159,7 +159,7 @@ ChatGPT 总协调职责：
 - 需求基线：`汐的需求基线-v1.md`
 - P0-1 PR #3：<https://github.com/ba-song/dsh-memory-core/pull/3>
 - 审计 PR #5：<https://github.com/ba-song/dsh-memory-core/pull/5>
-- 本接续中心 PR：建立后补充链接
+- 本接续中心 PR #6：<https://github.com/ba-song/dsh-memory-core/pull/6>（Draft/open，未合并）
 
 ## 9. 实时更新规则
 
