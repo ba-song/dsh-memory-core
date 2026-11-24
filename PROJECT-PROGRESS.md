@@ -123,3 +123,14 @@ PR #5：<https://github.com/ba-song/dsh-memory-core/pull/5>
 ## 10. 事实状态说明
 
 本文件是 2026-11-24 的接续快照，不保证 GitHub 当前实时状态。新会话必须核验所有 PR、分支和 CI；对未验证内容标记待核验，不得把推断当作事实。
+
+
+## 11. WriteEvidence 来源真实性测试规格（2026-11-24）
+
+- 用户确认当前设计优先级：**真实性优先**；同时要求继续推进，不要只停留在提问。完整原始问答见 `DISCUSSION-LOG.md` B-003；正式决定见 `DECISION-LOG.md` D-013。
+- 新增文档：`docs/design/WRITE-EVIDENCE-AUTHENTICITY-TEST-MATRIX-2026-11-24.md`
+- Commit：`c92765ff5ceee33703ff47e15cbedefddfe8064f`
+- 内容：八个独立证据维度、12 项 P0 不变量、来源声明×Host 证据矩阵、引文×命题确认矩阵、作者角色矩阵、定位状态矩阵、谱系矩阵、12 个反例 fixtures、属性测试和 adapter 契约测试分层。
+- 当前性质：仅设计规格；没有实现 `assessWriteEvidence`，没有运行代码测试，没有修改 schema/召回/恢复逻辑，也没有连接 Host、设备或生产数据。
+- 真实性原则：exact quote 不等于来源认证；来源认证不等于命题客观为真；user confirmation 不等于独立交叉印证；Host observed 不等于 owner authentication/consent；副本不等于独立来源。
+- 下一步建议：检查现有 Memory 代码中的 provenance/quote gate/insertMemory 结构，定位纯函数与测试框架；只读审查，不更改生产行为。随后形成代码级测试映射和缺口报告。
