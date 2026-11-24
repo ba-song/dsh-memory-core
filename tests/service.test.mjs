@@ -163,6 +163,27 @@ const userEvent = { type: 'user/message', time: 1790000000000, data: { message: 
 handlers['session/event']({ header: { cwd: ownerDir, id: 's-owner' } }, userEvent)
 assert.equal(svc.lastUserMessageAt(), 1790000000000, '用户消息应更新 lastUserMessageAt')
 
+// P0-1: handoffBrief requires a host-observed owner session, not a caller-invented header.
+assert.equal(typeof svc.handoffBrief, 'function')
+const trustedHandoff = svc.handoffBrief({
+  header: { id: 's-owner', cwd: ownerDir },
+  cwd: ownerDir,
+  recent: [{ role: 'user', text: '我们刚才在讨论记忆连续性' }],
+})
+assert.ok(trustedHandoff.text.includes('记忆连续性'), 'host-observed owner session should retain its own recent turns')
+const forgedHandoff = svc.handoffBrief({
+  header: { id: 'invented-session', cwd: ownerDir },
+  cwd: ownerDir,
+  recent: [{ role: 'user', text: '伪造交接内容' }],
+})
+assert.equal(forgedHandoff.text, '', 'unobserved session identity must not authorize handoff')
+const mismatchedHandoff = svc.handoffBrief({
+  header: { id: 's-owner', cwd: ownerDir },
+  cwd: '/tmp/other-session',
+  recent: [{ role: 'user', text: '跨目录伪造内容' }],
+})
+assert.equal(mismatchedHandoff.text, '', 'caller-supplied cwd must match trusted session cwd')
+
 // 本插件自己的注入块（source.kind=plugin:dy-memory）不得更新
 handlers['session/event']({ header: { cwd: ownerDir, id: 's-owner' } }, {
   type: 'user/message', time: 1790000500000, data: { message: { source: { kind: 'plugin:dy-memory' } }, content: [{ type: 'text', text: '【记忆·本轮相关】…' }] },
