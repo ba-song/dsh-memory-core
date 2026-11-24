@@ -206,3 +206,30 @@ GitHub Actions Run #162（Node tests）已完成，结果 **failure**：155 项�
 - exact-quote fixture 改为“主人在学吉他”，含质量闸认可的谓词“在”；引文仍是原文中的“已经练了三个月”，用于验证显式原文引文可以与候选正文不重合。
 
 上述仅修改测试夹具，没有放宽或更改生产质量闸、写入逻辑或记忆策略。修正后的提交 SHA：`6b13184`、`e5f6158`。截至本次文档提交前，修正提交尚未发现新的 workflow run；必须等待下一轮 CI 才能判断是否修复。
+
+
+## 9. 原话归档保留期与数据库索引一致性复核（2026-11-24 追加）
+
+复核代码：`lib/ingest/archive.js` 的 `RawArchive.cleanup()`、`search()`、`tombstone()`。
+
+### 9.1 已确认行为
+
+- `cleanup(now)` 按日期目录计算保留期，超过 `retentionDays` 时只执行 `rmSync(join(this.dir, day), { recursive: true, force: true })`，即删除归档 Markdown 日期目录。
+- 该方法没有同步删除对应的 `raw_meta` 行、`raw_fts` 索引行、`raw_vectors` 或 `raw_emotion_archive`。
+- `search()` 通过 `raw_fts` JOIN `raw_meta` 查询，并过滤 tombstone、channel、cwd；当前查询没有验证 Markdown 文件仍存在，也没有按归档日期/保留期过滤。
+- 因此，超过保留期的原话文件可能已从磁盘删除，但其数据库正文与 FTS 索引仍然存在，并可能继续被 `RawArchive.search()` 命中。单纯删除日期目录不等于完成原话数据的保留期清除。
+- 这也意味着 `verify(day)`、文件读取与数据库搜索可能出现不一致：文件缺失，但索引/元数据仍保留。
+
+### 9.2 风险判断
+
+这是一个明确的“文件保留期”与“数据库数据保留期”不一致问题。若产品承诺的 30 天保留期意图覆盖原话正文，而不只是 Markdown 文件，那么当前实现没有兑现完整清除；如果原意仅是清理文件副本，也必须明确说明数据库仍保存可检索内容。
+
+本次只做源码审查，没有运行真实数据清理，也没有删除任何数据库行。
+
+### 9.3 后续处理建议（待授权）
+
+1. 先由项目所有者确认 retentionDays 的语义：只管归档文件，还是同时管 raw_meta/FTS/向量/情绪快照。
+2. 若确认必须全量清除，应设计按 day/file 关联删除的事务或可恢复清理流程，并覆盖索引、向量、情绪快照与元数据；同时明确失败重试、备份/审计和不可逆删除提示。
+3. 新增隔离临时 DB 的回归测试：cleanup 后文件、raw_meta、raw_fts、raw_vectors、raw_emotion_archive 的预期状态一致；并验证 search 不再返回过期内容。
+4. 在语义确认和授权前，不改 cleanup 的删除范围，不执行任何真实数据清理。
+
