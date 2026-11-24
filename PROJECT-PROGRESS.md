@@ -263,3 +263,12 @@ PR #5：<https://github.com/ba-song/dsh-memory-core/pull/5>
 - 随后通过 Files Library 目录列表重新查到同名文件、正确路径、MIME `image/png` 和大小，验证文件已持久保存，不再只依赖当前会话的 `/mnt/data`。
 - 该方式提供跨会话 Library 检索入口，但不是 Git 仓库二进制资产，也不是 Project-backed file。当前工具未提供将其附加到 ChatGPT Project 文件区的能力；独立新会话的端到端读取尚未验证。
 - 新会话读取指引已写入 `PROJECT-HANDOFF.md` §11；继续以 `docs/PROJECT-ROADMAP-USER-PLAN-2026-11-24.md` 作为 GitHub 正式文字版路线图。
+
+
+## 21. 强化未来会话读取原始路线图图片的操作指引（2026-11-24）
+
+- 用户明确：图片存储位置不重要，只要其他会话能够正常读取；担心未来会话找不到，因此要求将具体查找步骤写进 PR #6。
+- 已在 `PROJECT-HANDOFF.md` §11 增加面向未来会话的逐步操作：明确搜索个人 Library（而非当前会话附件/Project）；先列出 `/DSHA/汐/`，再按完整文件名或关键词搜索；找到后实际打开图片；再与 GitHub 文字版路线图交叉阅读。
+- 增加验收标准：只有新会话实际从 Library 找到并打开图片，才能声称已读取原图；仅看 PR 说明或文字转录不算。
+- 如果新会话无法访问 Library，必须如实说明并继续使用 GitHub 文字版，不得虚报或让用户无谓重复上传。
+- 本次更新是明确未来会话的发现/读取指令；Library 文件本身未移动。
