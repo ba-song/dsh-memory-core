@@ -385,3 +385,32 @@ ChatGPT 总协调职责：
 - PR #7 新增 `disclosureConsent` 独立维度和 T-16–T-18；access 与 consent 不互相推导。
 - PR #7 仍 Open / Draft / 未合并，base 仍为 PR #3 分支。
 - 注意：以上 CI 只证实当前自动化测试环境通过；不证明 Host 授权 API、真实跨会话披露或 DSHA 实机安全。
+
+
+## 14. 2026-11-24 批量工程推进快照：披露同意与读取门禁
+
+本节是本轮已完成工作和待核验状态，不替代新会话的实时 GitHub/CI 查询。
+
+### PR #7 — WriteEvidence 十维证据评估
+- 分支：`feat/write-evidence-assessment-pure`；base：PR #3 的 `fix/p0-1-trusted-handoff-continuity`。
+- 本轮 head：`1f432a892cfbcbca6b75f5f4d3ea1fd2507679b6`。
+- Node tests run `45368833932` completed / success。
+- 测试 T-01 至 T-24；新增 T-19 至 T-24，覆盖 consent 非法枚举、null/空值、所有非授权状态、denied access 优先级、access/consent 正交属性。
+- 修订矩阵，统一十个维度、proof claim 语义及 T-01 至 T-24 的实现状态。
+- 无 runtime 接入、无真实数据访问/写入。
+
+### PR #8 — 隔离跨上下文读取门禁契约
+- URL：`https://github.com/ba-song/dsh-memory-core/pull/8`
+- 分支：`feat/cross-context-read-gate-contract`；base：PR #3 分支。
+- 最新 head：`6edb30211749dde363d069e6f3dd267e0a7e0ee1`。
+- 新增 `lib/ingest/cross-context-read-gate.js` 和 `tests/cross-context-read-gate.test.mjs`。
+- 该门禁要求请求明确 owner/source/target session、各自 cwd、purpose 和字段 allowlist；调用注入的 Host `authorizeAndConsume` 必须先于任何读取；拒绝、scope mismatch、Host error 时读取次数为零；读取后必须成功写入 metadata-only audit 才向调用方返回内容。
+- G-01 至 G-10 覆盖授权先于读取、拒绝零读取、无效请求、字段扩张、Host 错误、审计失败、读取失败、依赖缺失、通配符/重复字段和 source/target cwd 不同。
+- **关键限制**：该模块不认证 Host/consent，不实现真实授权 API；依赖必须由可信 Host adapter 提供。尚未接入 `lib/index.js`，不能启用跨会话披露。
+- 首轮 CI 曾因测试把 source/target cwd 错误要求相等而失败；已修正为各自精确绑定、允许不同 cwd，并补 G-10。修订 head 的 CI 结果需继续核验。
+
+### 接下来并行推进
+1. 核对 PR #8 当前 CI；修复失败直至通过。
+2. 为 Host adapter 写独立接口契约：会话 live-registry 双向重验、owner 身份解析、同意事件 provenance、原子单次消费、撤销/过期/重启失效。
+3. 增加 provenance 写入入口矩阵，覆盖 insertMemory、diary、tool、migration、manual、recovery 等路径；只读源码，不回填数据。
+4. 在无可信 Host API 的情况下继续保持生产跨会话披露 fail-closed。
