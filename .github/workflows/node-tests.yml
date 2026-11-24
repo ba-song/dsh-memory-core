@@ -1,0 +1,46 @@
+name: Node tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "fix/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Install DSH host-only test dependencies
+        run: npm install --no-save @deepseek-ai/schemastery yaml
+      - name: Prepare pinned BGE-small-zh model
+        shell: bash
+        run: |
+          set -euo pipefail
+          MODEL_DIR=/opt/qqai/models/bge-small-zh
+          sudo mkdir -p "$MODEL_DIR"
+          sudo curl --fail --location --retry 3 \
+            https://huggingface.co/Xenova/bge-small-zh-v1.5/resolve/main/onnx/model_quantized.onnx \
+            --output "$MODEL_DIR/model_quantized.onnx"
+          echo "15b717c382bcb518ba457b93ea6850ede7f4f1cd8937454aa06972366cd19bcc  $MODEL_DIR/model_quantized.onnx" | sha256sum --check
+          sudo curl --fail --location --retry 3 \
+            https://huggingface.co/Xenova/bge-small-zh-v1.5/resolve/main/tokenizer.json \
+            --output "$MODEL_DIR/tokenizer.json"
+      - name: Run tests with isolated memory directory
+        run: |
+          export DY_MEMORY_DIR="$(mktemp -d)"
+          npm test
