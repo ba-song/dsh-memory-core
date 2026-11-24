@@ -83,6 +83,8 @@ const assess = (input) => assessWriteEvidence(input)
   const r = assess({ origin: { kind: 'host_event' }, hostEventProof: { verified: true, issuer: 'trusted_host_adapter' }, sourceRole: 'user', quoteState: 'exact', contentCertainty: 'uncertain' })
   assert.equal(r.sourceAuth, 'host_event_backed')
   assert.equal(r.claimConfirmation, 'unconfirmed')
+  assert.equal(r.contentCertainty, 'uncertain')
+  assert.ok(r.warnings.includes('content_uncertainty_preserved'))
 }
 
 // T-12 contradictory sources remain a conflict; no automatic winner.
@@ -100,10 +102,18 @@ const assess = (input) => assessWriteEvidence(input)
   assert.equal(empty.locator, 'missing')
   assert.equal(empty.quote, 'not_checked')
   assert.equal(empty.access, 'unknown')
+  assert.equal(empty.contentCertainty, 'unknown')
+  assert.ok(empty.gaps.includes('content_certainty_unknown'))
 
   const withExact = assess({ quoteState: 'exact', claimConfirmation: 'unconfirmed' })
   const withoutExact = assess({ quoteState: 'mismatch', claimConfirmation: 'unconfirmed' })
   assert.equal(withExact.claimConfirmation, withoutExact.claimConfirmation)
+
+  const uncertainSource = assess({ origin: { kind: 'host_event' }, hostEventProof: { verified: true, issuer: 'trusted_host_adapter' }, contentCertainty: 'uncertain' })
+  const unmarkedSource = assess({ origin: { kind: 'host_event' }, hostEventProof: { verified: true, issuer: 'trusted_host_adapter' } })
+  assert.equal(uncertainSource.sourceAuth, unmarkedSource.sourceAuth)
+  assert.equal(uncertainSource.contentCertainty, 'uncertain')
+  assert.equal(unmarkedSource.contentCertainty, 'unknown')
 
   const withoutProof = assess({ origin: { kind: 'host_event' } })
   const withProof = assess({ origin: { kind: 'host_event' }, hostEventProof: { verified: true, issuer: 'trusted_host_adapter' } })
