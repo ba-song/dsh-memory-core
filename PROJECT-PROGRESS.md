@@ -222,3 +222,11 @@ PR #5：<https://github.com/ba-song/dsh-memory-core/pull/5>
 - 内容确定性字段作为 T-11 要求单独保留：`uncertain` / `not_assessed` / `unknown`；缺失时保持 unknown。
 - 因此当前实现目标是覆盖矩阵八项独立属性，并额外保留 T-11 明确要求的内容模糊性标记；不得把 sourceKind 与 sourceAuth 合并，也不得将 contentCertainty 推断为客观真假。
 - 新提交后的 CI 必须针对最新 PR #7 head 重新核验；此前 run #45361740359 只对应较早 head，不能作为后续提交的验证证据。
+
+
+### 最新 CI 结果补录（2026-11-24）
+
+- PR #7 最新 head：`f4d4e194a4b555d32f0b42a63eb788bf9d0f7bba`。
+- GitHub Actions run #45362069234（run 188，Node tests）对该精确 head 的结论为 success。
+- 本次通过的测试包含 T-01 至 T-12，并新增 sourceKind 与 sourceAuth 分离、contentCertainty 独立保留及 fail-closed 默认断言。
+- 该结果只证明隔离纯函数分支的仓库测试通过，不证明生产 Host proof 可信，不代表功能已接入 insertMemory、生产数据、设备或运行时。
