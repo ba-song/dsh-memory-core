@@ -1,7 +1,7 @@
 # DSHA「汐」统一交付看板
 
-- 版本：BOARD-0004
-- 更新时间：2026-11-24 11:02（Asia/Shanghai）
+- 版本：BOARD-0005
+- 更新时间：2026-11-24 11:05（Asia/Shanghai）
 - 负责人：现任项目负责人（GPT）
 - 权威原则：代码状态以精确仓库/分支/commit 为准；自动化测试以绑定该 commit 的 CI/原始日志为准；设备状态以 DSH 实机证据为准。
 - 本看板区分“历史专项报告结论”和“本轮重新核实结论”，不把历史 PASS 自动延续到新 HEAD。
@@ -11,7 +11,7 @@
 | 智能体/工作线 | 权威仓库 | 最新可核实基线 | 当前状态 | 正在推进 / 下一交付 |
 |---|---|---|---|---|
 | Memory | ba-song/dsh-memory-core | main `752cd086`；P0-1 分支 `85c419b1` | **IN_PROGRESS；P0-1 archive scope + recovery adapter 隔离 CI PASS** | 独立审查 adapter 的 scope/lineage；补 planner normalization 测试；adapter 暂不接入运行时；跨分支 schema/历史栈仍隔离 |
-| Persona / EI | ba-song/dsh-persona-core | main `a84c7bad`；EI-1 验收目标 `3a137618` | **EI-1 代码隔离 PASS；设备复验 NOT RUN；EI-2A BLOCKED** | 统一 EI-2 设计与报告 blob；准备 EI-1 设备复验材料；不启动未授权迁移 |
+| Persona / EI | ba-song/dsh-persona-core | main `a84c7bad`；EI-1 验收目标 `3a137618` | **EI-1 代码隔离 PASS；设备复验 NOT RUN；EI-2A BLOCKED** | EI-2 设计与报告 blob 已同步（55cd080）；独立复核设计边界；准备 EI-1 设备复验材料；EI-2A 仍不启动 |
 | Channel Bridge | ba-song/dsh-channel-bridge | main `bffcabc3` | **EXACT-HEAD CI PASS（隔离分支）** | 562 tests / 560 pass / 0 fail / 2 skipped；fake transport；group-turn 重放审查待做 |
 | Douyin | ba-song/dsh-douyin | main `da799dd4` | **EXACT-HEAD CI PASS（隔离分支）** | check PASS；310 tests / 310 pass / 0 fail / 0 skipped；fake/local tests |
 | Autonomy / Life | ba-song/dsh-autonomy | main `6c4a4753` | **DESIGN/STATIC REVIEW；REAL EXECUTION BLOCKED** | 只做静态与 fake 测试；核对 realSafe/自动回复调用链；不得启动 tick、Home、执行器或真实发送 |
@@ -58,7 +58,7 @@
 | Memory wake-capture | `0fdae988` | 隔离测试历史 PASS；与 minimal-integration 有 schema/index 冲突，未获真实写入接入授权 |
 | Memory A–E validity stack | `4bf92aad` | 历史隔离测试 PASS；约 300 commits / 117 files 相对 main，禁止整栈直接合并 |
 | EI-1 | `3a137618` | 定向 21/21、全量 324/324 的历史代码隔离 PASS；设备 NOT RUN |
-| EI-2 / EI-2A | 设计分支与报告分支曾有 blob 不一致 | EI-2 设计需统一；EI-2A 未获授权，不实施 |
+| EI-2 / EI-2A | 设计文件已同步至 blob `670e5a34`（commit `5fc6d70`）；报告追加同步记录（`55cd080`） | 文档基线一致；EI-2A 仍 NOT RUN / 未获授权，不实施 |
 | Channel Bridge | 历史 `550/550` 未绑定 main；本轮 Draft PR #2 CI `562/560/0/2` | 当前 main 基线的隔离 CI PASS；group-turn 重放审查未完成 |
 | Douyin | 历史审计未运行；本轮 Draft PR #1 CI `310/310/0/0` | 当前 main 基线 check/test 隔离 CI PASS；自动回复/重复通知审查未完成 |
 | Autonomy | 历史 main CI 有成功记录；默认 disabled/dryRun | 不代表设备 profile 状态；真实执行路径不启动 |
@@ -92,7 +92,7 @@
 
 1. 对已实现的 RawArchive adapter 做独立安全审查，补 planner-normalization/lineage 测试；保持未注册、只读、不触碰真实记忆数据。
 2. Channel Bridge 审查 group-turn 失败重放；Douyin/Autonomy 审查 watcher 双投递和自动 dmSend 门禁，均只做 fake/static。
-3. 核对 Persona EI-1/EI-2 当前分支与报告的 blob 对齐，提交可验证修复。
+3. 独立复核 Persona 已同步的 EI-2 设计，保持 EI-2A BLOCKED；准备 EI-1 设备复验资料。
 4. 对 Autonomy 做静态/fake contract 检查，找出可在不运行真实执行器情况下闭合的缺口。
 5. 准备 Android 只读验收包，等待用户参与设备验证。
 6. 每轮只更新本看板和必要 HANDOFF 记录；不新增大量研究文档。
