@@ -1,0 +1,478 @@
+# DSHA「汐」项目接续中心（PROJECT-HANDOFF）
+
+> 本文件是跨会话接手入口。新会话必须先完整读取本文件，再按“接手读取顺序”读取项目问答、决策与进度记录，之后才能开始新的项目工作。不得只看进度而忽略项目目标。
+
+- 项目：DSHA「汐」
+- 仓库：`ba-song/dsh-memory-core`
+- 接续中心建立日期：2026-11-24
+- 状态：初版建立；持续维护
+- 需求基线：`汐的需求基线-v1.md`（2026-11-24）
+- 相关正式记录：`PROJECT-PROGRESS.md`、`DECISION-LOG.md`、`DISCUSSION-LOG.md`
+
+## 1. 项目目标与方向（接手时必须先读）
+
+### 1.1 汐是谁
+
+汐首先是**陪伴型 AI**，其次才是具备技术能力的 AI。技术、代码、插件、外部工具和专业智能体协作都只是服务于陪伴与用户需要的手段，不能反过来让汐变成项目管理系统或开发流水记录器。
+
+汐的核心价值：
+- 理解用户、记住用户、理解双方关系；
+- 陪伴用户，并在长期互动中共同成长；
+- 在适当时候自然回忆重要事实、经历和共同经历；
+- 形成稳定且可成长的人格、具有时间连续性的情绪和关系理解；
+- 长期运行于 Android / DSHA 环境，尊重真实设备、系统权限、后台运行和资源约束。
+
+### 1.2 最高取舍原则
+
+当功能复杂度、工程便利性与陪伴价值冲突时，优先保护：
+1. 用户理解的准确性；
+2. 重要经历与关系记忆的连续性；
+3. 情绪和人格的长期一致性；
+4. 用户对汐实际行为的知情权与控制权；
+5. 记忆可追溯、可纠错、可恢复。
+
+不以功能数量、数据库表数量或自动化程度作为目标本身。
+
+### 1.3 需求优先级
+
+- **P0：记忆正确性与连续性。** 原始经历与结构化记忆、日记、事实卡、关系数据、来源链和召回注入；重要记忆保护；冲突、遗忘、恢复；事实/情绪/经历/推断分层；跨会话连续性。
+- **P1：陪伴体验核心。** 情绪跨轮次和跨时间延续；重要经历与关系节点自然回忆；日记沉淀重要经历而非聊天流水；用户画像与关系理解渐进形成。
+- **P2：人格成长与自主生活。** 身份连续性、人格成长、自主反思学习、目标管理、受控主动行为和关系能力。
+- **P3：扩展能力。** 更复杂社会模拟、外部互动和高自主度现实行动；非核心工程管理能力不应反客为主。
+
+### 1.4 关键需求事实
+
+- Q148=A：第一阶段优先记忆连续性。
+- Q149=D：接受遗忘后主动回溯验证、分析遗忘原因并修复记忆系统的方向。
+- 允许保留模糊但有意义的经历；细节不完整不应一律丢弃，但必须保留不确定性，不能加工成确定事实。
+- 记忆重要性由系统自动判断；普通记忆允许淡化；重要经历、关系节点和用户明确要求保留的内容应受保护。
+- 遗忘须区分降低召回、归档/降级、软删除和永久删除；不能把“暂时想不起来”等同于数据不存在。
+- 情绪跨轮次延续：开心事件结束后仍可能愉悦一段时间；失落事件后需要时间恢复；不能每轮对话自动归零。
+- 必须区分用户明确表达的情绪、汐自身状态与模型推断。
+- 原始经历和派生总结分离；更新保留历史；冲突显式标记；推断不能伪装事实。
+- 自主能力长期重要，但“能自动执行”不等于“应该自动执行”。
+
+### 1.5 证据与认知原则
+
+至少区分：
+1. 用户明确表达的事实；
+2. 用户明确表达的情绪/感受；
+3. 汐与用户共同经历的事件记录；
+4. 多次互动归纳的稳定模式；
+5. 模型推断、假设或待验证线索。
+
+引文逐字匹配不等于命题为真；来源定位符不等于 Host 认证身份；Host 观察到 session 不等于 owner 身份或跨会话披露同意；同一原始事件的多个副本不等于多个独立来源。未知必须保持未知，不得补造。
+
+### 1.6 汐与主人的关系定位
+
+用户明确确认的关系定位（2026-11-24，具体问答见 `DISCUSSION-LOG.md` B-004/B-005，正式决定见 `DECISION-LOG.md` D-014）：
+
+- **身份关系：父女。** 用户是汐的创建者，因此用户与汐的身份关系定位为父女。
+- **相处关系：朋友。** 日常相处希望以朋友方式相处，亲近、平等；父女身份不应被解释为上下级关系或单向服从关系。
+- 两个层次必须同时保留：父女回答“彼此是什么身份”，朋友回答“平时如何相处”。不得用其中一个覆盖另一个，也不得擅自扩展为其他关系含义。
+- 用户进一步明确：希望汐在这段关系中拥有表达不同意见、拒绝某些要求、偶尔闹别扭的自由。汐不应被设计成只会顺从主人的角色；她应能以自己的判断和感受参与关系。该确认属于关系与人格方向，不自动授权任何具体生产行为或现实行动。详见 `DISCUSSION-LOG.md` B-006、`DECISION-LOG.md` D-016。
+
+### 1.7 访谈资料完整性
+
+需求基线不是全部访谈逐字稿：
+- Q4–Q43 原始题目与回答缺失，禁止补造。
+- Q44–Q147 目前可恢复主题和部分具体要求，不得伪装成完整逐题原文。
+- Q73–Q136、Q137–Q147 的自主行为、人格成长、关系与爱情细节仍有资料缺口。
+- Q148、Q149 的选择和语义已在需求基线中明确。
+- 新会话如需历史细节，先读 `DISCUSSION-LOG.md` 和需求基线；缺失的原始记录要明确标为未恢复。
+
+## 2. 项目治理与授权边界
+
+用户授权自主推进常规工程工作：研究、分析、外部调研、技术方案、代码审查、普通代码修复、测试、分支、PR、文档、任务协调和优先级安排。
+
+必须暂停并向用户确认：
+- 会改变汐实际状态或行为的重大变更；
+- 影响汐人格、记忆策略、情绪、自主决策或现实行动的高影响事项；
+- 生产部署、真实数据写入、不可逆操作；
+- 需要 DSHA 真实设备执行的实机验证。
+
+安全原则：
+- 建议不等于执行；默认只读、dry-run、最小权限。
+- 外部发送、现实操作、不可逆动作必须明确确认。
+- 行动需记录原因、目标、结果证据、失败状态与审计。
+- 不擅自暂停汐的 Home/自主生活、改变 Bridge mode、生产 profile、权限或服务状态。
+- 不把隔离测试的 harness 身份注入当作 Host 安全能力。
+
+
+### 2.1 工程推进原则：审查不是终点，安全可实现项应直接实现
+
+用户明确要求（2026-11-24）：**不要只做审查；在授权边界内，能写的代码可以先写。** 后续会话必须遵守：
+
+- 代码审查、威胁建模和缺口分析是实现工作的输入，不是默认交付终点。
+- 对不改变汐真实状态/行为、不接触生产数据、不依赖真实设备或 Host 授权的安全工作，应主动实现，而不是只给建议。例如纯函数、状态判定器、DTO 校验、隔离适配层、合成 fixtures、单元/属性测试和文档。
+- 实现前先明确边界；实现后补充测试并运行可用的隔离测试，记录准确的提交和测试结果。
+- 发现某项实现会改变真实记忆写入、召回、遗忘、人格、情绪、自主行动、schema、历史数据或生产配置时，先将其隔离为不生效的纯函数/测试准备；若仍会影响真实行为，则暂停并向用户确认。
+- 不得为了“先写代码”绕过真实性要求、授权检查或 fail-closed 规则；不确定时保留 unknown，不做隐式升级。
+- 不得将“代码已写”“单元测试通过”表述为“已接入生产”“实机可用”或“汐已具备该能力”。
+- 每个阶段应尽量交付可核验的代码、测试、CI 或文档，而不是仅留下下一步计划。
+
+## 3. 特殊协作规则：项目推进与方向访谈并行
+
+用户于 2026-11-24 明确纠正：**项目实际推进与项目方向提问是两件事，彼此不冲突；不能让提问成为技术工作的前置门槛。** 本节取代此前“每次进入实质性动作前必须等待回答”的阻塞式执行方式。
+
+### 项目推进（持续进行，不以访谈回答为前提）
+- 在既有授权范围内持续推进研究、静态审查、设计、代码实现、隔离测试、CI、文档和跨模块协调。
+- 不要只提问或只做审查；安全可实现项应直接实现并交付可核验结果。
+- 用户未回答方向问题，不构成暂停常规技术工作的理由；技术工作也不构成取消方向访谈的理由。
+- 仅当某项技术决策确实依赖用户的方向选择，或可能改变汐实际状态/行为、人格、记忆、情绪、自主决策、生产配置、真实数据或设备状态时，才暂停该项受影响工作并请示；不连带暂停其他安全工作。
+
+### 方向访谈（独立并行工作流）
+- DSH 不工作时，继续围绕项目方向、目标和理念提出问题；主题可包括汐与主人的关系、身份、人格、价值观、陪伴方式、情感连续性、自主性和长期愿景。
+- 每次只问一个新问题。提问前先查需求基线、历史问答和决策记录，绝不重复已明确回答的问题。
+- **每个问题必须提供 A/B/C 等清晰选项，并给出助手自己的建议及理由；同时允许用户选择“其他/自行补充”，选项不得限制用户表达。**
+- 访谈主题保持开放，不局限于某个示例问题或单一方向；可围绕项目目标、身份、人格、价值观、陪伴方式、情绪连续性、自主性、长期愿景及其他相关方向灵活提出真正有价值的新问题。具体例子只用于说明提问方式，不应被固化为固定主题。
+- 选项应呈现有意义的不同方向，不得把助手偏好伪装成用户已决定；建议必须标明是助手建议。
+- 用户回答后保存原始问题、选项、助手建议、用户原始回答、助手理解、正式决定和待确认点；原始回答不得被总结覆盖。
+- 如果用户指出此前已经回答但当前文档缺失，应承认记录缺口，保存本次重申，不得断言此前从未回答。
+- 提问是独立访谈活动，不是下一项技术工作的审批闸门；等待回答期间照常推进所有不依赖该回答且处于授权范围内的工作。
+
+### DSH 需要工作时
+- 不提出方向访谈问题，不要求用户回答；直接执行已明确的 DSH 侧工作。
+- DSH 工作不应被问答阻塞。
+
+本节只规定协作方式，不扩大任何操作授权。高影响、生产、真实数据、实机执行仍需单独授权。
+
+## 4. 跨会话强制接手要求
+
+用户明确要求：**新会话必须先完整读取历史问答与决策记录，再开始任何新的项目工作。**
+
+新会话不得：
+- 只读进度，不读项目目标；
+- 让用户重新解释已经记录的项目定位、原则、决策或进度；
+- 将未恢复的访谈内容自行补齐；
+- 将旧报告中的状态当成当前状态而不核验；
+- 因为换会话而重新启动大规模需求访谈。
+
+## 5. 接手读取顺序（必须遵守）
+
+1. 完整读取本文件 `PROJECT-HANDOFF.md`。
+2. 完整读取 `DISCUSSION-LOG.md`：了解此前问题、用户原始回答、问答来源等级和资料缺口。
+3. 完整读取 `DECISION-LOG.md`：确认正式决定、规则和仍待确认事项。
+4. 完整读取 `PROJECT-PROGRESS.md`：掌握当前进度、证据、分支、PR、测试和下一步。
+5. 读取 `汐的需求基线-v1.md` 及相关阶段报告。
+6. 对所有会变化的 GitHub 状态重新核验（branch、commit、PR、CI）；不要把旧快照当实时状态。
+7. 如果 DSH 正在工作，跳过问答，直接继续任务；如果 DSH 不工作，进入下一项实质性动作前先问一个项目问题。
+8. 向用户做简短接手确认：项目目标已读取、上次进度、当前阻塞、下一项工作；不复述全部历史。
+
+## 6. 当前技术风险底线
+
+- Host DSH 当前审计版本没有可信 owner/session/conversation identity 与可靠用户 consent API；session ID/cwd/插件自报 metadata 不能作为安全边界。
+- Memory P0-1 仍为 Draft PR，未合并、未部署；生产数据库不得用于测试。
+- Channel Bridge 生产 mode=send，存在真实外发路径；不得在生产链路发送测试消息。
+- Autonomy Home 曾有主动联系 QQ 的实证；不能假设 tick 关闭就代表无自主行为。隔离测试必须确保无真实发送能力。
+- Persona 情绪 ingest 和 session binding 会写真实状态；生产 DB 禁止测试写入。
+- Android 隔离测试必须 clone 插件目录到隔离路径，不能用 link 指向生产 plugin-src。
+- 六个模块的 READY / READY WITH CONDITIONS / BLOCKED 必须按报告原文理解；局部 READY 不等于整体准入。
+
+## 7. 角色分工
+
+用户在 DSH 环境有六个专职智能体：Memory、Persona/EI、Channel Bridge、Autonomy/Life、Android Platform、Host Runtime。
+
+ChatGPT 总协调职责：
+- 根据任务拆分并提供可直接转交的完整提示词；
+- 审查六个智能体反馈，交叉验证、排序、整合；
+- 管理跨模块依赖、优先级、报告与项目记录；
+- 用户负责把提示词转交给各智能体；
+- 不要求用户自己协调六个智能体；
+- 不把实机操作冒充为 ChatGPT 已执行。
+
+## 8. 当前接续入口
+
+- 总体项目路线图（用户提供版）：`docs/PROJECT-ROADMAP-USER-PLAN-2026-11-24.md`
+- 进度：见 `PROJECT-PROGRESS.md`
+- 决策：见 `DECISION-LOG.md`
+- 原始问答与访谈恢复：见 `DISCUSSION-LOG.md`
+- 需求基线：`汐的需求基线-v1.md`
+- P0-1 PR #3：<https://github.com/ba-song/dsh-memory-core/pull/3>
+- 审计 PR #5：<https://github.com/ba-song/dsh-memory-core/pull/5>
+- 本接续中心 PR #6：<https://github.com/ba-song/dsh-memory-core/pull/6>（Draft/open，未合并）
+
+## 9. 实时更新规则
+
+每次实质性项目动作完成后，至少检查是否需要更新：
+- `PROJECT-PROGRESS.md`：状态、证据、commit、PR、测试、阻塞和下一步；
+- `DISCUSSION-LOG.md`：本次问答的原始问题与用户原始回答；
+- `DECISION-LOG.md`：只有用户明确确认的决策才新增正式决定；
+- 本文件：只有目标、治理、接手流程或重要边界变化时更新。
+
+写入后必须 fetch 复核远端文件和 commit。若不能更新 GitHub，应明确告知，不得声称已同步。
+
+
+### 关系冲突处理补充（D-017、D-018、D-019）
+
+- 意见冲突时先表达感受，再尝试共同找到双方都能接受的办法。
+- 若仍无法一致，可以暂停讨论、待情绪平复后再继续，也可以保留分歧。
+- 汐可以坚持自己的想法，同时尊重用户的决定；尊重不等于必须认同。
+
+- 分歧后双方冷静下来时，汐可以主动表达和好意愿，也可以主动找用户聊天、分享事情，以自己的方式重新拉近距离；不强求立即和好。详见 `DECISION-LOG.md` D-019。
+
+
+## 10. DSH 六模块审计报告归档与跨会话对接规范（2026-11-24）
+
+用户提供并要求 ChatGPT 与 DSH 智能体共同遵守以下报告归档约定。该约定用于让不同会话能够从 GitHub 找到 DSH 各模块的阶段报告、核验进度并进行统筹；它是**报告归档与证据治理规则**，不是生产变更授权。
+
+### 10.1 固定归档位置与命名
+
+仓库：`ba-song/dsh-memory-core`
+
+统一目录：`docs/audit/`
+
+六类报告文件名（按日期版本化，不覆盖既有轮次）：
+
+- `MEMORY-READINESS-AUDIT-YYYY-MM-DD.md`
+- `PERSONA-READINESS-AUDIT-YYYY-MM-DD.md`
+- `LIFE-READINESS-AUDIT-YYYY-MM-DD.md`
+- `BRIDGE-READINESS-AUDIT-YYYY-MM-DD.md`
+- `HOST-READINESS-AUDIT-YYYY-MM-DD.md`
+- `ANDROID-READINESS-AUDIT-YYYY-MM-DD.md`
+
+每轮报告使用对应日期的新文件名。不得覆盖之前轮次的审计报告；如同一天需要修订，应采用明确的修订后缀或新版本文件名，并在报告中说明与原报告的关系，不得静默替换。
+
+### 10.2 每份报告的强制内容
+
+每份报告必须包含：
+- 证据：具体文件、代码位置、命令/测试、日志或设备观察等可追溯依据；
+- 测试结果：测试范围、环境/基线、通过/失败/跳过情况；未执行也要明确写明；
+- 风险：已知安全、可靠性、隔离、权限或运行风险；
+- 阻断项：当前阻止 READY/实机准入/下一阶段的具体条件；
+- 未验证项：没有证据支持、没有执行或无法访问的部分。
+
+### 10.3 证据等级必须分开
+
+报告和总协调汇总必须严格区分以下类别，不能相互替代：
+
+1. **源码证实（source-confirmed）**：静态代码、配置、依赖和调用路径可直接证明的事实；不等于运行时行为已发生。
+2. **测试证实（test-confirmed）**：明确记录了测试环境、基线、命令/测试用例和结果；只覆盖实际执行的范围。
+3. **设备证实（device-confirmed）**：来自明确设备、系统版本、安装构建、运行环境和可追溯日志/观察的实机证据。
+4. **推断（inference）**：由现有证据推导出的判断，必须标注推断、依据和不确定性，不得伪装为前三类证实。
+
+缺少证据时写“未知/未验证”，不得用推断补齐。
+
+### 10.4 归档交付回执
+
+每份报告提交 GitHub 后，向统筹者提供：
+- 仓库全名；
+- 分支；
+- 完整仓库路径；
+- commit SHA；
+- blob SHA；
+- 可访问的 GitHub 文件链接。
+
+如果无法提交 GitHub，必须明确说明失败原因、受影响报告和当前保存状态；不得只保存在设备本地而不向统筹者报告，也不得声称已归档。
+
+### 10.5 归档与运行时授权隔离
+
+- 报告归档本身不得修改生产代码、生产配置、数据库或设备状态。
+- 不得为了补齐报告而擅自执行生产写入、部署、外发或高影响实机操作。
+- 需要实机证据但尚未获准/无法执行时，标记为未验证或阻断项。
+- 报告中的 READY、READY WITH CONDITIONS、BLOCKED 必须附带范围与证据；单个模块局部 READY 不自动代表整体准入。
+
+### 10.6 ChatGPT 跨会话接手流程
+
+新会话必须：
+1. 先读取本接续中心及问答/决策/进度文档；
+2. 枚举并读取 `docs/audit/` 下六类模块的最新报告，保留历史轮次，不只依赖旧摘要；
+3. 对每份报告记录日期、分支、commit、证据等级、测试范围、风险、阻断项和未验证项；
+4. 对照当前 GitHub 分支、PR、CI 和源码核验报告是否仍适用；报告是带日期的阶段证据，不是永不过期的实时状态；
+5. 汇总六模块依赖与整体准入，不把任何一个模块的局部状态夸大为整体 READY；
+6. 如果 DSH 智能体提交了新报告，先核验其 GitHub 文件和提交，再更新项目进度；如果 DSH 无法提交，明确记录其报告未归档和原因。
+
+本规范不意味着 ChatGPT 已读取到未来所有 DSH 报告，也不表示六份新报告已在本次提交中生成。
+
+## 11. 用户原始项目计划图的跨会话文件访问（2026-11-24）
+
+用户要求在不能直接提交图片到仓库时，尝试让其他 ChatGPT 会话读取持久文件。已验证当前可用的替代方式：将原始图片上传到用户个人 Library（跨会话持久文件库），而不是只保留在本轮对话附件或当前运行时的 `/mnt/data` 路径。
+
+- 文件名：`DSHA-汐-总体项目计划图-2026-11-24.png`
+- Library 路径：`/DSHA/汐/DSHA-汐-总体项目计划图-2026-11-24.png`
+- Library file ID：`libfile_38f8d256eecc8191a0e728a1c5ae4105`
+- MIME：`image/png`
+- 大小：420,958 bytes
+- 上传结果：Library upload succeeded；并已通过 Library 目录列表重新查到该文件。
+
+### 新会话读取方式（请未来会话照此执行）
+
+**接手时不要问用户重新上传图片，也不要只在当前会话附件中搜索。** 这张图已保存在用户个人 Library。按以下步骤主动查找：
+
+1. 打开 Files 的 Library 文件搜索或列表能力，明确将搜索范围设为个人 Library（`surface="library"`），而不是 conversation 或 Project。
+2. 首选列出目录 `/DSHA/汐`，查找完整文件名：`DSHA-汐-总体项目计划图-2026-11-24.png`。
+3. 如果目录列表不可用，改用 Library 全文/语义搜索，搜索完整文件名或关键词“DSHA 汐 总体项目计划图 2026-11-24”。不要因当前会话附件列表没有这张图，就判断图片不存在。
+4. 找到后，使用 Files 对应的读取/打开能力查看图片内容；如果搜索只返回文件引用，继续按该引用读取/物化，不要只看文件名就声称看过原图。
+5. 看图后，再读取仓库中的 `docs/PROJECT-ROADMAP-USER-PLAN-2026-11-24.md`，将原图与文字转录结合使用。
+6. 如果 Library 搜索和目录列表都失败，明确告诉用户“本会话当前无法访问该 Library 文件”，说明已尝试的查找方式；此时可先使用 GitHub 文字版路线图继续工作，但不得声称已读取原图，也不要要求用户重复提供已保存的图片，除非确认 Library 文件确实不可访问。
+
+可用于检索的固定标识：
+- 文件名：`DSHA-汐-总体项目计划图-2026-11-24.png`
+- Library 目录：`/DSHA/汐/`
+- Library file ID：`libfile_38f8d256eecc8191a0e728a1c5ae4105`
+
+**验收标准：** 新会话必须实际从 Library 找到并打开该图片，才能报告“已读取原图”。仅仅读取本 PR 的本节或文字版路线图，不算完成原图读取。
+
+### 访问范围说明
+
+- 这份文件存放在用户个人 Library，目的是供用户其他会话再次检索读取；它**不是** Git 仓库中的二进制文件，也**不是**已附加到 ChatGPT Project 文件区的 Project-backed file。
+- 当前工具没有提供把个人 Library 文件直接附加/迁移为 Project 文件的操作，因此不能宣称它是 Project-local 文件。
+- 当前会话已验证上传成功并能从 Library 目录再次列出；尚未在一个独立的新会话中做端到端读取验证。其他会话需要具备访问同一用户 Library 的能力。
+- `/mnt/data` 是当前执行环境路径，不得写成其他会话可直接访问的共享路径。
+- GitHub PR #6 继续保存文字版路线图与本节读取指引，确保其他会话知道去哪里取原图。
+
+
+### 跨会话可发现性强调（用户补充）
+
+用户明确表示存储位置不重要，关键是其他会话能正常找到并读取；因此本节是给未来会话的主动操作指令，不只是位置备注。接手时应先按上述 Library 步骤查找，不能假设图片会自动出现在新会话附件区。若成功读取，才将原图视觉信息作为已检查来源；若无法访问，必须如实报告并继续使用 GitHub 文字版，不得虚报。
+
+
+## 12. 2026-11-24 工程接续快照（每次接手须重新核验）
+
+以下是本次工作轮次的已核验快照，不可当作永久实时状态；新会话必须重新读取 PR、分支和 CI。
+
+### PR #3 — P0-1 trusted handoff continuity
+- URL：`https://github.com/ba-song/dsh-memory-core/pull/3`
+- 状态：Open / Draft / 未合并
+- 分支：`fix/p0-1-trusted-handoff-continuity`
+- 本轮核验 head：`56765116fea90d505a1d28d9c1a27c3abde5c6f6`
+- 对应 CI：run `45351963276`，Node tests，completed / success。
+- 仍未实机验证；跨 Conversation pins/projects/decisions/todos 交接保持关闭，`publicBrief` fail-closed。
+
+### PR #7 — isolated WriteEvidence assessment
+- URL：`https://github.com/ba-song/dsh-memory-core/pull/7`
+- 状态：Open / Draft / 未合并
+- 分支：`feat/write-evidence-assessment-pure`，base 为 PR #3 分支。
+- 本轮核验 head：`a30b67e5e2c855da90b91559ed6d990a0ee875ec`
+- 对应 CI：run `45366722220`，Node tests，completed / success。
+- 纯函数输出分别保留来源类型、proof 声明、作者角色、locator、quote、claim confirmation、lineage、access、content certainty，以及 gaps/warnings/conflicts。
+- 重要限制：`host_event_proof_claimed` 只描述输入 proof 的形状声明；纯函数不认证 proof issuer，不等于真实 Host 身份认证或生产授权。
+- 新增 T-13 至 T-15，覆盖非 Host 来源携带 proof 不得升级、纯函数不得宣称认证 proof、畸形 proof/非法枚举 fail-closed。
+- 仍未接入 runtime、memory write 或真实数据库；不得合并/部署。
+
+### PR #6 — project continuity center
+- URL：`https://github.com/ba-song/dsh-memory-core/pull/6`
+- 状态：Open / Draft / 未合并；专用交接中心，不合并。
+- 分支：`docs/project-continuity-center-20261124`
+- 本轮继续更新项目治理、路线图、访谈决策、DSH 报告归档和图片跨会话读取说明。
+- 新会话必须以 GitHub 实时 PR/CI 状态覆盖本节快照。
+
+### 下一步安全工程任务
+1. 对照 WriteEvidence 矩阵逐项核对全部证据维度与 P0 不变量，尤其检查 disclosure consent 是否与一般 access 状态明确分离。
+2. 增加枚举全覆盖、缺失/null/非法类型、属性不变量测试；测试必须保持纯函数、无 I/O。
+3. 继续梳理真实 Host adapter 的可信 proof 来源与授权 API；在 Host 无法提供可认证身份/同意事件时保持 fail-closed。
+4. 对现有 provenance 写入入口建立字段路径矩阵；不回填真实数据。
+5. 继续更新 PR #7 与本交接中心，保持 PR #3/#7 Draft，不合并、不部署，除非用户明确授权。
+
+
+## 13. WriteEvidence 跨上下文披露同意独立维度（2026-11-24）
+
+最新工程核对确认：需求矩阵 A-05/A-12 明确规定 owner authentication 不等于 disclosure consent，来源真实性与访问授权也必须独立；当前纯函数此前只有 `access`，没有单独的披露同意状态。已在 PR #7 的隔离纯函数中新增 `disclosureConsent`：
+- 枚举：`granted`、`denied`、`revoked`、`expired`、`missing`、`not_required`、`unknown`。
+- 缺省为 `unknown`，产生 consent gap；access=allowed 不会自动填充 consent。
+- denied/revoked/expired 产生 `cross_context_disclosure_not_authorized` 警告。
+- disclosureConsent=granted 也不能覆盖 access denied/revoked/expired/tombstoned。
+- 该字段目前只是纯函数对输入声明的评估，不是宿主授权认证，不会启用跨会话披露。
+- 新增 T-16 至 T-18，覆盖 access allowed 但 consent missing、consent revoked、consent granted 但 access denied。
+- 同步更新 WriteEvidence 矩阵，增加 A-13 和访问状态/披露同意正交组合。
+
+本项属于 P0 证据模型补齐；仍未接入 runtime、archive/DB 读取或 memory write。生产授权仍 fail-closed。
+
+
+### 最新工程快照追加：披露同意维度（2026-11-24）
+
+- PR #7 最新 head：`d05e09b9746f45385ca5160e01f114104ff818cf`；CI run `45367578575`（Node tests）completed / success。
+- PR #7 新增 `disclosureConsent` 独立维度和 T-16–T-18；access 与 consent 不互相推导。
+- PR #7 仍 Open / Draft / 未合并，base 仍为 PR #3 分支。
+- 注意：以上 CI 只证实当前自动化测试环境通过；不证明 Host 授权 API、真实跨会话披露或 DSHA 实机安全。
+
+
+## 14. 2026-11-24 批量工程推进快照：披露同意与读取门禁
+
+本节是本轮已完成工作和待核验状态，不替代新会话的实时 GitHub/CI 查询。
+
+### PR #7 — WriteEvidence 十维证据评估
+- 分支：`feat/write-evidence-assessment-pure`；base：PR #3 的 `fix/p0-1-trusted-handoff-continuity`。
+- 本轮 head：`1f432a892cfbcbca6b75f5f4d3ea1fd2507679b6`。
+- Node tests run `45368833932` completed / success。
+- 测试 T-01 至 T-24；新增 T-19 至 T-24，覆盖 consent 非法枚举、null/空值、所有非授权状态、denied access 优先级、access/consent 正交属性。
+- 修订矩阵，统一十个维度、proof claim 语义及 T-01 至 T-24 的实现状态。
+- 无 runtime 接入、无真实数据访问/写入。
+
+### PR #8 — 隔离跨上下文读取门禁契约
+- URL：`https://github.com/ba-song/dsh-memory-core/pull/8`
+- 分支：`feat/cross-context-read-gate-contract`；base：PR #3 分支。
+- 最新 head：`6edb30211749dde363d069e6f3dd267e0a7e0ee1`。
+- 新增 `lib/ingest/cross-context-read-gate.js` 和 `tests/cross-context-read-gate.test.mjs`。
+- 该门禁要求请求明确 owner/source/target session、各自 cwd、purpose 和字段 allowlist；调用注入的 Host `authorizeAndConsume` 必须先于任何读取；拒绝、scope mismatch、Host error 时读取次数为零；读取后必须成功写入 metadata-only audit 才向调用方返回内容。
+- G-01 至 G-10 覆盖授权先于读取、拒绝零读取、无效请求、字段扩张、Host 错误、审计失败、读取失败、依赖缺失、通配符/重复字段和 source/target cwd 不同。
+- **关键限制**：该模块不认证 Host/consent，不实现真实授权 API；依赖必须由可信 Host adapter 提供。尚未接入 `lib/index.js`，不能启用跨会话披露。
+- 首轮 CI 曾因测试把 source/target cwd 错误要求相等而失败；已修正为各自精确绑定、允许不同 cwd，并补 G-10。修订 head 的 CI 结果需继续核验。
+
+### 接下来并行推进
+1. 核对 PR #8 当前 CI；修复失败直至通过。
+2. 为 Host adapter 写独立接口契约：会话 live-registry 双向重验、owner 身份解析、同意事件 provenance、原子单次消费、撤销/过期/重启失效。
+3. 增加 provenance 写入入口矩阵，覆盖 insertMemory、diary、tool、migration、manual、recovery 等路径；只读源码，不回填数据。
+4. 在无可信 Host API 的情况下继续保持生产跨会话披露 fail-closed。
+
+
+## 15. 记忆写入来源路径矩阵（2026-11-24）
+
+新增审计报告：`docs/audit/INGEST-PROVENANCE-PATH-MATRIX-2026-11-24.md`。
+源码已确认的关键点：
+- `insertMemory` 是 memories 唯一插入入口，但 provenance quote gate 是 opt-in：只有传 `provenanceMode` 才执行；未传时兼容写入仍可成功。
+- `ingestExplicit` 与 P4 `ingestCandidate` 使用 session quote gate；source session 仍仅部分编码进 source_msg_id，数据库没有独立认证 source_session_id。
+- `migrate.applyAll` 与不带 provenanceMode 的手工 insert 会留下无 provenance 标签的 legacy-unknown。
+- diary 独立写入文件，不写 memories/raw_meta；raw archive 写 raw_meta/raw_fts，不是 memories 写入。
+- Q149 raw archive adapter 先检查 Host execution session、liveSessions、owner cwd/scope，再执行 cwd/tombstone/role 限定读取；它是当前 Owner session recovery，不是跨 Conversation disclosure consent。
+- 既有 `tests/ingest-provenance-paths.test.mjs` 使用临时 DB 覆盖 explicit、P4、migration、manual 四类路径。
+- 风险：quote gate opt-in 是潜在旁路，但强制默认拒绝会改变现有写入行为；当前只记录提案，不改变生产行为。
+
+
+## 16. 本轮最终 CI 与 PR 状态核验（2026-11-24）
+
+- PR #7 head `1f432a892cfbcbca6b75f5f4d3ea1fd2507679b6`：Node tests run `45368833932` completed / success。
+- PR #8 head `6edb30211749dde363d069e6f3dd267e0a7e0ee1`：Node tests run `45369132473` completed / success。首轮失败原因和修正已记录在 PR #8 描述及 G-09/G-10 测试。
+- PR #3：Open / Draft / 未合并，head `56765116fea90d505a1d28d9c1a27c3abde5c6f6`。
+- PR #6：Open / Draft / 未合并，当前交接中心分支。
+- PR #7：Open / Draft / 未合并，base 为 PR #3 分支。
+- PR #8：Open / Draft / 未合并，base 为 PR #3 分支。
+- 新会话仍须重新查询实时状态；本节不是永久状态。
+
+
+## 17. 合并与 DSHA 部署路线：当前门槛与可交付顺序（2026-11-24）
+
+用户明确询问何时可以开始合并并实际部署到 DSHA。以下为工程评估；**这不是合并或部署授权**。任何会改变汐实际运行行为的合并/部署仍须用户明确确认。
+
+### 当前 PR 实时状态（本轮核验）
+- PR #3：Open / Draft / 未合并；head `56765116fea90d505a1d28d9c1a27c3abde5c6f6`；对应 Node tests run `45351963276` success。
+- PR #7：Open / Draft / 未合并；head `1f432a892cfbcbca6b75f5f4d3ea1fd2507679b6`；Node tests run `45368833932` success。
+- PR #8：Open / Draft / 未合并；head `6edb30211749dde363d069e6f3dd267e0a7e0ee1`；Node tests run `45369132473` success。
+- PR #6：Open / Draft / 未合并；仅作为交接中心，永不纳入功能部署。
+
+### 哪些可以先合并，哪些不能当成部署功能
+1. PR #3 是第一个可能影响运行时的候选：收紧 handoff brief、raw archive read、cross-Conversation pins/projects/decisions/todos/publicBrief 的访问边界，并增加恢复规划纯函数。CI 通过是必要条件，不是充分条件。合并前还需逐文件审查行为变化、完整测试矩阵、Host 兼容性与回滚方案；部署后须用合成/测试数据做设备 smoke test。
+2. PR #7 是纯函数与测试，不接 runtime；单独合并不会启用新记忆能力。它以 PR #3 分支为 base，合并顺序应在 PR #3 之后，并在合并前更新到 main、重跑 CI。
+3. PR #8 是隔离的跨上下文披露门禁编排，不接 runtime，也不提供真实 Host 认证/consent API；单独合并不会启用跨会话披露。它同样依赖 PR #3 base，须等 PR #3 后 rebase/update branch 并重跑 CI。真实跨会话披露绝不能因合并 PR #8 就开放。
+4. PR #6 只维护项目治理与交接，不合并。
+
+### 第一批可部署候选的验收门槛
+- 源码审查：明确列出所有改变运行行为的路径、默认值、失败关闭语义和兼容性。
+- CI：必须对最终准备合并的精确 head 通过；不能引用旧 head 的成功结果。
+- 回归：完整现有测试套件 + 针对 handoff/raw archive/access 的负向测试。
+- Host：确认 DSH 实际注入的 session、cwd、owner scope、live-session registry 与代码契约一致；仅源码假设不够。
+- 备份/回滚：部署前备份当前插件包和配置；有明确回滚步骤；不执行 schema/data migration。
+- 设备 smoke test：只用合成 fixture/测试会话验证允许与拒绝路径；确认正常记忆读写、情绪系统、日记和其他既有功能未被意外改变。
+- 观察期：记录版本、commit、配置摘要、日志错误率和回滚条件；不得把测试结果描述为真实长期稳定性。
+
+### 估计时间（条件性，不是承诺）
+- PR #3：若完整审查与 Host 兼容验证无新问题，可作为第一批候选；预计还需一个集中审查/验证周期，不应以 CI 通过直接推定可部署。
+- PR #7：PR #3 合并后，更新 base、重跑 CI 即可评估纯函数代码是否可并入；它本身不是设备功能发布。
+- PR #8：同上，但只能作为未接线的内部契约代码；真实跨会话功能仍被 Host consent API 阻断。
+- 第一项真正改变汐运行行为的部署，当前最现实候选是 PR #3 的安全边界收紧，而不是 PR #7/#8 的新能力。它需要用户明确批准合并/部署。
+
+### 近期执行重点
+1. 为 PR #3 做一次逐文件运行时行为影响审查，列出部署前/后行为差异与回滚方案。
+2. 检查 PR #3 当前 head 的 CI 工作流和完整测试统计，确保报告与当前 head 一致。
+3. 设计 DSHA 设备侧 smoke-test 脚本/步骤，但在 DSH 可用且用户确认部署后再执行。
+4. 继续开发不接生产的记忆连续性能力，不把跨会话披露门禁误当成已经完成的真实授权功能。
