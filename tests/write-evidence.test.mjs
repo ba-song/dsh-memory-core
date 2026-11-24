@@ -128,7 +128,7 @@ const assess = (input) => assessWriteEvidence(input)
   assert.ok(withProof.warnings.includes('host_event_proof_shape_not_verified_by_pure_function'))
 }
 
-console.log(JSON.stringify({ ok: true, test: 'write-evidence', cases: 18 }))
+console.log(JSON.stringify({ ok: true, test: 'write-evidence', cases: 24 }))
 
 
 // T-13 proof-shaped caller input cannot authenticate a non-Host origin.
@@ -193,4 +193,61 @@ console.log(JSON.stringify({ ok: true, test: 'write-evidence', cases: 18 }))
   assert.equal(r.access, 'denied')
   assert.equal(r.disclosureConsent, 'granted')
   assert.ok(r.warnings.includes('current_access_not_allowed'))
+}
+
+
+// T-19 invalid disclosure consent values fail closed.
+{
+  for (const value of ['approved', 'true', 1, {}, [], 'GRANTED']) {
+    const r = assess({ access: 'allowed', disclosureConsent: value })
+    assert.equal(r.disclosureConsent, 'unknown')
+    assert.ok(r.gaps.includes('disclosure_consent_missing_or_unknown'))
+  }
+}
+
+// T-20 null and empty disclosure consent do not become grants.
+{
+  for (const value of [null, '', '   ', false]) {
+    const r = assess({ access: 'allowed', disclosureConsent: value })
+    assert.notEqual(r.disclosureConsent, 'granted')
+    assert.ok(r.gaps.includes('disclosure_consent_missing_or_unknown'))
+  }
+}
+
+// T-21 every non-granted disclosure state remains distinct and non-authorizing.
+{
+  for (const value of ['denied', 'revoked', 'expired', 'missing', 'unknown']) {
+    const r = assess({ access: 'allowed', disclosureConsent: value })
+    assert.equal(r.disclosureConsent, value)
+    assert.notEqual(r.disclosureConsent, 'granted')
+  }
+}
+
+// T-22 explicit grant never repairs an unknown/denied source access state.
+{
+  for (const value of ['unknown', 'denied', 'revoked', 'expired', 'tombstoned']) {
+    const r = assess({ access: value, disclosureConsent: 'granted' })
+    assert.equal(r.access, value)
+    assert.equal(r.disclosureConsent, 'granted')
+    if (value !== 'unknown') assert.ok(r.warnings.includes('current_access_not_allowed'))
+    else assert.ok(r.gaps.includes('access_state_unknown'))
+  }
+}
+
+// T-23 consent changes cannot mutate source authenticity, quote, or claim confirmation.
+{
+  const base = { origin: { kind: 'caller_supplied' }, quoteState: 'exact', claimConfirmation: 'unconfirmed' }
+  const withoutConsent = assess(base)
+  const withConsent = assess({ ...base, disclosureConsent: 'granted' })
+  assert.equal(withConsent.sourceAuth, withoutConsent.sourceAuth)
+  assert.equal(withConsent.quote, withoutConsent.quote)
+  assert.equal(withConsent.claimConfirmation, withoutConsent.claimConfirmation)
+}
+
+// T-24 access changes cannot manufacture disclosure consent.
+{
+  for (const access of ['allowed', 'denied', 'revoked', 'expired', 'tombstoned', 'unknown']) {
+    const r = assess({ access })
+    assert.equal(r.disclosureConsent, 'unknown')
+  }
 }
