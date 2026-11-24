@@ -35,7 +35,8 @@
 验证：
 - Push CI：run [45315021052](https://github.com/ba-song/dsh-memory-core/actions/runs/45315021052) — SUCCESS
 - PR CI：run [45315015204](https://github.com/ba-song/dsh-memory-core/actions/runs/45315015204) — SUCCESS
-- RawArchive scope 修复 HEAD `8481d9f` 的两份原始 job log：147 tests / 146 pass / 0 fail / 1 skipped。\n- Recovery adapter 最终 HEAD `85c419b` 的两份原始 job log：151 tests / 150 pass / 0 fail / 1 skipped。
+- RawArchive scope 修复 HEAD `8481d9f` 的两份原始 job log：147 tests / 146 pass / 0 fail / 1 skipped。
+- Recovery adapter 最终 HEAD `85c419b` 的两份原始 job log：151 tests / 150 pass / 0 fail / 1 skipped。
 - 此结果只证明 GitHub 隔离 CI；DSHA 本地/真机验证仍未完成。
 
 ### Channel Bridge / Douyin 精确 HEAD CI 工作线
