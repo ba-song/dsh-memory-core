@@ -10,8 +10,18 @@ const supported = planMemoryRecovery({
   ],
 })
 assert.equal(supported.outcome, 'supported')
+assert.equal(supported.supportLevel, 'multiple_asserted_lineages')
+assert.equal(supported.independenceAssessment, 'asserted_by_upstream_not_verified_by_planner')
 assert.equal(supported.proposedOperation, 'review_add_or_restore_version')
 assert.equal(supported.writesPerformed, false)
+
+const singleLineage = planMemoryRecovery({
+  claim: '单条证据',
+  evidence: [{ id: 'one', access: 'allowed', relation: 'supports' }],
+})
+assert.equal(singleLineage.outcome, 'supported')
+assert.equal(singleLineage.supportLevel, 'single_asserted_lineage')
+assert.equal(singleLineage.evidenceCounts.independentSupportingLineages, 1)
 
 const conflict = planMemoryRecovery({
   claim: '当时是周五',
@@ -47,6 +57,7 @@ const copied = planMemoryRecovery({
 })
 assert.equal(copied.evidenceCounts.independentSupportingLineages, 1)
 assert.equal(copied.outcome, 'supported')
+assert.equal(copied.supportLevel, 'single_asserted_lineage')
 
 const copiedOnly = planMemoryRecovery({
   claim: '只有转述摘要',
@@ -76,4 +87,16 @@ const recalled = planMemoryRecovery({
 })
 assert.equal(recalled.failure, 'recall_miss')
 
-console.log('recovery-plan: 8 scenarios passed')
+const input = Object.freeze({
+  claim: '只读保证',
+  evidence: Object.freeze([
+    Object.freeze({ id: 'immutable', access: 'allowed', relation: 'supports', excerpt: '原始证据' }),
+  ]),
+})
+const before = JSON.stringify(input)
+const dryRun = planMemoryRecovery(input)
+assert.equal(JSON.stringify(input), before)
+assert.equal(dryRun.readOnly, true)
+assert.equal(dryRun.writesPerformed, false)
+
+console.log('recovery-plan: 10 scenarios passed')
