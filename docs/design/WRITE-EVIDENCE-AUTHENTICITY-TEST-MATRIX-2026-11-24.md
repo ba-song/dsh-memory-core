@@ -46,6 +46,7 @@ type QuoteState =
   | "exact" | "derived" | "mismatch" | "absent" | "not_checked";
 
 type AuthenticityAssessment = {
+  sourceKind: "host_event" | "caller_supplied" | "migrated_file" | "tool_output" | "unknown";
   sourceAuth: SourceAuth;
   sourceRole: SourceRole;
   locator: LocatorState;
@@ -94,7 +95,7 @@ function assessWriteEvidence(input: WriteEvidence): AuthenticityAssessment;
 | origin=tool_output + Host event proof | host_event_backed（role=tool） | tool_output_not_user_statement |
 | origin=unknown + 任意精确引文 | unknown | source_kind_unknown |
 
-规则：`origin.kind` 是来源声明；只有受信任的独立 proof input 才能支持 host_event_backed。当前 Host 尚不能提供生产级可信 owner/session attestation，因此该标签在本轮纯函数中只能描述 fixture 提供的证据，不宣称生产可用。
+规则：`origin.kind` 是来源声明，必须通过 `sourceKind` 原样保留；`sourceAuth` 是认证状态，二者不可合并。只有受信任的独立 proof input 才能支持 host_event_backed。当前 Host 尚不能提供生产级可信 owner/session attestation，因此该标签在本轮纯函数中只能描述 fixture 提供的证据，不宣称生产可用。
 
 ### 4.2 引文 × 命题确认
 
@@ -260,6 +261,6 @@ Host event proof 曾有效，但当前 access=revoked/tombstoned。
 
 ## 8. 本轮结论
 
-真实性必须拆成“来源从哪里来、谁说的、内容是否匹配、命题是否确认、来源是否独立、当前是否允许访问、内容本身是否模糊”等多个可审计维度。任何单一字段或分数都不能代替完整证据链。
+真实性必须拆成“来源从哪里来（sourceKind）、来源是否认证（sourceAuth）、谁说的、内容是否匹配、命题是否确认、来源是否独立、当前是否允许访问、内容本身是否模糊”等多个可审计维度。任何单一字段或分数都不能代替完整证据链。
 
 建议下一步先将 T-01 至 T-12 与 P0 不变量映射到现有测试框架，确认纯函数位置和输入类型；在用户另行同意前不改生产行为、schema、召回或恢复路径。
