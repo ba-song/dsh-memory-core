@@ -414,3 +414,16 @@ ChatGPT 总协调职责：
 2. 为 Host adapter 写独立接口契约：会话 live-registry 双向重验、owner 身份解析、同意事件 provenance、原子单次消费、撤销/过期/重启失效。
 3. 增加 provenance 写入入口矩阵，覆盖 insertMemory、diary、tool、migration、manual、recovery 等路径；只读源码，不回填数据。
 4. 在无可信 Host API 的情况下继续保持生产跨会话披露 fail-closed。
+
+
+## 15. 记忆写入来源路径矩阵（2026-11-24）
+
+新增审计报告：`docs/audit/INGEST-PROVENANCE-PATH-MATRIX-2026-11-24.md`。
+源码已确认的关键点：
+- `insertMemory` 是 memories 唯一插入入口，但 provenance quote gate 是 opt-in：只有传 `provenanceMode` 才执行；未传时兼容写入仍可成功。
+- `ingestExplicit` 与 P4 `ingestCandidate` 使用 session quote gate；source session 仍仅部分编码进 source_msg_id，数据库没有独立认证 source_session_id。
+- `migrate.applyAll` 与不带 provenanceMode 的手工 insert 会留下无 provenance 标签的 legacy-unknown。
+- diary 独立写入文件，不写 memories/raw_meta；raw archive 写 raw_meta/raw_fts，不是 memories 写入。
+- Q149 raw archive adapter 先检查 Host execution session、liveSessions、owner cwd/scope，再执行 cwd/tombstone/role 限定读取；它是当前 Owner session recovery，不是跨 Conversation disclosure consent。
+- 既有 `tests/ingest-provenance-paths.test.mjs` 使用临时 DB 覆盖 explicit、P4、migration、manual 四类路径。
+- 风险：quote gate opt-in 是潜在旁路，但强制默认拒绝会改变现有写入行为；当前只记录提案，不改变生产行为。
