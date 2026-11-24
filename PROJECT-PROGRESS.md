@@ -315,3 +315,12 @@ PR #5：<https://github.com/ba-song/dsh-memory-core/pull/5>
 - PR #8 首轮 CI run `45368759577` 失败，原因是 G-09 错误断言 source/target cwd 必须相同；这是测试假设错误，不是代码行为故障。已修复测试并新增 G-10，最新 head `6edb30211749dde363d069e6f3dd267e0a7e0ee1` 的 CI run `45369132473` 正在执行。
 - PR #8 未接 runtime；真实 Host adapter、身份/consent 认证、原子消费和审计存储仍未实现；跨会话披露保持 fail-closed。
 - 本轮未读取或写入真实用户记忆、未更改生产配置、未操作 DSHA 设备。
+
+
+## 26. 核对 memories 写入路径与 provenance 门禁（2026-11-24）
+
+- 新增 `docs/audit/INGEST-PROVENANCE-PATH-MATRIX-2026-11-24.md`，基于源码对 insertMemory、explicit、P4、migration、manual、diary、raw archive、Q149 recovery、provenance audit 建立路径矩阵。
+- 关键发现：`insertMemory` 是唯一 memories 插入入口，但 `provenanceMode` 是 opt-in；未传时不执行 quote gate。explicit 与 P4 路径传入 session mode；迁移与部分手工调用没有 provenance 标签，审计应保持 legacy-unknown。
+- diary/raw archive 分属独立存储，不应与 memories provenance 混淆；raw archive recovery 当前只证明当前 Host-observed Owner cwd 的 scoped read，不代表跨会话 consent。
+- 已确认现有 `tests/ingest-provenance-paths.test.mjs` 在临时 DB 下覆盖 explicit、P4、migration、manual 路径；没有真实数据访问。
+- 未强制更改 insertMemory 默认行为，避免未经批准改变现有写入语义。
