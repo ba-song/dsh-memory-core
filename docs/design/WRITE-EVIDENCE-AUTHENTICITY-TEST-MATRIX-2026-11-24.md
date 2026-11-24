@@ -21,7 +21,7 @@ WriteEvidence 不得返回一个含混的 `trusted: true/false`。至少分别�
 9. **内容确定性/模糊性**：来源内容本身是否明确带有“可能、好像、记不清”等不确定标记；来源真实不代表内容确定。该维度只保留明确提供的不确定性，不能由纯函数推断内容客观确定。
 10. **跨上下文披露同意（disclosure consent）**：是否有针对目标上下文/用途的明确披露授权；必须与当前访问状态分开记录。owner/authentication 或 access=allowed 均不自动构成披露同意。
 
-这八项不得互相推导。尤其：
+以上十个维度不得互相推导。尤其：
 - exact quote ≠ authenticated source；
 - authenticated message ≠ objectively true claim；
 - user-confirmed ≠ independently corroborated;
@@ -58,6 +58,9 @@ type AuthenticityAssessment = {
     | "withdrawn" | "not_applicable";
   lineage: "single_lineage" | "copied_same_lineage"
     | "multiple_lineages_asserted" | "unknown";
+  access: "allowed" | "denied" | "revoked" | "expired" | "tombstoned" | "unknown";
+  disclosureConsent: "granted" | "denied" | "revoked" | "expired" | "missing" | "not_required" | "unknown";
+  contentCertainty: "uncertain" | "not_assessed" | "unknown";
   gaps: string[];
   warnings: string[];
 };
@@ -95,10 +98,10 @@ function assessWriteEvidence(input: WriteEvidence): AuthenticityAssessment;
 | origin=host_event + 无 Host proof | unknown | self_asserted_host_origin |
 | origin=user_supplied + quote exact | caller_supplied | caller_text_not_host_authenticated |
 | origin=migrated_file + locator present_unverified | migrated_unverified | locator_not_resolved |
-| origin=tool_output + Host event proof | host_event_backed（role=tool） | tool_output_not_user_statement |
+| origin=tool_output + proof-shaped Host object | unknown | tool_output_not_user_statement；host_event_proof_ignored_for_non_host_origin |
 | origin=unknown + 任意精确引文 | unknown | source_kind_unknown |
 
-规则：`origin.kind` 是来源声明，必须通过 `sourceKind` 原样保留；`sourceAuth` 是认证状态，二者不可合并。只有受信任的独立 proof input 才能支持 host_event_backed。当前 Host 尚不能提供生产级可信 owner/session attestation，因此该标签在本轮纯函数中只能描述 fixture 提供的证据，不宣称生产可用。
+规则：`origin.kind` 是来源声明，必须通过 `sourceKind` 原样保留；`sourceAuth` 是认证状态，二者不可合并。当前纯函数只能输出 `host_event_proof_claimed`，表示输入对象符合预期形状；同时必须输出 `host_event_proof_shape_not_verified_by_pure_function`。它不能认证 proof issuer，也不能输出 `host_event_proof_claimed`。只有独立可信 Host adapter 在纯函数之外完成认证后，未来才可定义不同的可信状态。
 
 ### 4.2 引文 × 命题确认
 
@@ -249,16 +252,16 @@ Host event proof 曾有效，但当前 access=revoked/tombstoned。
 ### 6.5 Host proof 语义边界（实现审查补充）
 
 - 纯函数不能把一个普通输入对象的字段视为不可伪造的 Host 认证凭据。
-- 当前实现使用 `host_event_proof_claimed`，避免把 proof shape 误称为 `host_event_backed`。
+- 当前实现使用 `host_event_proof_claimed`，避免把 proof shape 误称为已认证来源。
 - proof shape 仅在 `sourceKind=host_event` 时保留；`caller_supplied` 来源附带相同对象仍保持 caller_supplied。
-- 对 proof shape 始终产生 `host_event_proof_shape_not_verified_by_pure_function` 警告。
-- 新增反例测试 T-13 至 T-15：非 Host 来源携带 proof、纯函数不得宣称验证 proof、非法枚举/畸形 proof fail-closed。
+- 对 proof shape 始终产生 `host_event_proof_shape_not_verified_by_pure_function` 警告；非 host_event 来源携带 proof 时忽略它。
+- 新增 T-13 至 T-15 覆盖 proof 声明边界；T-16 至 T-18 覆盖 access/consent 正交；T-19 至 T-24 覆盖 consent 非法枚举、空值、全状态 fail-closed 与属性不变量。
 - 真正可信的 Host attestation 必须由受信任 adapter/宿主边界提供，不能由模型、普通调用方或本纯函数自证。
 
 ## 7. 测试分层与验收
 
 ### Layer 1 — 单元纯函数
-- 所有 T-01 至 T-18 均为确定性输入输出测试。
+- 所有 T-01 至 T-24 均为确定性输入输出测试。
 - T-11 必须断言 contentCertainty=uncertain；缺失字段默认 unknown，不能默认为确定。
 - 无文件、DB、Host、网络 mock；如需 mock，说明纯函数边界已被破坏。
 - 对每个 enum 做合法值与未知值测试。
@@ -279,6 +282,12 @@ Host event proof 曾有效，但当前 access=revoked/tombstoned。
 - 不读取不在授权 scope 内的 conversation/session。
 - 不把原话正文写入 audit log。
 - 当前 Host 缺少可信 owner/consent API，因此只可用测试替身验证调用顺序，不可宣称生产授权安全已成立。
+
+### Layer 2 — 属性测试
+- access 的任意变化不得自动产生 disclosureConsent=granted。
+- disclosureConsent 的任意变化不得修改 sourceAuth、quote 或 claimConfirmation。
+- 非法/空 consent 输入必须 fail-closed 为 unknown。
+- access denied/revoked/expired/tombstoned 时，consent=granted 不得恢复可读性。
 
 ## 8. 本轮结论
 
