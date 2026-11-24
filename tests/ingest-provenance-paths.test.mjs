@@ -43,11 +43,12 @@ const p4 = await ingestClassified(db, {
 })
 assert.equal(p4.action, 'insert')
 const p4Row = db.prepare('SELECT * FROM memories WHERE id=?').get(p4.id)
-assert.ok(['derived', 'verified'].includes(JSON.parse(p4Row.meta).provenance))
+assert.equal(JSON.parse(p4Row.meta).provenance, 'derived')
 assert.ok(p4Row.quote)
 
 // Offline migration: a synthetic source key and source file do not establish
 // verbatim provenance. Missing provenance must remain legacy-unknown.
+const previousOwnerQq = process.env.OWNER_QQ
 process.env.OWNER_QQ = '1000000001'
 const migrated = await applyAll(db, {
   facts: [{ kind: 'fact', text: '迁移测试事实', sourceKey: 'facts:fixture', sourceFile: '/fixture/事实卡.md' }],
@@ -61,6 +62,8 @@ assert.ok(migratedRow)
 assert.equal(JSON.parse(migratedRow.meta).provenance, undefined)
 assert.equal(assessMemoryProvenance(migratedRow).provenance, 'legacy-unknown')
 assert.ok(assessMemoryProvenance(migratedRow).gaps.includes('missing-or-unknown-provenance-label'))
+if (previousOwnerQq === undefined) delete process.env.OWNER_QQ
+else process.env.OWNER_QQ = previousOwnerQq
 
 // Legacy/manual insert without provenanceMode must not be silently promoted.
 const legacyId = await insertMemory(db, {
@@ -90,6 +93,9 @@ const correctionLike = assessMemoryProvenance({
 assert.equal(correctionLike.provenance, 'legacy-unknown')
 assert.equal(correctionLike.quoteEvidence, 'no-quote-evidence')
 assert.ok(correctionLike.gaps.includes('missing-verbatim-quote'))
+
+db.close()
+rmSync(dir, { recursive: true, force: true })
 
 console.log(JSON.stringify({
   ok: true,
